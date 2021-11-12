@@ -23,5 +23,6 @@ RUN yarn --prod
 COPY --from=builder /usr/src/app/dist ./dist
 
 EXPOSE 3000/udp
+EXPOSE 8877/udp
 
 CMD ["yarn", "run", "start:prod"]

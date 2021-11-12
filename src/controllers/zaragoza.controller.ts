@@ -1,16 +1,18 @@
 import { Controller, Get, Param } from '@nestjs/common';
-import { ZaragozaService } from './zaragoza.service';
+import { ApiTags } from '@nestjs/swagger';
+import { ZaragozaService } from '../services/zaragoza.service';
 
 @Controller()
-export class AppController {
+@ApiTags('zaragoza')
+export class ZaragozaController {
   constructor(private readonly zaragozaService: ZaragozaService) {}
 
-  @Get('zgz/bus/station/:id')
+  @Get('zgz/bus/stations/:id')
   async zaragozaBusStation(@Param('id') id: string) {
     return this.zaragozaService.getBusStation(id);
   }
 
-  @Get('zgz/tram/station/:id')
+  @Get('zgz/tram/stations/:id')
   async zaragozaTramStation(@Param('id') id: string) {
     return this.zaragozaService.getTramStation(id);
   }

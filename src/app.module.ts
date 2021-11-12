@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ClientsModule, Transport } from '@nestjs/microservices';
-import { AppController } from './app.controller';
-import { ZaragozaService } from './zaragoza.service';
+import { ZaragozaController } from './controllers/zaragoza.controller';
+import { ZaragozaService } from './services/zaragoza.service';
 
 @Module({
   imports: [
@@ -16,7 +16,7 @@ import { ZaragozaService } from './zaragoza.service';
       },
     ]),
   ],
-  controllers: [AppController],
+  controllers: [ZaragozaController],
   providers: [ZaragozaService],
 })
 export class AppModule {}

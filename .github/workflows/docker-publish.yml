@@ -101,4 +101,4 @@ jobs:
             docker pull ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest
             docker stop ${{ env.IMAGE_NAME }}
             docker rm ${{ env.IMAGE_NAME }}
-            docker run -p 3069:3000/tcp -ti -d --restart unless-stopped --name ${{ env.IMAGE_NAME }} ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+            docker run -p 3069:3000/tcp --network canopus ti -d --restart unless-stopped --name ${{ env.IMAGE_NAME }} ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}

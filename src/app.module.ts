@@ -10,7 +10,7 @@ import { ZaragozaService } from './zaragoza.service';
         name: 'ZARAGOZA_SERVICE',
         transport: Transport.TCP,
         options: {
-          host: '0.0.0.0',
+          host: 'canopus-zaragoza',
           port: 8877,
         },
       },

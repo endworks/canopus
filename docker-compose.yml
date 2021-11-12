@@ -1,14 +1,18 @@
 version: "3"
 
 services:
-  api:
+  canopus:
     image: ghcr.io/drkcat/canopus:latest
     ports:
-      - 3069:3000
+      - 3000:3000
 
-  zaragoza:
+  canopus-zaragoza:
     image: ghcr.io/drkcat/canopus-zaragoza:latest
     ports:
+      - 3001:3001
       - 8877:8877
+    expose:
+      - 3001
+      - 8877
     depends_on:
       - canopus

@@ -6,8 +6,27 @@ import { Observable } from 'rxjs';
 export class ZaragozaService {
   @Inject('ZARAGOZA_SERVICE') private client: ClientProxy;
 
-  public getBusStation(id: string): Observable<string> {
-    return this.client.send<any, any>('bus/station', { id });
+  public getBusStations(): Observable<string> {
+    return this.client.send<any, any>('bus/stations', {});
+  }
+
+  public getBusStation(
+    id: string,
+    source: 'official-api' | 'web',
+  ): Observable<string> {
+    return this.client.send<any, any>('bus/station', { id, source });
+  }
+
+  public getBusLines(): Observable<string> {
+    return this.client.send<any, any>('bus/lines', {});
+  }
+
+  public getBusLine(id: string): Observable<string> {
+    return this.client.send<any, any>('bus/line', { id });
+  }
+
+  public getTramStations(): Observable<string> {
+    return this.client.send<any, any>('tram/stations', {});
   }
 
   public getTramStation(id: string): Observable<string> {

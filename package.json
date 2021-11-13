@@ -1,13 +1,13 @@
 {
   "name": "canopus",
-  "version": "0.2.0",
-  "description": "A microservice client for our services",
+  "version": "0.2.1",
+  "description": "I write microservices no one wants",
   "author": {
     "name": "ender-null",
     "email": "endernull@icloud.com",
     "url": "https://github.com/ender-null"
   },
-  "homepage": "https://github.com/drkcat/canopus#readme",
+  "homepage": "https://github.com/drkcat/canopus",
   "repository": {
     "type": "git",
     "url": "git+ssh://git@github.com/drkcat/canopus.git"

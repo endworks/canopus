@@ -5,14 +5,19 @@ services:
     image: ghcr.io/drkcat/canopus:latest
     ports:
       - 3000:3000
+    networks:
+      - canopus
 
   canopus-zaragoza:
     image: ghcr.io/drkcat/canopus-zaragoza:latest
     ports:
       - 3001:3001
       - 8877:8877
-    expose:
-      - 3001
-      - 8877
+    networks:
+      - canopus
     depends_on:
       - canopus
+
+networks:
+  canopus:
+    driver: bridge

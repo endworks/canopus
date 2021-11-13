@@ -15,7 +15,7 @@
   "bugs": {
     "url": "https://github.com/drkcat/canopus/issues"
   },
-  "license": "AGPL-3.0",
+  "license": "MIT",
   "scripts": {
     "prebuild": "rimraf dist",
     "build": "nest build",

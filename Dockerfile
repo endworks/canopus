@@ -17,6 +17,7 @@ LABEL org.opencontainers.image.source https://github.com/drkcat/canopus
 WORKDIR /usr/src/app
 
 COPY package.json ./
+COPY yarn.lock ./
 
 RUN yarn --prod
 

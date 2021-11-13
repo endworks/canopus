@@ -11,7 +11,6 @@ services:
   canopus-zaragoza:
     image: ghcr.io/drkcat/canopus-zaragoza:latest
     ports:
-      - 3001:3001
       - 8877:8877
     networks:
       - canopus

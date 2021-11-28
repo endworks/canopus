@@ -12,7 +12,7 @@ export class ZaragozaService {
 
   public getBusStation(
     id: string,
-    source: 'official-api' | 'web',
+    source: 'api' | 'web' | 'backup',
   ): Observable<string> {
     return this.client.send<any, any>('bus/station', { id, source });
   }
@@ -31,5 +31,13 @@ export class ZaragozaService {
 
   public getTramStation(id: string): Observable<string> {
     return this.client.send<any, any>('tram/station', { id });
+  }
+
+  public getCinemas(): Observable<string> {
+    return this.client.send<any, any>('cinemas', {});
+  }
+
+  public getCinema(id: string): Observable<string> {
+    return this.client.send<any, any>('cinema', { id });
   }
 }

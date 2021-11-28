@@ -15,7 +15,7 @@ export class ZaragozaController {
   @Get('bus/stations/:id')
   async zaragozaBusStation(
     @Param('id') id: string,
-    @Query('source') source: 'official-api' | 'web' = 'official-api',
+    @Query('source') source: 'api' | 'web' | 'backup' = 'api',
   ) {
     return this.zaragozaService.getBusStation(id, source);
   }
@@ -38,5 +38,15 @@ export class ZaragozaController {
   @Get('tram/stations/:id')
   async zaragozaTramStation(@Param('id') id: string) {
     return this.zaragozaService.getTramStation(id);
+  }
+
+  @Get('cinema')
+  async zaragozaCinemas() {
+    return this.zaragozaService.getCinemas();
+  }
+
+  @Get('cinema/:id')
+  async zaragozaCinema(@Param('id') id: string) {
+    return this.zaragozaService.getCinema(id);
   }
 }

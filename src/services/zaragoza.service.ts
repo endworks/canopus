@@ -42,6 +42,6 @@ export class ZaragozaService {
   }
 
   public getCinemaMovies(id: string): Observable<string> {
-    return this.client.send<any, any>('cinema/sessions', { id });
+    return this.client.send<any, any>('cinema/movies', { id });
   }
 }

@@ -49,4 +49,9 @@ export class ZaragozaController {
   async zaragozaCinema(@Param('id') id: string) {
     return this.zaragozaService.getCinema(id);
   }
+
+  @Get('cinema/:id/sessions')
+  async zaragozaCinemaSessions(@Param('id') id: string) {
+    return this.zaragozaService.getCinemaSessions(id);
+  }
 }

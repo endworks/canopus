@@ -50,8 +50,8 @@ export class ZaragozaController {
     return this.zaragozaService.getCinema(id);
   }
 
-  @Get('cinema/:id/sessions')
-  async zaragozaCinemaSessions(@Param('id') id: string) {
-    return this.zaragozaService.getCinemaSessions(id);
+  @Get('cinema/:id/movies')
+  async zaragozaCinemaMovies(@Param('id') id: string) {
+    return this.zaragozaService.getCinemaMovies(id);
   }
 }

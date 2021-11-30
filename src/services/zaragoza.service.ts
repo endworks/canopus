@@ -32,16 +32,4 @@ export class ZaragozaService {
   public getTramStation(id: string): Observable<string> {
     return this.client.send<any, any>('tram/station', { id });
   }
-
-  public getCinemas(): Observable<string> {
-    return this.client.send<any, any>('cinemas', {});
-  }
-
-  public getCinema(id: string): Observable<string> {
-    return this.client.send<any, any>('cinema', { id });
-  }
-
-  public getCinemaMovies(id: string): Observable<string> {
-    return this.client.send<any, any>('cinema/movies', { id });
-  }
 }

@@ -72,6 +72,9 @@ export class Cinema {
 }
 
 export class CinemaMovies extends Cinema {
+  @ApiProperty()
+  lastUpdated?: string;
+
   @ApiProperty({
     type: [Movie],
   })

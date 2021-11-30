@@ -1,6 +1,6 @@
 import { Controller, Get, Param } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { Cinema, CinemaMovies } from 'src/models/zine.interface';
+import { Cinema, CinemaMovies } from '../models/zine.interface';
 import { ZineService } from '../services/zine.service';
 
 @Controller('zine')

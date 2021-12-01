@@ -71,7 +71,7 @@ export class Cinema {
   source?: string;
 }
 
-export class CinemaMovies extends Cinema {
+export class CinemaDetails extends Cinema {
   @ApiProperty()
   lastUpdated?: string;
 

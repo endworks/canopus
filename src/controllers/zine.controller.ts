@@ -1,6 +1,6 @@
 import { Controller, Get, Param } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { Cinema, CinemaMovies } from '../models/zine.interface';
+import { Cinema, CinemaDetails } from '../models/zine.interface';
 import { ZineService } from '../services/zine.service';
 
 @Controller('zine')
@@ -24,22 +24,24 @@ export class ZineController {
   @ApiParam({ name: 'id', type: String })
   @ApiResponse({
     status: 200,
-    description: 'Return cinema',
-    type: Cinema,
+    description: 'Return cinema and movies by ID',
+    type: CinemaDetails,
   })
   async zineCinema(@Param('id') id: string) {
     return this.zineService.getCinema(id);
   }
 
-  @Get('cinema/:id/movies')
+  @Get('cinema/:id/pro')
   @ApiParam({ name: 'id', type: String })
-  @ApiOperation({ summary: 'Get cinema and movies by ID' })
+  @ApiOperation({
+    summary: '[BETA] Get advanced details about cinema by ID',
+  })
   @ApiResponse({
     status: 200,
-    description: 'Return cinema and movies',
-    type: CinemaMovies,
+    description: '[BETA] Return advanced details about cinema',
+    type: CinemaDetails,
   })
-  async zineCinemaMovies(@Param('id') id: string) {
-    return this.zineService.getCinemaMovies(id);
+  async zineCinemaPro(@Param('id') id: string) {
+    return this.zineService.getCinemaPro(id);
   }
 }

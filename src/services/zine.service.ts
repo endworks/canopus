@@ -14,7 +14,7 @@ export class ZineService {
     return this.client.send<any, any>('cinema', { id });
   }
 
-  public getCinemaMovies(id: string): Observable<string> {
-    return this.client.send<any, any>('cinema/movies', { id });
+  public getCinemaPro(id: string): Observable<string> {
+    return this.client.send<any, any>('cinema/pro', { id });
   }
 }

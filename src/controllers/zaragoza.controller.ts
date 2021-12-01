@@ -1,7 +1,8 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, Query, Res } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Line, Station } from '../models/zaragoza.interface';
 import { ZaragozaService } from '../services/zaragoza.service';
+import { Response } from 'express';
 
 @Controller('zgz')
 @ApiTags('zaragoza')
@@ -15,8 +16,8 @@ export class ZaragozaController {
     description: 'Return bus stations',
     type: [Station],
   })
-  async zaragozaBusStations() {
-    return this.zaragozaService.getBusStations();
+  async zaragozaBusStations(@Res({ passthrough: true }) res: Response) {
+    return this.zaragozaService.getBusStations(res);
   }
 
   @Get('bus/stations/:id')
@@ -29,10 +30,11 @@ export class ZaragozaController {
     type: Station,
   })
   async zaragozaBusStation(
+    @Res({ passthrough: true }) res: Response,
     @Param('id') id: string,
     @Query('source') source: 'api' | 'web' | 'backup',
   ) {
-    return this.zaragozaService.getBusStation(id, source);
+    return this.zaragozaService.getBusStation(res, id, source);
   }
 
   @Get('bus/lines')
@@ -42,8 +44,8 @@ export class ZaragozaController {
     description: 'Return bus lines',
     type: [Line],
   })
-  async zaragozaBusLines() {
-    return this.zaragozaService.getBusLines();
+  async zaragozaBusLines(@Res({ passthrough: true }) res: Response) {
+    return this.zaragozaService.getBusLines(res);
   }
 
   @Get('bus/lines/:id')
@@ -54,8 +56,11 @@ export class ZaragozaController {
     description: 'Return bus line',
     type: Line,
   })
-  async zaragozaBusLine(@Param('id') id: string) {
-    return this.zaragozaService.getBusLine(id);
+  async zaragozaBusLine(
+    @Res({ passthrough: true }) res: Response,
+    @Param('id') id: string,
+  ) {
+    return this.zaragozaService.getBusLine(res, id);
   }
 
   @Get('tram/stations')
@@ -65,8 +70,8 @@ export class ZaragozaController {
     description: 'Return tram stations',
     type: [Station],
   })
-  async zaragozaTramStations() {
-    return this.zaragozaService.getTramStations();
+  async zaragozaTramStations(@Res({ passthrough: true }) res: Response) {
+    return this.zaragozaService.getTramStations(res);
   }
 
   @Get('tram/stations/:id')
@@ -77,7 +82,10 @@ export class ZaragozaController {
     description: 'Return tram station',
     type: Station,
   })
-  async zaragozaTramStation(@Param('id') id: string) {
-    return this.zaragozaService.getTramStation(id);
+  async zaragozaTramStation(
+    @Res({ passthrough: true }) res: Response,
+    @Param('id') id: string,
+  ) {
+    return this.zaragozaService.getTramStation(res, id);
   }
 }

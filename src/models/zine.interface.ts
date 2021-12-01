@@ -36,6 +36,9 @@ export class Movie {
   duration?: number;
 
   @ApiProperty()
+  durationReadable?: string;
+
+  @ApiProperty()
   director?: string;
 
   @ApiProperty()

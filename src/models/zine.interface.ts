@@ -2,6 +2,9 @@ import { ApiProperty } from '@nestjs/swagger';
 
 export class Session {
   @ApiProperty()
+  date: string;
+
+  @ApiProperty()
   time: string;
 
   @ApiProperty()

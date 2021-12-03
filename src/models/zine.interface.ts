@@ -17,6 +17,19 @@ export class Session {
   url?: string;
 }
 
+export class Crew {
+  @ApiProperty()
+  name: string;
+
+  @ApiProperty()
+  picture?: string;
+}
+
+export class Actor extends Crew {
+  @ApiProperty()
+  character?: string;
+}
+
 export class Movie {
   @ApiProperty()
   id: string;
@@ -38,14 +51,18 @@ export class Movie {
   @ApiProperty()
   durationReadable?: string;
 
-  @ApiProperty()
-  director?: string;
+  @ApiProperty({
+    type: Crew,
+  })
+  director?: Crew;
 
   @ApiProperty()
   genres?: string[];
 
-  @ApiProperty()
-  actors?: string[];
+  @ApiProperty({
+    type: [Actor],
+  })
+  actors?: Actor[];
 
   @ApiProperty()
   poster?: string;
@@ -55,6 +72,46 @@ export class Movie {
 
   @ApiProperty()
   source?: string;
+}
+
+export class MoviePro extends Movie {
+  @ApiProperty()
+  originalName?: string;
+
+  @ApiProperty({
+    type: [Crew],
+  })
+  writers?: Crew[];
+
+  @ApiProperty()
+  theMovieDbId?: string;
+
+  @ApiProperty()
+  imDbId?: string;
+
+  @ApiProperty()
+  tagline?: string | null;
+
+  @ApiProperty()
+  budget?: number;
+
+  @ApiProperty()
+  year?: number;
+
+  @ApiProperty()
+  releaseDate?: string;
+
+  @ApiProperty()
+  originalLanguage?: string;
+
+  @ApiProperty()
+  popularity?: number;
+
+  @ApiProperty()
+  voteAverage?: number;
+
+  @ApiProperty()
+  voteCount?: number;
 }
 
 export class Cinema {
@@ -85,4 +142,14 @@ export class CinemaDetails extends Cinema {
     type: [Movie],
   })
   movies: Movie[];
+}
+
+export class CinemaDetailsPro extends Cinema {
+  @ApiProperty()
+  lastUpdated?: string;
+
+  @ApiProperty({
+    type: [MoviePro],
+  })
+  movies: MoviePro[];
 }

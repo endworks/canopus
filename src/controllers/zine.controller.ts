@@ -1,6 +1,10 @@
 import { Controller, Get, Param, Res } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { Cinema, CinemaDetails } from '../models/zine.interface';
+import {
+  Cinema,
+  CinemaDetails,
+  CinemaDetailsPro,
+} from '../models/zine.interface';
 import { ZineService } from '../services/zine.service';
 import { Response } from 'express';
 
@@ -43,7 +47,7 @@ export class ZineController {
   @ApiResponse({
     status: 200,
     description: '[BETA] Return advanced details about cinema',
-    type: CinemaDetails,
+    type: CinemaDetailsPro,
   })
   async zineCinemaPro(
     @Res({ passthrough: true }) res: Response,

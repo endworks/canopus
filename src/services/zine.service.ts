@@ -25,12 +25,12 @@ export class ZineService {
     );
   }
 
-  public getCinemaPro(res: Response, id: string): Promise<string> {
-    return lastValueFrom(this.client.send<any, any>('cinema/pro', { id })).then(
-      (response) => {
-        if (response.statusCode) res.statusCode = response.statusCode;
-        return response;
-      },
-    );
+  public getCinemaBasic(res: Response, id: string): Promise<string> {
+    return lastValueFrom(
+      this.client.send<any, any>('cinema/basic', { id }),
+    ).then((response) => {
+      if (response.statusCode) res.statusCode = response.statusCode;
+      return response;
+    });
   }
 }

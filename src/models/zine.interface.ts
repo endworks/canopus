@@ -30,7 +30,7 @@ export class Actor extends Crew {
   character?: string;
 }
 
-export class Movie {
+export class MovieBasic {
   @ApiProperty()
   id: string;
 
@@ -74,7 +74,7 @@ export class Movie {
   source?: string;
 }
 
-export class MoviePro extends Movie {
+export class Movie extends MovieBasic {
   @ApiProperty()
   originalName?: string;
 
@@ -134,6 +134,16 @@ export class Cinema {
   source?: string;
 }
 
+export class CinemaDetailsBasic extends Cinema {
+  @ApiProperty()
+  lastUpdated?: string;
+
+  @ApiProperty({
+    type: [MovieBasic],
+  })
+  movies: MovieBasic[];
+}
+
 export class CinemaDetails extends Cinema {
   @ApiProperty()
   lastUpdated?: string;
@@ -142,14 +152,4 @@ export class CinemaDetails extends Cinema {
     type: [Movie],
   })
   movies: Movie[];
-}
-
-export class CinemaDetailsPro extends Cinema {
-  @ApiProperty()
-  lastUpdated?: string;
-
-  @ApiProperty({
-    type: [MoviePro],
-  })
-  movies: MoviePro[];
 }

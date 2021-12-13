@@ -153,3 +153,11 @@ export class CinemaDetails extends Cinema {
   })
   movies: Movie[];
 }
+
+export class ErrorStatus {
+  @ApiProperty()
+  statusCode: number;
+
+  @ApiProperty()
+  message: string;
+}

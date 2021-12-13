@@ -33,4 +33,13 @@ export class ZineService {
       return response;
     });
   }
+
+  public updateAll(res: Response): Promise<string> {
+    return lastValueFrom(this.client.send<any, any>('updateAll', {})).then(
+      (response) => {
+        if (response.statusCode) res.statusCode = response.statusCode;
+        return response;
+      },
+    );
+  }
 }

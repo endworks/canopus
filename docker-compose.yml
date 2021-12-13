@@ -17,6 +17,15 @@ services:
     depends_on:
       - canopus
 
+  canopus-zine:
+    image: ghcr.io/drkcat/canopus-zine:latest
+    ports:
+      - 8878:8878
+    networks:
+      - canopus
+    depends_on:
+      - canopus
+
 networks:
   canopus:
     driver: bridge

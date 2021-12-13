@@ -4,6 +4,7 @@ import {
   Cinema,
   CinemaDetailsBasic,
   CinemaDetails,
+  ErrorStatus,
 } from '../models/zine.interface';
 import { ZineService } from '../services/zine.service';
 import { Response } from 'express';
@@ -54,5 +55,18 @@ export class ZineController {
     @Param('id') id: string,
   ) {
     return this.zineService.getCinemaBasic(res, id);
+  }
+
+  @Get('updateAll')
+  @ApiOperation({
+    summary: 'Update all movies for all cinemas and caches them',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Return status code',
+    type: ErrorStatus,
+  })
+  async zineUpdateAll(@Res({ passthrough: true }) res: Response) {
+    return this.zineService.updateAll(res);
   }
 }

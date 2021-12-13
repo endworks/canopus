@@ -37,6 +37,9 @@ export class MovieBasic {
   @ApiProperty()
   name: string;
 
+  @ApiProperty()
+  specialEdition: string;
+
   @ApiProperty({
     type: [Session],
   })

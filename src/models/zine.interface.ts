@@ -157,10 +157,10 @@ export class CinemaDetails extends Cinema {
   movies: Movie[];
 }
 
-export class ErrorStatus {
+export class CacheData {
   @ApiProperty()
-  statusCode: number;
+  cacheSize: string;
 
   @ApiProperty()
-  message: string;
+  caches: string[];
 }

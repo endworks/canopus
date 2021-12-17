@@ -4,7 +4,7 @@ import {
   Cinema,
   CinemaDetailsBasic,
   CinemaDetails,
-  ErrorStatus,
+  CacheData,
 } from '../models/zine.interface';
 import { ZineService } from '../services/zine.service';
 import { Response } from 'express';
@@ -57,6 +57,19 @@ export class ZineController {
     return this.zineService.getCinemaBasic(res, id);
   }
 
+  @Get('cached')
+  @ApiOperation({
+    summary: 'Get cached data IDs',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Return status code',
+    type: CacheData,
+  })
+  async zineCached(@Res({ passthrough: true }) res: Response) {
+    return this.zineService.cached(res);
+  }
+
   @Get('updateAll')
   @ApiOperation({
     summary: 'Update all movies for all cinemas and caches them',
@@ -64,7 +77,7 @@ export class ZineController {
   @ApiResponse({
     status: 200,
     description: 'Return status code',
-    type: ErrorStatus,
+    type: CacheData,
   })
   async zineUpdateAll(@Res({ passthrough: true }) res: Response) {
     return this.zineService.updateAll(res);

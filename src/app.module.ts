@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ClientsModule, Transport } from '@nestjs/microservices';
+import { RAEController } from './controllers/rae.controller';
 import { ZaragozaController } from './controllers/zaragoza.controller';
 import { ZineController } from './controllers/zine.controller';
+import { RAEService } from './services/rae.service';
 import { ZaragozaService } from './services/zaragoza.service';
 import { ZineService } from './services/zine.service';
 
@@ -30,9 +32,17 @@ import { ZineService } from './services/zine.service';
           port: 8878,
         },
       },
+      {
+        name: 'RAE_SERVICE',
+        transport: Transport.TCP,
+        options: {
+          host: process.env.RAE_SERVICE_HOST,
+          port: 8879,
+        },
+      },
     ]),
   ],
-  controllers: [ZaragozaController, ZineController],
-  providers: [ZaragozaService, ZineService],
+  controllers: [ZaragozaController, ZineController, RAEController],
+  providers: [ZaragozaService, ZineService, RAEService],
 })
 export class AppModule {}

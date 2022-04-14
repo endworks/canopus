@@ -13,7 +13,7 @@ export class RAEController {
 
   @Get('getMediaUrls/:tweetId')
   @ApiOperation({ summary: 'Get media urls by tweet ID' })
-  @ApiParam({ name: 'tweetId', type: String })
+  @ApiParam({ name: 'tweetId', type: Number })
   @ApiResponse({
     status: 200,
     description: 'Return media urls by tweet ID',
@@ -21,7 +21,7 @@ export class RAEController {
   })
   async termSearch(
     @Res({ passthrough: true }) res: Response,
-    @Param('tweetId') tweetId: string,
+    @Param('tweetId') tweetId: number,
   ) {
     return this.twitterDownloaderService.getMediaUrls(res, tweetId);
   }

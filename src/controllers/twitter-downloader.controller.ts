@@ -6,7 +6,7 @@ import { TweetMediaResults } from 'src/models/twitter-downloader.interface';
 
 @Controller('twitter-downloader')
 @ApiTags('twitter-downloader')
-export class RAEController {
+export class TwitterDownloaderController {
   constructor(
     private readonly twitterDownloaderService: TwitterDownloaderService,
   ) {}

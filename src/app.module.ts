@@ -4,6 +4,7 @@ import { ClientsModule, Transport } from '@nestjs/microservices';
 import { RAEController } from './controllers/rae.controller';
 import { ZaragozaController } from './controllers/zaragoza.controller';
 import { ZineController } from './controllers/zine.controller';
+import { TwitterDownloaderController } from './controllers/twitter-downloader.controller';
 import { RAEService } from './services/rae.service';
 import { ZaragozaService } from './services/zaragoza.service';
 import { ZineService } from './services/zine.service';
@@ -50,7 +51,17 @@ import { ZineService } from './services/zine.service';
       },
     ]),
   ],
-  controllers: [ZaragozaController, ZineController, RAEController],
-  providers: [ZaragozaService, ZineService, RAEService],
+  controllers: [
+    TwitterDownloaderController,
+    ZaragozaController,
+    ZineController,
+    RAEController,
+  ],
+  providers: [
+    TwitterDownloaderController,
+    ZaragozaService,
+    ZineService,
+    RAEService,
+  ],
 })
 export class AppModule {}

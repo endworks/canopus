@@ -8,6 +8,7 @@ import { TwitterDownloaderController } from './controllers/twitter-downloader.co
 import { RAEService } from './services/rae.service';
 import { ZaragozaService } from './services/zaragoza.service';
 import { ZineService } from './services/zine.service';
+import { TwitterDownloaderService } from './services/twitter-downloader.service';
 
 @Module({
   imports: [
@@ -58,7 +59,7 @@ import { ZineService } from './services/zine.service';
     RAEController,
   ],
   providers: [
-    TwitterDownloaderController,
+    TwitterDownloaderService,
     ZaragozaService,
     ZineService,
     RAEService,

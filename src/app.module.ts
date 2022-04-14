@@ -17,6 +17,14 @@ import { ZineService } from './services/zine.service';
     }),
     ClientsModule.register([
       {
+        name: 'TWITTER_DOWNLOADER_SERVICE',
+        transport: Transport.TCP,
+        options: {
+          host: process.env.TWITTER_DOWNLOADER_SERVICE_HOST,
+          port: 8876,
+        },
+      },
+      {
         name: 'ZARAGOZA_SERVICE',
         transport: Transport.TCP,
         options: {

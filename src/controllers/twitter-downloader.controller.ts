@@ -4,7 +4,7 @@ import { Response } from 'express';
 import { TwitterDownloaderService } from 'src/services/twitter-downloader.service';
 import { TweetMediaResults } from 'src/models/twitter-downloader.interface';
 
-@Controller('twitter-downloader')
+@Controller('twdl')
 @ApiTags('twitter-downloader')
 export class TwitterDownloaderController {
   constructor(

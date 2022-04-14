@@ -1,8 +1,6 @@
 import { Controller, Get, Param, Res } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
-import { RAEService } from 'src/services/rae.service';
-import { TermSearchResults } from 'src/models/rae.interface';
 import { TwitterDownloaderService } from 'src/services/twitter-downloader.service';
 import { TweetMediaResults } from 'src/models/twitter-downloader.interface';
 

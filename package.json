@@ -7,13 +7,13 @@
     "email": "endernull@icloud.com",
     "url": "https://github.com/ender-null"
   },
-  "homepage": "https://github.com/drkcat/canopus",
+  "homepage": "https://github.com/endworks/canopus",
   "repository": {
     "type": "git",
-    "url": "git+ssh://git@github.com/drkcat/canopus.git"
+    "url": "git+ssh://git@github.com/endworks/canopus.git"
   },
   "bugs": {
-    "url": "https://github.com/drkcat/canopus/issues"
+    "url": "https://github.com/endworks/canopus/issues"
   },
   "license": "MIT",
   "scripts": {

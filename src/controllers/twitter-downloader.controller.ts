@@ -13,7 +13,7 @@ export class TwitterDownloaderController {
 
   @Get('getMediaUrls/:tweetId')
   @ApiOperation({ summary: 'Get media urls by tweet ID' })
-  @ApiParam({ name: 'tweetId', type: Number })
+  @ApiParam({ name: 'tweetId', type: String })
   @ApiResponse({
     status: 200,
     description: 'Return media urls by tweet ID',
@@ -21,7 +21,7 @@ export class TwitterDownloaderController {
   })
   async termSearch(
     @Res({ passthrough: true }) res: Response,
-    @Param('tweetId') tweetId: number,
+    @Param('tweetId') tweetId: string,
   ) {
     return this.twitterDownloaderService.getMediaUrls(res, tweetId);
   }

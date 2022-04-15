@@ -7,7 +7,7 @@ import { Response } from 'express';
 export class TwitterDownloaderService {
   @Inject('TWITTER_DOWNLOADER_SERVICE') private client: ClientProxy;
 
-  public getMediaUrls(res: Response, tweetId: number): Promise<string> {
+  public getMediaUrls(res: Response, tweetId: string): Promise<string> {
     return lastValueFrom(
       this.client.send<any, any>('getMediaUrls', { tweetId }),
     ).then((response) => {

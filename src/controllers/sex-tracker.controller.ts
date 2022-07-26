@@ -7,6 +7,7 @@ import {
   ApiTags,
   getSchemaPath,
 } from '@nestjs/swagger';
+import { Response } from 'express';
 import { AuthBody, GoogleAuthResult } from 'src/models/sex-tracker.interface';
 import { SexTrackerService } from 'src/services/sex-tracker.service';
 

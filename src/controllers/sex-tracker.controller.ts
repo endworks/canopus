@@ -23,7 +23,7 @@ export class SexTrackerController {
     type: [AuthBody],
     schema: {
       $ref: getSchemaPath(AuthBody),
-      example: [{ username: 'john', password: 'changeme' }],
+      example: { username: 'john', password: 'changeme' },
     },
   })
   @ApiResponse({

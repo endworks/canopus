@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ClientsModule, Transport } from '@nestjs/microservices';
+import { LocalStrategy } from './auth/local.strategy';
 import { RAEController } from './controllers/rae.controller';
 import { SexTrackerController } from './controllers/sex-tracker.controller';
 import { TwitterDownloaderController } from './controllers/twitter-downloader.controller';
@@ -75,6 +76,7 @@ import { ZineService } from './services/zine.service';
     ZineService,
     RAEService,
     SexTrackerService,
+    LocalStrategy,
   ],
 })
 export class AppModule {}

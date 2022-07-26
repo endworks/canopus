@@ -10,17 +10,10 @@ export class SexTrackerService {
     private readonly client: ClientProxy,
   ) {}
 
-  public validateUser(
-    res: Response,
-    username: string,
-    password: string,
-  ): Promise<string> {
+  public validateUser(username: string, password: string): Promise<string> {
     return lastValueFrom(
       this.client.send<any, any>('validateUser', { username, password }),
-    ).then((response) => {
-      if (response.statusCode) res.statusCode = response.statusCode;
-      return response;
-    });
+    ).then((response) => response);
   }
 
   public login(res: Response, user: any): Promise<string> {

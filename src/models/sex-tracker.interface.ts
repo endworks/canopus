@@ -9,3 +9,7 @@ export class AuthBody {
   username: string;
   password: string;
 }
+
+export interface AuthBodySchema {
+    ...AuthBody
+}

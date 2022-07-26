@@ -1,7 +1,12 @@
 import { Controller, Post, Request, Res, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { Response } from 'express';
+import {
+  ApiBody,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+  getSchemaPath,
+} from '@nestjs/swagger';
 import { AuthBody, GoogleAuthResult } from 'src/models/sex-tracker.interface';
 import { SexTrackerService } from 'src/services/sex-tracker.service';
 
@@ -13,7 +18,13 @@ export class SexTrackerController {
   @UseGuards(AuthGuard('local'))
   @Post('auth')
   @ApiOperation({ summary: 'auth' })
-  @ApiBody({ type: [AuthBody] })
+  @ApiBody({
+    type: [AuthBody],
+    schema: {
+      $ref: getSchemaPath(AuthBody),
+      example: [{ username: 'john', password: 'changeme' }],
+    },
+  })
   @ApiResponse({
     status: 200,
     description: 'response',

@@ -113,17 +113,17 @@ export class Activity {
   partner: number;
 
   @ApiProperty({
-    type: ActivityType,
+    type: () => ActivityType,
   })
   type: ActivityType;
 
   @ApiProperty({
-    type: BirthControl,
+    type: () => BirthControl,
   })
   birth_control: BirthControl;
 
   @ApiProperty({
-    type: BirthControl,
+    type: () => BirthControl,
   })
   partner_birth_control?: BirthControl;
 
@@ -131,7 +131,7 @@ export class Activity {
   date: number;
 
   @ApiProperty({
-    type: [Practice],
+    type: () => [Practice],
   })
   practices: Practice[];
 
@@ -151,12 +151,12 @@ export class Activity {
   partner_orgasms?: number;
 
   @ApiProperty({
-    type: Place,
+    type: () => Place,
   })
   place: Place;
 
   @ApiProperty({
-    type: ActivityInitiator,
+    type: () => ActivityInitiator,
   })
   initiator: ActivityInitiator;
 
@@ -166,7 +166,7 @@ export class Activity {
 
 export class ActivityResult {
   @ApiProperty({
-    type: Activity,
+    type: () => Activity,
   })
   activities: Activity[];
 }
@@ -176,7 +176,7 @@ export class Partner {
   id: number;
 
   @ApiProperty({
-    type: Gender,
+    type: () => Gender,
   })
   sex: Gender;
 

@@ -9,8 +9,8 @@ import {
 import { ZineService } from '../services/zine.service';
 import { Response } from 'express';
 
+@ApiTags('Zine, cinemas and movies')
 @Controller('zine')
-@ApiTags('zine')
 export class ZineController {
   constructor(private readonly zineService: ZineService) {}
 

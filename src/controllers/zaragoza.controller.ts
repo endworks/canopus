@@ -4,8 +4,8 @@ import { Line, Station } from '../models/zaragoza.interface';
 import { ZaragozaService } from '../services/zaragoza.service';
 import { Response } from 'express';
 
+@ApiTags('Zaragoza')
 @Controller('zgz')
-@ApiTags('zaragoza')
 export class ZaragozaController {
   constructor(private readonly zaragozaService: ZaragozaService) {}
 

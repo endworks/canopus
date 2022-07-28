@@ -4,8 +4,8 @@ import { Response } from 'express';
 import { RAEService } from 'src/services/rae.service';
 import { TermSearchResults } from 'src/models/rae.interface';
 
+@ApiTags('RAE definitions')
 @Controller('rae')
-@ApiTags('rae')
 export class RAEController {
   constructor(private readonly raeService: RAEService) {}
 

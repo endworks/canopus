@@ -15,12 +15,23 @@ async function bootstrap() {
     )
     .setContact(
       process.env.npm_package_author_name,
-      process.env.npm_package_author_url,
+      process.env.npm_package_homepage,
       process.env.npm_package_author_email,
     )
     .build();
   const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('/', app, document);
+  SwaggerModule.setup('/', app, document, {
+    customSiteTitle: process.env.npm_package_name,
+    uiConfig: {
+      defaultModelsExpandDepth: -1,
+      filter: true,
+      syntaxHighlight: {
+        activate: true,
+        theme: 'monokai',
+      },
+      deepLinking: true,
+    },
+  });
   await app.listen(3000);
 }
 bootstrap();

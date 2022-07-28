@@ -118,19 +118,6 @@ export class SexTrackerController {
     return this.sexTrackerService.activityById(res, id);
   }
 
-  @Delete('activity/:id')
-  @ApiOperation({ summary: 'delete activity by id' })
-  @ApiResponse({
-    status: 200,
-    description: 'deleted activity by id',
-  })
-  async deleteActivityById(
-    @Res({ passthrough: true }) res: Response,
-    @Param('id') id: number,
-  ) {
-    return this.sexTrackerService.deleteActivityById(res, id);
-  }
-
   @Patch('activity/:id')
   @ApiOperation({ summary: 'update activity by id' })
   @ApiBody({
@@ -166,5 +153,18 @@ export class SexTrackerController {
     @Body() body,
   ) {
     return this.sexTrackerService.updateActivityById(res, id, body);
+  }
+
+  @Delete('activity/:id')
+  @ApiOperation({ summary: 'delete activity by id' })
+  @ApiResponse({
+    status: 200,
+    description: 'deleted activity by id',
+  })
+  async deleteActivityById(
+    @Res({ passthrough: true }) res: Response,
+    @Param('id') id: number,
+  ) {
+    return this.sexTrackerService.deleteActivityById(res, id);
   }
 }

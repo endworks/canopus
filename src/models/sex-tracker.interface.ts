@@ -6,12 +6,11 @@ export class GoogleAuthResult {
 }
 
 export class AuthBody {
+  @ApiProperty()
   username: string;
-  password: string;
-}
 
-export class ActivityResult {
-  activities: Activity[];
+  @ApiProperty()
+  password: string;
 }
 
 export enum Practice {
@@ -107,28 +106,89 @@ export enum SafetyLevel {
 }
 
 export class Activity {
+  @ApiProperty()
   id?: number;
+
+  @ApiProperty()
   partner: number;
+
+  @ApiProperty({
+    type: ActivityType,
+  })
   type: ActivityType;
+
+  @ApiProperty({
+    type: BirthControl,
+  })
   birth_control: BirthControl;
+
+  @ApiProperty({
+    type: BirthControl,
+  })
   partner_birth_control?: BirthControl;
+
+  @ApiProperty()
   date: number;
+
+  @ApiProperty({
+    type: [Practice],
+  })
   practices: Practice[];
+
+  @ApiProperty()
   location?: string | null;
+
+  @ApiProperty()
   notes?: string | null;
+
+  @ApiProperty()
   duration?: number;
+
+  @ApiProperty()
   orgasms?: number;
+
+  @ApiProperty()
   partner_orgasms?: number;
+
+  @ApiProperty({
+    type: Place,
+  })
   place: Place;
+
+  @ApiProperty({
+    type: ActivityInitiator,
+  })
   initiator: ActivityInitiator;
+
+  @ApiProperty()
   rating: number;
 }
 
-export interface Partner {
+export class ActivityResult {
+  @ApiProperty({
+    type: Activity,
+  })
+  activities: Activity[];
+}
+
+export class Partner {
+  @ApiProperty()
   id: number;
+
+  @ApiProperty({
+    type: Gender,
+  })
   sex: Gender;
+
+  @ApiProperty()
   gender: any;
+
+  @ApiProperty()
   name: string;
+
+  @ApiProperty()
   meeting_date: number;
+
+  @ApiProperty()
   encounters?: number;
 }

@@ -131,7 +131,8 @@ export class Activity {
   date: number;
 
   @ApiProperty({
-    type: [Practice],
+    enum: Practice,
+    isArray: true,
   })
   practices: Practice[];
 

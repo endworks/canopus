@@ -21,7 +21,7 @@ async function bootstrap() {
     .build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('/', app, document, {
-    customSiteTitle: process.env.npm_package_name,
+    customSiteTitle: `${process.env.npm_package_name} (${process.env.npm_package_version})`,
     uiConfig: {
       defaultModelsExpandDepth: -1,
       filter: true,

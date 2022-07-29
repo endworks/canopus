@@ -41,7 +41,7 @@ export class SexTrackerController {
   @Post('auth')
   @ApiOperation({ summary: 'auth' })
   @ApiBody({
-    type: [AuthBody],
+    type: AuthBody,
     schema: {
       $ref: getSchemaPath(AuthBody),
       example: { username: 'john', password: 'changeme' },

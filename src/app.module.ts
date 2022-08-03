@@ -1,14 +1,11 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ClientsModule, Transport } from '@nestjs/microservices';
-import { LocalStrategy } from './auth/local.strategy';
 import { RAEController } from './controllers/rae.controller';
-import { SexTrackerController } from './controllers/sex-tracker.controller';
 import { TwitterDownloaderController } from './controllers/twitter-downloader.controller';
 import { ZaragozaController } from './controllers/zaragoza.controller';
 import { ZineController } from './controllers/zine.controller';
 import { RAEService } from './services/rae.service';
-import { SexTrackerService } from './services/sex-tracker.service';
 import { TwitterDownloaderService } from './services/twitter-downloader.service';
 import { ZaragozaService } from './services/zaragoza.service';
 import { ZineService } from './services/zine.service';
@@ -53,14 +50,6 @@ import { ZineService } from './services/zine.service';
           port: 8876,
         },
       },
-      {
-        name: 'SEX_TRACKER_SERVICE',
-        transport: Transport.TCP,
-        options: {
-          host: process.env.SEX_TRACKER_SERVICE_HOST,
-          port: 8880,
-        },
-      },
     ]),
   ],
   controllers: [
@@ -68,15 +57,12 @@ import { ZineService } from './services/zine.service';
     ZaragozaController,
     ZineController,
     RAEController,
-    SexTrackerController,
   ],
   providers: [
     TwitterDownloaderService,
     ZaragozaService,
     ZineService,
     RAEService,
-    SexTrackerService,
-    LocalStrategy,
   ],
 })
 export class AppModule {}

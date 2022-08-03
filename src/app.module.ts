@@ -23,7 +23,7 @@ import { ZineService } from './services/zine.service';
         transport: Transport.TCP,
         options: {
           host: process.env.ZARAGOZA_SERVICE_HOST,
-          port: 8877,
+          port: 3000,
         },
       },
       {
@@ -31,7 +31,7 @@ import { ZineService } from './services/zine.service';
         transport: Transport.TCP,
         options: {
           host: process.env.ZINE_SERVICE_HOST,
-          port: 8878,
+          port: 3000,
         },
       },
       {
@@ -39,7 +39,7 @@ import { ZineService } from './services/zine.service';
         transport: Transport.TCP,
         options: {
           host: process.env.RAE_SERVICE_HOST,
-          port: 8879,
+          port: 3000,
         },
       },
       {
@@ -47,7 +47,7 @@ import { ZineService } from './services/zine.service';
         transport: Transport.TCP,
         options: {
           host: process.env.TWITTER_DOWNLOADER_SERVICE_HOST,
-          port: 8876,
+          port: 3000,
         },
       },
     ]),

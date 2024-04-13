@@ -1,6 +1,5 @@
 import { HttpService } from '@nestjs/axios';
 import {
-  CACHE_MANAGER,
   HttpStatus,
   Inject,
   Injectable,
@@ -33,6 +32,7 @@ import {
   TheMovieDBMovie,
   TheMovieDBSearchResult,
 } from 'src/models/themoviedb.interface';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 
 @Injectable()
 export class CinemaService {

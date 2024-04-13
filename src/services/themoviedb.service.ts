@@ -1,4 +1,4 @@
-import { CACHE_MANAGER, Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { lastValueFrom } from 'rxjs';
 import { Cache } from 'cache-manager';
@@ -9,6 +9,7 @@ import {
   TheMovieDBSearch,
   TheMovieDBVideos,
 } from 'src/models/themoviedb.interface';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 
 const API_URL = 'https://api.themoviedb.org/3';
 

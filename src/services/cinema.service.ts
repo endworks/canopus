@@ -75,12 +75,10 @@ export class CinemaService {
           case 'abcgranturia':
           case 'abcelsaler':
           case 'abcgandia':
-            movies = await this.getMoviesReservaEntradas(id);
-            break;
           case 'palafox':
           case 'aragonia':
           case 'cervantes':
-            movies = await this.getMoviesPalafox(id);
+            movies = await this.getMoviesReservaEntradas(id);
             break;
           case 'grancasa':
           case 'venecia':

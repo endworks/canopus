@@ -164,7 +164,7 @@ jobs:
             docker pull ghcr.io/${{ github.repository }}:${{ env.TAG }}
             docker stop ${{ env.CONTAINER_NAME }}
             docker rm ${{ env.CONTAINER_NAME }}
-            docker run --network canopus -p 8878:3000/tcp -e THE_MOVIE_DB_API_KEY='${{ env.THE_MOVIE_DB_API_KEY }}' -ti -d --restart unless-stopped --name ${{ env.IMAGE_NAME }} ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+            docker run --network canopus -p 8878:3000/tcp -e THE_MOVIE_DB_API_KEY='${{ env.THE_MOVIE_DB_API_KEY }}' -ti -d --restart unless-stopped --name ${{ env.CONTAINER_NAME }} ghcr.io/${{ github.repository }}:${{ env.TAG }}
       - name: Generate summary
         id: generate-summary
         run: |

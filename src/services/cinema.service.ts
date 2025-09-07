@@ -312,8 +312,20 @@ export class CinemaService {
 
   async cached(): Promise<CacheData | ErrorResponse> {
     try {
-      const keys = await (this.cacheManager as any).store.keys();
-      const caches = keys.sort();
+      const allKeys = await Promise.all(
+        this.cacheManager.stores.map(async (store: any) => {
+          if (store?.keys) {
+            try {
+              return await store.keys('*');
+            } catch (err) {
+              console.error('Error in store.keys():', err);
+              return [];
+            }
+          }
+          return [];
+        }),
+      );
+      const caches = allKeys.flat().sort();
       return {
         cacheSize: `${caches.length}/${cacheMaxSize}`,
         caches,
@@ -343,8 +355,20 @@ export class CinemaService {
           });
         }),
       );
-      const keys = await (this.cacheManager as any).store.keys();
-      const caches = keys.sort();
+      const allKeys = await Promise.all(
+        this.cacheManager.stores.map(async (store: any) => {
+          if (store?.keys) {
+            try {
+              return await store.keys('*');
+            } catch (err) {
+              console.error('Error in store.keys():', err);
+              return [];
+            }
+          }
+          return [];
+        }),
+      );
+      const caches = allKeys.flat().sort();
       return {
         cacheSize: `${caches.length}/${cacheMaxSize}`,
         caches,

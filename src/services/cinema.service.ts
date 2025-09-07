@@ -7,7 +7,6 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { Cache } from 'cache-manager';
 import {
   Cinema,
   CinemaDetailsBasic,
@@ -32,7 +31,7 @@ import {
   TheMovieDBMovie,
   TheMovieDBSearchResult,
 } from 'src/models/themoviedb.interface';
-import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache, CACHE_MANAGER } from '@nestjs/cache-manager';
 
 @Injectable()
 export class CinemaService {
@@ -313,7 +312,7 @@ export class CinemaService {
 
   async cached(): Promise<CacheData | ErrorResponse> {
     try {
-      const keys = await this.cacheManager.store.keys();
+      const keys = await (this.cacheManager as any).store.keys();
       const caches = keys.sort();
       return {
         cacheSize: `${caches.length}/${cacheMaxSize}`,
@@ -332,7 +331,7 @@ export class CinemaService {
 
   async updateAll(): Promise<CacheData | ErrorResponse> {
     try {
-      await this.cacheManager.reset();
+      await this.cacheManager.clear();
       const cinemas = await this.getCinemas();
       if ('statusCode' in cinemas) return;
       await Promise.all(
@@ -344,7 +343,7 @@ export class CinemaService {
           });
         }),
       );
-      const keys = await this.cacheManager.store.keys();
+      const keys = await (this.cacheManager as any).store.keys();
       const caches = keys.sort();
       return {
         cacheSize: `${caches.length}/${cacheMaxSize}`,

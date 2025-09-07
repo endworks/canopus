@@ -1,6 +1,5 @@
 import { HttpService } from '@nestjs/axios';
 import {
-  CACHE_MANAGER,
   HttpStatus,
   Inject,
   Injectable,
@@ -8,6 +7,7 @@ import {
   NotFoundException,
   NotImplementedException
 } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { lastValueFrom } from 'rxjs';
 import { capitalize, capitalizeEachWord } from '../utils';
 import {
@@ -34,9 +34,8 @@ export class BusService {
   // Stations
   public async getStations(): Promise<BusStationsResponse | ErrorResponse> {
     try {
-      const cache: BusStationsResponse = await this.cacheManager.get(
-        'bus/stations'
-      );
+      const cache: BusStationsResponse =
+        await this.cacheManager.get('bus/stations');
       if (cache) return cache;
       const url = 'https://zgzpls.firebaseio.com/bus/stations.json';
       const response = await lastValueFrom(this.httpService.get(url));

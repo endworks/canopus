@@ -205,10 +205,9 @@ export class BusService {
                 : 1;
             return sort;
           } else {
-            if (a.time.includes('parada')) {
+            if (a.time.toLowerCase().includes('parada')) {
               return -1;
-            }
-            if (b.time.includes('Sin')) {
+            } else if (b.time.toLowerCase().includes('estimación')) {
               return 1;
             }
           }

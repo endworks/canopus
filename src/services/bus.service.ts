@@ -1,23 +1,24 @@
 import { HttpService } from '@nestjs/axios';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import {
   HttpStatus,
   Inject,
   Injectable,
   InternalServerErrorException,
-  NotFoundException,
-  NotImplementedException
+  NotFoundException
 } from '@nestjs/common';
-import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import axios from 'axios';
+import { Cache } from 'cache-manager';
+import * as cheerio from 'cheerio';
 import { lastValueFrom } from 'rxjs';
-import { capitalize, capitalizeEachWord } from '../utils';
 import {
-  BusStationResponse,
   BusLineResponse,
   BusLinesResponse,
+  BusStationResponse,
   BusStationsResponse
 } from '../models/bus.interface';
 import { ErrorResponse } from '../models/common.interface';
-import { Cache } from 'cache-manager';
+import { capitalize, capitalizeEachWord } from '../utils';
 
 const busApiURL =
   'https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/transporte-urbano/poste-autobus/tuzsa-';
@@ -148,15 +149,30 @@ export class BusService {
           });
           resp.times = [...times];
         } else if (source === 'web') {
+          const response = await axios.get(url);
+          const $ = cheerio.load(response.data);
+          const seenLines = new Set<string>();
+
+          const rows = $('table').eq(1).find('tr');
+
+          rows.each((_, row) => {
+            const cells = $(row).find('td.digital');
+            if (cells.length >= 3) {
+              const line = $(cells[0]).text().trim();
+              const destination = $(cells[1]).text().trim().replace('�', 'É');
+              const time = $(cells[2]).text().trim();
+
+              if (line) {
+                resp.times.push({ line, destination, time });
+                seenLines.add(line);
+              }
+            }
+          });
+
           resp.source = source;
           resp.sourceUrl = url;
-          throw new NotImplementedException(
-            {
-              statusCode: HttpStatus.NOT_IMPLEMENTED,
-              message: `#TODO`
-            },
-            `#TODO`
-          );
+          resp.lines = Array.from(seenLines).sort();
+          resp.lastUpdated = new Date().toISOString();
         } else if (source === 'backup') {
           return { ...backup, source, sourceUrl: null };
         } else {

@@ -7,7 +7,6 @@ import {
   InternalServerErrorException,
   NotFoundException
 } from '@nestjs/common';
-import axios from 'axios';
 import { Cache } from 'cache-manager';
 import * as cheerio from 'cheerio';
 import { lastValueFrom } from 'rxjs';
@@ -67,9 +66,9 @@ export class BusService {
         ? busWebURL + id
         : `${busApiURL + id}.json?srsname=wgs84`;
 
-    let backup;
+    let backup = null;
+    const backupUrl = `https://zgzpls.firebaseio.com/bus/stations/tuzsa-${id}.json`;
     try {
-      const backupUrl = `https://zgzpls.firebaseio.com/bus/stations/tuzsa-${id}.json`;
       const backupResponse = await lastValueFrom(
         this.httpService.get(backupUrl)
       );
@@ -99,7 +98,7 @@ export class BusService {
         }
 
         if (!source || source === 'api') {
-          resp.source = source;
+          resp.source = 'api';
           resp.sourceUrl = url;
           resp.lastUpdated = response.data.lastUpdated;
           resp.street = capitalizeEachWord(
@@ -142,14 +141,13 @@ export class BusService {
               } else {
                 times.push({
                   ...transport,
-                  time: capitalize(destination[element])
+                  time: capitalize(fixWords(destination[element]))
                 });
               }
             });
           });
           resp.times = [...times];
         } else if (source === 'web') {
-          const response = await axios.get(url);
           const $ = cheerio.load(response.data);
           const seenLines = new Set<string>();
 
@@ -159,8 +157,23 @@ export class BusService {
             const cells = $(row).find('td.digital');
             if (cells.length >= 3) {
               const line = $(cells[0]).text().trim();
-              const destination = fixWords($(cells[1]).text().trim());
-              const time = $(cells[2]).text().trim();
+              const destination = capitalizeEachWord(
+                fixWords($(cells[1]).text().trim())
+              );
+              let time = $(cells[2])
+                .text()
+                .trim()
+                .replace(/(^,)|(,$)/g, '')
+                .replace(/(^\.)|(\.$)/g, '');
+              if (time.includes('minutos')) {
+                time = `${time
+                  .replace(' minutos', '')
+                  .replace(/(^\.)|(\.$)/g, '')} min.`;
+              } else if (time?.includes('Sin estimacin')) {
+                time = capitalize(fixWords(time.replace(/(^\.)|(\.$)/g, '')));
+              } else {
+                time = capitalize(fixWords(time));
+              }
 
               if (line) {
                 resp.times.push({ line, destination, time });
@@ -169,12 +182,12 @@ export class BusService {
             }
           });
 
-          resp.source = source;
+          resp.source = 'web';
           resp.sourceUrl = url;
           resp.lines = Array.from(seenLines).sort();
           resp.lastUpdated = new Date().toISOString();
         } else if (source === 'backup') {
-          return { ...backup, source, sourceUrl: null };
+          return { ...backup, source: 'backup', sourceUrl: backupUrl };
         } else {
           throw new NotFoundException(
             {
@@ -202,8 +215,7 @@ export class BusService {
           return -1;
         });
 
-        const updateUrl = `https://zgzpls.firebaseio.com/bus/stations/tuzsa-${id}.json`;
-        await this.httpService.put(updateUrl, resp);
+        await this.httpService.put(backupUrl, resp);
         await this.cacheManager.set(`bus/stations/${id}/${source}`, resp);
 
         return resp;

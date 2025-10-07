@@ -5,14 +5,14 @@ WORKDIR /usr/src/app
 COPY package.json ./
 COPY yarn.lock ./
 
-RUN yarn
+RUN yarn install
 
 COPY . .
 
-RUN yarn run build
+RUN yarn build
 
 FROM node:alpine AS production
-LABEL org.opencontainers.image.source https://github.com/drkcat/canopus-zaragoza
+LABEL org.opencontainers.image.source https://github.com/endworks/canopus-zaragoza
 
 WORKDIR /usr/src/app
 
@@ -25,4 +25,4 @@ COPY --from=builder /usr/src/app/dist ./dist
 
 EXPOSE 3000/tcp
 
-CMD ["yarn", "run", "start:prod"]
+CMD ["yarn", "start:prod"]

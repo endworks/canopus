@@ -18,7 +18,7 @@ import {
   BusStationsResponse
 } from '../models/bus.interface';
 import { ErrorResponse } from '../models/common.interface';
-import { capitalize, capitalizeEachWord } from '../utils';
+import { capitalize, capitalizeEachWord, fixWords } from '../utils';
 
 const busApiURL =
   'https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/transporte-urbano/poste-autobus/tuzsa-';
@@ -117,9 +117,11 @@ export class BusService {
               const transport = {
                 line: destination.linea,
                 destination: capitalizeEachWord(
-                  destination.destino
-                    .replace(/(^,)|(,$)/g, '')
-                    .replace(/(^\.)|(\.$)/g, ''),
+                  fixWords(
+                    destination.destino
+                      .replace(/(^,)|(,$)/g, '')
+                      .replace(/(^\.)|(\.$)/g, '')
+                  ),
                   true
                 )
               };
@@ -134,9 +136,7 @@ export class BusService {
                 times.push({
                   ...transport,
                   time: capitalize(
-                    destination[element]
-                      .replace(/(^\.)|(\.$)/g, '')
-                      .replace('cin', 'ción')
+                    fixWords(destination[element].replace(/(^\.)|(\.$)/g, ''))
                   )
                 });
               } else {
@@ -159,7 +159,7 @@ export class BusService {
             const cells = $(row).find('td.digital');
             if (cells.length >= 3) {
               const line = $(cells[0]).text().trim();
-              const destination = $(cells[1]).text().trim().replace('�', 'É');
+              const destination = fixWords($(cells[1]).text().trim());
               const time = $(cells[2]).text().trim();
 
               if (line) {

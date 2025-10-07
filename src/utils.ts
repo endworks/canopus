@@ -33,3 +33,22 @@ export const isInt = (number: number | string) => {
   }
   return !isNaN(parseFloat(number));
 };
+
+const wordReplacements: Record<string, string> = {
+  aragn: 'aragón',
+  jess: 'jesús',
+  peaflor: 'peñaflor',
+  via: 'vía',
+  espaa: 'españa',
+  estimacin: 'estimación'
+};
+
+export const fixWords = (text: string): string => {
+  let fixed = text.trim().toLocaleLowerCase();
+  fixed = fixed.replace(/�/g, '');
+  for (const [wrong, correct] of Object.entries(wordReplacements)) {
+    const regex = new RegExp(`\\b${wrong}\\b`, 'gi');
+    fixed = fixed.replace(regex, correct);
+  }
+  return fixed;
+};

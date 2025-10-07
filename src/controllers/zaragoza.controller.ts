@@ -1,8 +1,8 @@
 import { Controller, Get, Param, Query, Res } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Response } from 'express';
 import { Line, Station } from '../models/zaragoza.interface';
 import { ZaragozaService } from '../services/zaragoza.service';
-import { Response } from 'express';
 
 @ApiTags('Zaragoza')
 @Controller('zgz')

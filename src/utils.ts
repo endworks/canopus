@@ -1,4 +1,4 @@
-export const capitalize = (text: string, setLowercase?: boolean) => {
+export const capitalize = (text: string, setLowercase: boolean = true) => {
   if (text) {
     if (setLowercase) {
       return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
@@ -9,18 +9,33 @@ export const capitalize = (text: string, setLowercase?: boolean) => {
   return null;
 };
 
-export const capitalizeEachWord = (text: string, setLowercase?: boolean) => {
+export const isRomanNumeral = (word: string): boolean => {
+  return /^[IVXLCDM]+$/.test(word) && word === word.toUpperCase();
+};
+
+const alwaysLowercaseWords = ['y', 'de', 'del'];
+
+export const capitalizeEachWord = (
+  text: string,
+  setLowercase: boolean = true
+) => {
   if (text) {
-    if (text.indexOf(' ') > -1) {
-      const words = text.split(' ');
-      const capitalized = [];
-      words.map((word) => {
-        capitalized.push(capitalize(word, setLowercase));
-      });
-      return capitalized.join(' ');
-    } else {
-      return capitalize(text, setLowercase);
-    }
+    return text
+      .split(' ')
+      .map((word) => {
+        const lower = word.toLowerCase();
+
+        if (alwaysLowercaseWords.includes(lower)) {
+          return lower;
+        }
+
+        if (isRomanNumeral(word)) {
+          return word;
+        }
+
+        return capitalize(word, setLowercase);
+      })
+      .join(' ');
   }
   return null;
 };
@@ -40,7 +55,12 @@ const wordReplacements: Record<string, string> = {
   peaflor: 'peñaflor',
   via: 'vía',
   espaa: 'españa',
-  estimacin: 'estimación'
+  quinto: 'V',
+  aljafera: 'aljafería',
+  minguijn: 'minguijón',
+  pilon: 'pilón',
+  estimacin: 'estimación',
+  n0: 'n'
 };
 
 export const fixWords = (text: string): string => {

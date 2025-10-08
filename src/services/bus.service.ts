@@ -58,7 +58,7 @@ export class BusService {
     source: string
   ): Promise<BusStationResponse | ErrorResponse> {
     const cache: BusStationResponse = await this.cacheManager.get(
-      `bus/stations/${id}/${source}`
+      `bus/stations/${id}/${source ?? 'api'}`
     );
     if (cache) return cache;
     const url =
@@ -114,14 +114,13 @@ export class BusService {
           response.data.destinos.map((destination) => {
             ['primero', 'segundo'].map((element) => {
               const transport = {
-                line: destination.linea,
+                line: capitalize(fixWords(destination.linea)),
                 destination: capitalizeEachWord(
                   fixWords(
                     destination.destino
                       .replace(/(^,)|(,$)/g, '')
                       .replace(/(^\.)|(\.$)/g, '')
-                  ),
-                  true
+                  )
                 )
               };
               if (destination[element].includes('minutos')) {
@@ -131,17 +130,12 @@ export class BusService {
                     .replace(' minutos', '')
                     .replace(/(^\.)|(\.$)/g, '')} min.`
                 });
-              } else if (destination[element]?.includes('Sin estimacin')) {
+              } else {
                 times.push({
                   ...transport,
                   time: capitalize(
                     fixWords(destination[element].replace(/(^\.)|(\.$)/g, ''))
                   )
-                });
-              } else {
-                times.push({
-                  ...transport,
-                  time: capitalize(fixWords(destination[element]))
                 });
               }
             });
@@ -156,7 +150,7 @@ export class BusService {
           rows.each((_, row) => {
             const cells = $(row).find('td.digital');
             if (cells.length >= 3) {
-              const line = $(cells[0]).text().trim();
+              const line = capitalize(fixWords($(cells[0]).text().trim()));
               const destination = capitalizeEachWord(
                 fixWords($(cells[1]).text().trim())
               );
@@ -169,10 +163,8 @@ export class BusService {
                 time = `${time
                   .replace(' minutos', '')
                   .replace(/(^\.)|(\.$)/g, '')} min.`;
-              } else if (time?.includes('Sin estimacin')) {
-                time = capitalize(fixWords(time.replace(/(^\.)|(\.$)/g, '')));
               } else {
-                time = capitalize(fixWords(time));
+                time = capitalize(fixWords(time).replace(/(^\.)|(\.$)/g, ''));
               }
 
               if (line) {
@@ -198,24 +190,22 @@ export class BusService {
           );
         }
         resp.times.sort((a, b) => {
-          if (a.time.includes('min') && b.time.includes('min')) {
-            const sort =
-              parseInt(a.time.split(' ')[0]) < parseInt(b.time.split(' ')[0])
-                ? -1
-                : 1;
-            return sort;
-          } else {
-            if (a.time.toLowerCase().includes('parada')) {
-              return -1;
-            } else if (b.time.toLowerCase().includes('estimación')) {
-              return 1;
-            }
-          }
-          return -1;
+          const normalize = (time: string) => time.trim().toLowerCase();
+          const getWeight = (time: string): number => {
+            if (time.includes('parada')) return 0;
+            if (time.match(/^\d+/)) return parseInt(time);
+            if (time.includes('estimación')) return 9999;
+            return 999;
+          };
+          return getWeight(normalize(a.time)) - getWeight(normalize(b.time));
         });
 
         await this.httpService.put(backupUrl, resp);
-        await this.cacheManager.set(`bus/stations/${id}/${source}`, resp);
+        await this.cacheManager.set(
+          `bus/stations/${id}/${source ?? 'api'}`,
+          resp,
+          10000
+        );
 
         return resp;
       } catch (exception) {

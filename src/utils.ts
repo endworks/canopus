@@ -13,7 +13,7 @@ export const isRomanNumeral = (word: string): boolean => {
   return /^[IVXLCDM]+$/.test(word) && word === word.toUpperCase();
 };
 
-const alwaysLowercaseWords = ['y', 'de', 'del'];
+const alwaysLowercaseWords = ['y', 'de', 'del', 'la'];
 
 export const capitalizeEachWord = (
   text: string,
@@ -30,7 +30,7 @@ export const capitalizeEachWord = (
         }
 
         if (isRomanNumeral(word)) {
-          return word;
+          return word.toUpperCase();
         }
 
         return capitalize(word, setLowercase);

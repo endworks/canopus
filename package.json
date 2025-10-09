@@ -1,6 +1,6 @@
 {
   "name": "canopus",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "I write microservices no one wants",
   "author": {
     "name": "end.works",
@@ -55,7 +55,7 @@
     "@nestjs/testing": "^11.1.6",
     "@types/express": "^5.0.3",
     "@types/jest": "^30.0.0",
-    "@types/node": "^24.7.0",
+    "@types/node": "^24.7.1",
     "@types/passport-local": "^1.0.38",
     "@types/supertest": "^6.0.3",
     "@typescript-eslint/eslint-plugin": "^8.46.0",

@@ -43,16 +43,45 @@ export class Station {
   type?: string;
 }
 
+export class LineGeometry {
+  @ApiProperty()
+  link?: string;
+
+  @ApiProperty()
+  about?: string;
+
+  @ApiProperty()
+  title?: string;
+
+  @ApiProperty()
+  description?: string;
+
+  @ApiProperty()
+  geometry: {
+    type: string;
+    coordinates: string[];
+  };
+}
+
 export class Line {
   @ApiProperty()
   id: string;
 
   @ApiProperty()
-  lastUpdated: string;
-
-  @ApiProperty()
   number: string;
 
   @ApiProperty()
-  routes: string[];
+  name?: string;
+
+  @ApiProperty()
+  color?: string;
+
+  @ApiProperty()
+  stations: LineGeometry[];
+
+  @ApiProperty()
+  hidden: boolean;
+
+  @ApiProperty()
+  lastUpdated: string;
 }

@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ClientProxy } from '@nestjs/microservices';
-import { lastValueFrom } from 'rxjs';
 import { Response } from 'express';
+import { lastValueFrom } from 'rxjs';
 
 @Injectable()
 export class ZaragozaService {
@@ -45,6 +45,15 @@ export class ZaragozaService {
         return response;
       },
     );
+  }
+
+  public getBusLinesUpdate(res: Response): Promise<string> {
+    return lastValueFrom(
+      this.client.send<any, any>('bus/lines/update', {}),
+    ).then((response) => {
+      if (response.statusCode) res.statusCode = response.statusCode;
+      return response;
+    });
   }
 
   public getTramStations(res: Response): Promise<string> {

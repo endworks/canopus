@@ -1,8 +1,14 @@
 import { Controller, Get, Param, Query, Res } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiOperation,
+  ApiParam,
+  ApiQuery,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import { Response } from 'express';
 import { Line, Station } from '../models/zaragoza.interface';
 import { ZaragozaService } from '../services/zaragoza.service';
-import { Response } from 'express';
 
 @ApiTags('Zaragoza')
 @Controller('zgz')
@@ -23,7 +29,7 @@ export class ZaragozaController {
   @Get('bus/stations/:id')
   @ApiOperation({ summary: 'Get bus station by ID' })
   @ApiParam({ name: 'id', type: String })
-  @ApiParam({ name: 'source', enum: ['api', 'web', 'backup'], required: false })
+  @ApiQuery({ name: 'source', enum: ['api', 'web', 'backup'], required: false })
   @ApiResponse({
     status: 200,
     description: 'Return bus station',
@@ -61,6 +67,17 @@ export class ZaragozaController {
     @Param('id') id: string,
   ) {
     return this.zaragozaService.getBusLine(res, id);
+  }
+
+  @Get('bus/lines/update')
+  @ApiOperation({ summary: 'Update bus line data' })
+  @ApiResponse({
+    status: 200,
+    description: 'Return updated bus lines',
+    type: [Line],
+  })
+  async zaragozaBusLinesUpdate(@Res({ passthrough: true }) res: Response) {
+    return this.zaragozaService.getBusLinesUpdate(res);
   }
 
   @Get('tram/stations')

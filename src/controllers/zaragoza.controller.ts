@@ -54,6 +54,17 @@ export class ZaragozaController {
     return this.zaragozaService.getBusLines(res);
   }
 
+  @Get('bus/lines/update')
+  @ApiOperation({ summary: 'Update bus line data' })
+  @ApiResponse({
+    status: 200,
+    description: 'Return updated bus lines',
+    type: [Line],
+  })
+  async zaragozaBusLinesUpdate(@Res({ passthrough: true }) res: Response) {
+    return this.zaragozaService.getBusLinesUpdate(res);
+  }
+
   @Get('bus/lines/:id')
   @ApiOperation({ summary: 'Get bus line by ID' })
   @ApiParam({ name: 'id', type: String })
@@ -67,17 +78,6 @@ export class ZaragozaController {
     @Param('id') id: string,
   ) {
     return this.zaragozaService.getBusLine(res, id);
-  }
-
-  @Get('bus/lines/update')
-  @ApiOperation({ summary: 'Update bus line data' })
-  @ApiResponse({
-    status: 200,
-    description: 'Return updated bus lines',
-    type: [Line],
-  })
-  async zaragozaBusLinesUpdate(@Res({ passthrough: true }) res: Response) {
-    return this.zaragozaService.getBusLinesUpdate(res);
   }
 
   @Get('tram/stations')

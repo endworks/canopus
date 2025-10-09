@@ -1,3 +1,5 @@
+import vm from 'vm';
+
 export const capitalize = (text: string, setLowercase: boolean = true) => {
   if (text) {
     if (setLowercase) {
@@ -14,7 +16,7 @@ export const isRomanNumeral = (word: string): boolean => {
   return /^[IVXLCDM]+$/.test(upper);
 };
 
-const alwaysLowercaseWords = ['y', 'de', 'del', 'la'];
+const alwaysLowercaseWords = ['y', 'a', 'de', 'del', 'la'];
 
 export const capitalizeEachWord = (
   text: string,
@@ -61,7 +63,10 @@ const wordReplacements: Record<string, string> = {
   minguijn: 'minguijón',
   pilon: 'pilón',
   estimacin: 'estimación',
-  n0: 'n'
+  n0: 'n',
+  'Ã“': 'Ó',
+  'Ã': 'Í',
+  'Ã‰': 'É'
 };
 
 export const fixWords = (text: string): string => {
@@ -72,4 +77,30 @@ export const fixWords = (text: string): string => {
     fixed = fixed.replace(regex, correct);
   }
   return fixed;
+};
+
+export const fetchZaragozaLines = async (): Promise<
+  { value: string; label: string }[]
+> => {
+  const response = await fetch(
+    'https://nps.avanzagrupo.com/lineas_zaragoza.js'
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch script: ${response.statusText}`);
+  }
+
+  const scriptContent = await response.text();
+
+  const sandbox: any = {};
+  const context = vm.createContext(sandbox);
+
+  const script = new vm.Script(scriptContent);
+  script.runInContext(context);
+
+  if (!sandbox.ZARAGOZA_LINES) {
+    throw new Error('ZARAGOZA_LINES not defined in script');
+  }
+
+  return sandbox.ZARAGOZA_LINES;
 };

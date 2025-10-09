@@ -17,7 +17,12 @@ import {
   BusStationsResponse
 } from '../models/bus.interface';
 import { ErrorResponse } from '../models/common.interface';
-import { capitalize, capitalizeEachWord, fixWords } from '../utils';
+import {
+  capitalize,
+  capitalizeEachWord,
+  fetchZaragozaLines,
+  fixWords
+} from '../utils';
 
 const busApiURL =
   'https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/transporte-urbano/poste-autobus/tuzsa-';
@@ -312,16 +317,26 @@ export class BusService {
 
       const updatedData: BusLinesResponse = {};
       const response = await lastValueFrom(this.httpService.get(url));
+      const availableLines = await fetchZaragozaLines();
+
       await Promise.all(
         response.data.result.map(async (lineUrl: string) => {
           const resp = await lastValueFrom(this.httpService.get(lineUrl));
           const lineId = lineUrl.split('/').pop();
+          const line = availableLines.find((line) => line.value === lineId);
+          const name = line.label
+            .split(' - ')
+            .slice(1)
+            .map((word) => capitalize(fixWords(word)))
+            .join(' - ');
           updatedData[lineId] = {
             ...backup[lineId],
             id: lineId,
             number: lineId,
+            name,
             stations: resp.data.result,
-            lastUpdated: resp.data.lastUpdated
+            lastUpdated: resp.data.lastUpdated,
+            hidden: Boolean(line)
           };
           const backupLineUrl = `https://zgzpls.firebaseio.com/bus/lines/${lineId}.json`;
           await this.httpService.put(backupLineUrl, updatedData[lineId]);

@@ -1,5 +1,3 @@
-import vm from 'vm';
-
 export const capitalize = (text: string, setLowercase: boolean = true) => {
   if (text) {
     if (setLowercase) {
@@ -79,28 +77,44 @@ export const fixWords = (text: string): string => {
   return fixed;
 };
 
-export const fetchZaragozaLines = async (): Promise<
-  { value: string; label: string }[]
-> => {
-  const response = await fetch(
-    'https://nps.avanzagrupo.com/lineas_zaragoza.js'
-  );
+type ZaragozaLine = { value: string; label: string };
 
-  if (!response.ok) {
-    throw new Error(`Failed to fetch script: ${response.statusText}`);
+export const fetchZaragozaLines = async (): Promise<ZaragozaLine[]> => {
+  try {
+    const response = await fetch(
+      'https://nps.avanzagrupo.com/lineas_zaragoza.js'
+    );
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const scriptText = await response.text();
+
+    const startMarker = 'const ZARAGOZA_LINES = ';
+    const endMarker = ';';
+
+    const startIndex = scriptText.indexOf(startMarker);
+    const endIndex = scriptText.lastIndexOf(endMarker);
+
+    if (startIndex === -1 || endIndex === -1) {
+      throw new Error('Variable definition markers not found in script.');
+    }
+
+    const rawArrayString = scriptText
+      .substring(startIndex + startMarker.length, endIndex)
+      .trim();
+
+    let cleanJsonString = rawArrayString;
+    cleanJsonString = cleanJsonString
+      .replace(/value:/g, '"value":')
+      .replace(/label:/g, '"label":');
+    cleanJsonString = cleanJsonString.replace(/'/g, '"');
+    const linesArray = JSON.parse(cleanJsonString);
+
+    return linesArray;
+  } catch (error) {
+    console.error('Failed to fetch or parse Zaragoza lines data:', error);
+    throw error;
   }
-
-  const scriptContent = await response.text();
-
-  const sandbox: any = {};
-  const context = vm.createContext(sandbox);
-
-  const script = new vm.Script(scriptContent);
-  script.runInContext(context);
-
-  if (!sandbox.ZARAGOZA_LINES) {
-    throw new Error('ZARAGOZA_LINES not defined in script');
-  }
-
-  return sandbox.ZARAGOZA_LINES;
 };

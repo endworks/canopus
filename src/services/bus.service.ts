@@ -324,11 +324,13 @@ export class BusService {
           const resp = await lastValueFrom(this.httpService.get(lineUrl));
           const lineId = lineUrl.split('/').pop();
           const line = availableLines.find((line) => line.value === lineId);
-          const name = line.label
-            .split(' - ')
-            .slice(1)
-            .map((word) => capitalize(fixWords(word)))
-            .join(' - ');
+          const name = line
+            ? line.label
+                .split(' - ')
+                .slice(1)
+                .map((word) => capitalize(fixWords(word)))
+                .join(' - ')
+            : lineId;
           updatedData[lineId] = {
             ...backup[lineId],
             id: lineId,

@@ -288,4 +288,65 @@ export class BusService {
       );
     }
   }
+
+  public async getLinesUpdate(
+    source?: string
+  ): Promise<BusLinesResponse | ErrorResponse> {
+    try {
+      const busApiURL =
+        'https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/transporte-urbano/linea-autobus';
+      const busWebURL = 'https://zaragoza.avanzagrupo.com/lineas-y-horarios/';
+
+      const url = source && source === 'web' ? busWebURL : `${busApiURL}`;
+
+      let backup = null;
+      const backupUrl = 'https://zgzpls.firebaseio.com/bus/lines.json';
+      try {
+        const backupResponse = await lastValueFrom(
+          this.httpService.get(backupUrl)
+        );
+        backup = backupResponse.data;
+      } catch {
+        backup = null;
+      }
+
+      const updatedData: BusLinesResponse = {};
+      const response = await lastValueFrom(this.httpService.get(url));
+      await Promise.all(
+        response.data.result.map(async (lineUrl: string) => {
+          const resp = await lastValueFrom(this.httpService.get(lineUrl));
+          const lineId = lineUrl.split('/').pop();
+          updatedData[lineId] = {
+            ...backup[lineId],
+            id: lineId,
+            number: lineId,
+            stations: resp.data.result,
+            lastUpdated: resp.data.lastUpdated
+          };
+          const backupLineUrl = `https://zgzpls.firebaseio.com/bus/lines/${lineId}.json`;
+          await this.httpService.put(backupLineUrl, updatedData[lineId]);
+          return updatedData[lineId];
+        })
+      );
+
+      try {
+        const backupResponse = await lastValueFrom(
+          this.httpService.get(backupUrl)
+        );
+        backup = backupResponse.data;
+      } catch {
+        backup = null;
+      }
+      await this.cacheManager.set('bus/lines', backup);
+      return backup;
+    } catch (exception) {
+      throw new InternalServerErrorException(
+        {
+          statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+          message: exception.message
+        },
+        exception.message
+      );
+    }
+  }
 }

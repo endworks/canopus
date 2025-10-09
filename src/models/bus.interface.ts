@@ -1,4 +1,4 @@
-import { IdPayload, StationTime } from './common.interface';
+import { IdPayload, LineGeometry, StationTime } from './common.interface';
 
 export interface BusStationPayload extends IdPayload {
   source: string;
@@ -22,9 +22,12 @@ export interface BusStationsResponse {
 
 export interface BusLineResponse {
   id: string;
-  lastUpdated: string;
   number: string;
-  routes: string[];
+  name: string;
+  color?: string;
+  stations: LineGeometry[];
+  hidden: boolean;
+  lastUpdated: string;
 }
 
 export interface BusLinesResponse {

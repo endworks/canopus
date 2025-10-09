@@ -41,4 +41,12 @@ export class BusController {
       return ex.response;
     });
   }
+
+  @MessagePattern('bus/lines/update', Transport.TCP)
+  async busUpdateLines() {
+    return this.busService.getLinesUpdate().catch((ex) => {
+      this.logger.error(ex.message);
+      return ex.response;
+    });
+  }
 }

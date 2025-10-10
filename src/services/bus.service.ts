@@ -7,6 +7,7 @@ import {
   InternalServerErrorException,
   NotFoundException
 } from '@nestjs/common';
+import axios from 'axios';
 import { Cache } from 'cache-manager';
 import * as cheerio from 'cheerio';
 import { lastValueFrom } from 'rxjs';
@@ -270,7 +271,7 @@ export class BusService {
         `bus/lines/${id}`
       );
       if (cache) return cache;
-      const url = `https://zgzpls.firebaseio.com/bus/lines/tuzsa-${id}.json`;
+      const url = `https://zgzpls.firebaseio.com/bus/lines/${id}.json`;
       const response = await lastValueFrom(this.httpService.get(url));
       if (!response.data) {
         throw new NotFoundException(
@@ -315,7 +316,6 @@ export class BusService {
         backup = null;
       }
 
-      const updatedData: BusLinesResponse = {};
       const response = await lastValueFrom(this.httpService.get(url));
       const availableLines = await fetchZaragozaLines();
 
@@ -323,26 +323,27 @@ export class BusService {
         response.data.result.map(async (lineUrl: string) => {
           const resp = await lastValueFrom(this.httpService.get(lineUrl));
           const lineId = lineUrl.split('/').pop();
-          const line = availableLines.find((line) => line.value === lineId);
-          const name = line
-            ? line.label
-                .split(' - ')
+          const found = availableLines.find(
+            (line) => line.value.toUpperCase() == lineId.toUpperCase()
+          );
+          const name = found
+            ? found.label
+                .split('-')
                 .slice(1)
-                .map((word) => capitalize(fixWords(word)))
+                .map((word) => capitalizeEachWord(fixWords(word.trim())))
                 .join(' - ')
             : lineId;
-          updatedData[lineId] = {
-            ...backup[lineId],
-            id: lineId,
-            number: lineId,
+          const line: BusLineResponse = {
+            ...backup[found?.value || lineId],
+            id: found?.value || lineId,
+            number: found?.value || lineId,
             name,
             stations: resp.data.result,
             lastUpdated: resp.data.lastUpdated,
-            hidden: Boolean(line)
+            hidden: Boolean(!found)
           };
-          const backupLineUrl = `https://zgzpls.firebaseio.com/bus/lines/${lineId}.json`;
-          await this.httpService.put(backupLineUrl, updatedData[lineId]);
-          return updatedData[lineId];
+          const backupLineUrl = `https://zgzpls.firebaseio.com/bus/lines/${line.id}.json`;
+          await axios.put(backupLineUrl, line);
         })
       );
 

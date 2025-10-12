@@ -206,7 +206,7 @@ export class BusService {
           return getWeight(normalize(a.time)) - getWeight(normalize(b.time));
         });
 
-        await this.httpService.put(backupUrl, resp);
+        await axios.put(backupUrl, resp);
         await this.cacheManager.set(
           `bus/stations/${id}/${source ?? 'api'}`,
           resp,
@@ -305,7 +305,7 @@ export class BusService {
 
       const url = source && source === 'web' ? busWebURL : `${busApiURL}`;
 
-      let backup = null;
+      let backup: BusLinesResponse = null;
       const backupUrl = 'https://zgzpls.firebaseio.com/bus/lines.json';
       try {
         const backupResponse = await lastValueFrom(
@@ -328,16 +328,16 @@ export class BusService {
           );
           const name = found
             ? found.label
-                .split('-')
+                .split(' - ')
                 .slice(1)
                 .map((word) => capitalizeEachWord(fixWords(word.trim())))
                 .join(' - ')
-            : lineId;
+            : undefined;
           const line: BusLineResponse = {
             ...backup[found?.value || lineId],
             id: found?.value || lineId,
             number: found?.value || lineId,
-            name,
+            name: name ?? backup[found?.value || lineId].name,
             stations: resp.data.result,
             lastUpdated: resp.data.lastUpdated,
             hidden: Boolean(!found)

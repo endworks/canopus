@@ -23,15 +23,22 @@ export const capitalizeEachWord = (
   if (text) {
     return text
       .split(' ')
-      .map((word) => {
+      .map((word, i) => {
         const lower = word.toLowerCase();
 
-        if (alwaysLowercaseWords.includes(lower)) {
+        if (alwaysLowercaseWords.includes(lower) && i > 0) {
           return lower;
         }
 
         if (isRomanNumeral(word)) {
           return word.toUpperCase();
+        }
+
+        if (word.includes('/')) {
+          return word
+            .split('/')
+            .map((splitWord) => capitalize(splitWord, setLowercase))
+            .join('/');
         }
 
         return capitalize(word, setLowercase);
@@ -68,7 +75,7 @@ const wordReplacements: Record<string, string> = {
 };
 
 export const fixWords = (text: string): string => {
-  let fixed = text.trim().toLocaleLowerCase();
+  let fixed = text.trim().toLowerCase();
   fixed = fixed.replace(/�/g, '');
   for (const [wrong, correct] of Object.entries(wordReplacements)) {
     const regex = new RegExp(`\\b${wrong}\\b`, 'gi');

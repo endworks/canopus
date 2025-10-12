@@ -37,8 +37,14 @@ export const capitalizeEachWord = (
         if (word.includes('/')) {
           return word
             .split('/')
-            .map((splitWord) => capitalize(splitWord, setLowercase))
+            .map((splitWord) => capitalize(splitWord.trim(), setLowercase))
             .join('/');
+        }
+        if (word.includes('-')) {
+          return word
+            .split('-')
+            .map((splitWord) => capitalize(splitWord.trim(), setLowercase))
+            .join('-');
         }
 
         return capitalize(word, setLowercase);
@@ -68,7 +74,7 @@ const wordReplacements: Record<string, string> = {
   minguijn: 'minguijón',
   pilon: 'pilón',
   estimacin: 'estimación',
-  n0: 'n',
+  jos: 'josé',
   'Ã“': 'Ó',
   'Ã': 'Í',
   'Ã‰': 'É'
@@ -77,6 +83,7 @@ const wordReplacements: Record<string, string> = {
 export const fixWords = (text: string): string => {
   let fixed = text.trim().toLowerCase();
   fixed = fixed.replace(/�/g, '');
+  fixed = fixed.replace('n0', 'n');
   for (const [wrong, correct] of Object.entries(wordReplacements)) {
     const regex = new RegExp(`\\b${wrong}\\b`, 'gi');
     fixed = fixed.replace(regex, correct);

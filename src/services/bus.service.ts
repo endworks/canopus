@@ -94,6 +94,7 @@ export class BusService {
           times: [],
           coordinates: [],
           source: null,
+          sourceUrl: null,
           type: 'bus'
         };
 
@@ -101,6 +102,16 @@ export class BusService {
           resp.street = backup.street;
           resp.lines = backup.lines;
           resp.coordinates = backup.coordinates;
+
+          if (!Array.isArray(resp.lines)) {
+            if ((resp.lines as string).includes(',')) {
+              resp.lines = (resp.lines as string)
+                .split(',')
+                .map((line) => line.trim());
+            } else {
+              resp.lines = [resp.lines];
+            }
+          }
         }
 
         if (!source || source === 'api') {
@@ -108,58 +119,52 @@ export class BusService {
           resp.sourceUrl = url;
           resp.lastUpdated = response.data.lastUpdated;
           resp.street = capitalizeEachWord(
-            response.data.title.split(')')[1].slice(1).split('Lí')[0].trim()
+            fixWords(
+              response.data.title.split(')')[1].slice(1).split('Lí')[0].trim()
+            )
           );
-          resp.lines = response.data.title
-            .split(resp.street)[1]
-            .trim()
-            .replace('Líneas: ', '')
-            .split(', ');
           resp.coordinates = response.data.geometry.coordinates;
           const times = [];
           response.data.destinos.map((destination) => {
             ['primero', 'segundo'].map((element) => {
+              const destinationRaw = destination.destino
+                .replace(/(^,)|(,$)/g, '')
+                .replace(/(^\.)|(\.$)/g, '');
+              const destinationFixed = destinationRaw
+                .split(' - ')
+                .map((item) => capitalizeEachWord(fixWords(item.trim())))
+                .join(' - ');
               const transport = {
                 line: capitalize(fixWords(destination.linea)),
-                destination: capitalizeEachWord(
-                  fixWords(
-                    destination.destino
-                      .replace(/(^,)|(,$)/g, '')
-                      .replace(/(^\.)|(\.$)/g, '')
-                  )
-                )
+                destination: destinationFixed,
+                time: null
               };
               if (destination[element].includes('minutos')) {
-                times.push({
-                  ...transport,
-                  time: `${destination[element]
-                    .replace(' minutos', '')
-                    .replace(/(^\.)|(\.$)/g, '')} min.`
-                });
+                transport.time = `${destination[element]
+                  .replace(' minutos', '')
+                  .replace(/(^\.)|(\.$)/g, '')} min.`;
               } else {
-                times.push({
-                  ...transport,
-                  time: capitalize(
-                    fixWords(destination[element].replace(/(^\.)|(\.$)/g, ''))
-                  )
-                });
+                transport.time = capitalize(
+                  fixWords(destination[element].replace(/(^\.)|(\.$)/g, ''))
+                );
               }
+              times.push(transport);
             });
           });
           resp.times = [...times];
         } else if (source === 'web') {
           const $ = cheerio.load(response.data);
-          const seenLines = new Set<string>();
-
           const rows = $('table').eq(1).find('tr');
 
           rows.each((_, row) => {
             const cells = $(row).find('td.digital');
             if (cells.length >= 3) {
               const line = capitalize(fixWords($(cells[0]).text().trim()));
-              const destination = capitalizeEachWord(
-                fixWords($(cells[1]).text().trim())
-              );
+              const destinationRaw = $(cells[1]).text().trim();
+              const destination = destinationRaw
+                .split(' - ')
+                .map((item) => capitalizeEachWord(fixWords(item.trim())))
+                .join(' - ');
               let time = $(cells[2])
                 .text()
                 .trim()
@@ -175,14 +180,12 @@ export class BusService {
 
               if (line) {
                 resp.times.push({ line, destination, time });
-                seenLines.add(line);
               }
             }
           });
 
           resp.source = 'web';
           resp.sourceUrl = url;
-          resp.lines = Array.from(seenLines).sort();
           resp.lastUpdated = new Date().toISOString();
         } else if (source === 'backup') {
           return { ...backup, source: 'backup', sourceUrl: backupUrl };
@@ -195,6 +198,12 @@ export class BusService {
             `Resource with ID '${id}' was not found`
           );
         }
+        resp.times.forEach((time) => {
+          if (!resp.lines.includes(time.line)) {
+            resp.lines.push(time.line);
+          }
+        });
+        resp.lines.sort();
         resp.times.sort((a, b) => {
           const normalize = (time: string) => time.trim().toLowerCase();
           const getWeight = (time: string): number => {
@@ -236,9 +245,9 @@ export class BusService {
         throw new InternalServerErrorException(
           {
             statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-            message: exception.response.data.mensaje || exception.message
+            message: exception.response.data?.mensaje || exception.message
           },
-          exception.response.data.mensaje || exception.message
+          exception.response.data?.mensaje || exception.message
         );
       }
     }

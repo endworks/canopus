@@ -20,6 +20,14 @@ export class BusController {
 
   @MessagePattern('bus/station', Transport.TCP)
   async busStation(@Payload() data: BusStationPayload) {
+    if (!data.source) {
+      return this.busService.getStation(data.id, 'api').catch(() => {
+        return this.busService.getStation(data.id, 'web').catch((ex) => {
+          this.logger.error(ex.message);
+          return ex.response;
+        });
+      });
+    }
     return this.busService.getStation(data.id, data.source).catch((ex) => {
       this.logger.error(ex.message);
       return ex.response;

@@ -391,9 +391,7 @@ export class BusService {
         const fullText = $(el).text().trim();
 
         if (value && value !== 'default') {
-          const label = fullText
-            .replace(new RegExp(`^${value}\\s*-\\s*`, 'i'), '')
-            .trim();
+          const label = fullText.split(' - ').slice(1).join(' - ');
           lines.push({ value, label });
         }
       });

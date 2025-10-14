@@ -374,6 +374,9 @@ export class BusService {
 
   async fetchZaragozaLines(): Promise<{ value: string; label: string }[]> {
     try {
+      const cache: { value: string; label: string }[] =
+        await this.cacheManager.get(`bus/lines/available`);
+      if (cache) return cache;
       const url = 'https://zaragoza.avanzagrupo.com/lineas-y-horarios/';
       const response = await lastValueFrom(this.httpService.get(url));
 
@@ -381,7 +384,7 @@ export class BusService {
 
       const $ = cheerio.load(html);
 
-      const options: { value: string; label: string }[] = [];
+      const lines: { value: string; label: string }[] = [];
 
       $('select#linea-lineas-horarios option').each((_, el) => {
         const value = $(el).attr('value');
@@ -391,11 +394,12 @@ export class BusService {
           const label = fullText
             .replace(new RegExp(`^${value}\\s*-\\s*`, 'i'), '')
             .trim();
-          options.push({ value, label });
+          lines.push({ value, label });
         }
       });
 
-      return options;
+      await this.cacheManager.set(`bus/lines/available`, lines);
+      return lines;
     } catch (exception) {
       console.error('Failed to fetch or parse Zaragoza lines data:', exception);
       throw new InternalServerErrorException(
@@ -412,6 +416,9 @@ export class BusService {
     { value: string; label: string }[]
   > {
     try {
+      const cache: { value: string; label: string }[] =
+        await this.cacheManager.get(`bus/lines/available`);
+      if (cache) return cache;
       const response = await fetch(
         'https://nps.avanzagrupo.com/lineas_zaragoza.js'
       );
@@ -443,6 +450,7 @@ export class BusService {
       cleanJsonString = cleanJsonString.replace(/'/g, '"');
       const linesArray = JSON.parse(cleanJsonString);
 
+      await this.cacheManager.set(`bus/lines/available`, linesArray);
       return linesArray;
     } catch (error) {
       console.error('Failed to fetch or parse Zaragoza lines data:', error);

@@ -18,12 +18,7 @@ import {
   BusStationsResponse
 } from '../models/bus.interface';
 import { ErrorResponse } from '../models/common.interface';
-import {
-  capitalize,
-  capitalizeEachWord,
-  fetchZaragozaLines,
-  fixWords
-} from '../utils';
+import { capitalize, capitalizeEachWord, fixWords } from '../utils';
 
 const busApiURL =
   'https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/transporte-urbano/poste-autobus/tuzsa-';
@@ -326,7 +321,7 @@ export class BusService {
       }
 
       const response = await lastValueFrom(this.httpService.get(url));
-      const availableLines = await fetchZaragozaLines();
+      const availableLines = await this.fetchZaragozaLines();
 
       await Promise.all(
         response.data.result.map(async (lineUrl: string) => {
@@ -374,6 +369,84 @@ export class BusService {
         },
         exception.message
       );
+    }
+  }
+
+  async fetchZaragozaLines(): Promise<{ value: string; label: string }[]> {
+    try {
+      const url = 'https://zaragoza.avanzagrupo.com/lineas-y-horarios/';
+      const response = await lastValueFrom(this.httpService.get(url));
+
+      const html = await response.data;
+
+      const $ = cheerio.load(html);
+
+      const options: { value: string; label: string }[] = [];
+
+      $('select#linea-lineas-horarios option').each((_, el) => {
+        const value = $(el).attr('value');
+        const fullText = $(el).text().trim();
+
+        if (value && value !== 'default') {
+          const label = fullText
+            .replace(new RegExp(`^${value}\\s*-\\s*`, 'i'), '')
+            .trim();
+          options.push({ value, label });
+        }
+      });
+
+      return options;
+    } catch (exception) {
+      console.error('Failed to fetch or parse Zaragoza lines data:', exception);
+      throw new InternalServerErrorException(
+        {
+          statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+          message: exception.message
+        },
+        exception.message
+      );
+    }
+  }
+
+  async fetchZaragozaLinesLegacy(): Promise<
+    { value: string; label: string }[]
+  > {
+    try {
+      const response = await fetch(
+        'https://nps.avanzagrupo.com/lineas_zaragoza.js'
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const scriptText = await response.text();
+
+      const startMarker = 'const ZARAGOZA_LINES = ';
+      const endMarker = ';';
+
+      const startIndex = scriptText.indexOf(startMarker);
+      const endIndex = scriptText.lastIndexOf(endMarker);
+
+      if (startIndex === -1 || endIndex === -1) {
+        throw new Error('Variable definition markers not found in script.');
+      }
+
+      const rawArrayString = scriptText
+        .substring(startIndex + startMarker.length, endIndex)
+        .trim();
+
+      let cleanJsonString = rawArrayString;
+      cleanJsonString = cleanJsonString
+        .replace(/value:/g, '"value":')
+        .replace(/label:/g, '"label":');
+      cleanJsonString = cleanJsonString.replace(/'/g, '"');
+      const linesArray = JSON.parse(cleanJsonString);
+
+      return linesArray;
+    } catch (error) {
+      console.error('Failed to fetch or parse Zaragoza lines data:', error);
+      throw error;
     }
   }
 }

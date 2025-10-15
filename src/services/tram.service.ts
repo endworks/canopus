@@ -6,12 +6,14 @@ import {
   Injectable,
   InternalServerErrorException
 } from '@nestjs/common';
+import axios from 'axios';
 import { Cache } from 'cache-manager';
 import { lastValueFrom } from 'rxjs';
 import {
   TramStationResponse,
   TramStationsResponse
 } from 'src/models/tram.interface';
+import { capitalizeEachWord, fixWords } from 'src/utils';
 import { ErrorResponse } from '../models/common.interface';
 
 @Injectable()
@@ -27,10 +29,50 @@ export class TramService {
       const cache: TramStationsResponse =
         await this.cacheManager.get(`tram/stations`);
       if (cache) return cache;
-      const url = 'https://zgzpls.firebaseio.com/tram/stations.json';
+      const url =
+        'https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/transporte-urbano/parada-tranvia';
       const response = await lastValueFrom(this.httpService.get(url));
-      await this.cacheManager.set(`tram/stations`, response.data);
-      return response.data;
+
+      const stations: TramStationsResponse = {};
+      response.data.result.forEach((station) => {
+        const stationId = station.id.slice(0, station.id.length - 1) + '0';
+        if (!stations[stationId]) {
+          stations[stationId] = {
+            id: stationId,
+            street: capitalizeEachWord(fixWords(station.title)),
+            lines: ['L1'],
+            times:
+              station.destinos?.map((destino) => {
+                return {
+                  line: destino.linea,
+                  destination: capitalizeEachWord(fixWords(destino.destino)),
+                  time: `${destino.minutos} min.`
+                };
+              }) || [],
+            coordinates: station.geometry.coordinates,
+            source: 'api',
+            sourceUrl: station.uri,
+            lastUpdated: station.lastUpdated,
+            type: 'tram'
+          };
+        } else {
+          stations[stationId].times.push(
+            ...(station.destinos?.map((destino) => {
+              return {
+                line: destino.linea,
+                destination: capitalizeEachWord(fixWords(destino.destino)),
+                time: `${destino.minutos} min.`
+              };
+            }) || [])
+          );
+        }
+      });
+
+      const backupUrl = `https://zgzpls.firebaseio.com/tram/stations.json`;
+      await axios.put(backupUrl, stations);
+
+      await this.cacheManager.set(`tram/stations`, stations);
+      return stations;
     } catch (exception) {
       throw new InternalServerErrorException(
         {
@@ -54,7 +96,7 @@ export class TramService {
       if (cache) return cache;
 
       let backup = null;
-      const backupUrl = `https://zgzpls.firebaseio.com/tram/stations/tram-${id}.json`;
+      const backupUrl = `https://zgzpls.firebaseio.com/tram/stations/${id}.json`;
       try {
         const backupResponse = await lastValueFrom(
           this.httpService.get(backupUrl)
@@ -94,7 +136,49 @@ export class TramService {
         resp.sourceUrl = backupUrl;
       }
 
-      await this.cacheManager.set(`tram/stations/${id}`, resp);
+      const url =
+        'https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/transporte-urbano/parada-tranvia/';
+
+      const responses = await Promise.all(
+        ['1', '2'].map((station) =>
+          lastValueFrom(
+            this.httpService.get(
+              url + `${id.slice(0, id.length - 1) + station}`
+            )
+          )
+        )
+      );
+
+      responses.forEach((response) => {
+        const station = response.data;
+        resp.times.push(
+          ...(station.destinos?.map((destino) => {
+            return {
+              line: destino.linea,
+              destination: capitalizeEachWord(fixWords(destino.destino)),
+              time: `${destino.minutos} min.`
+            };
+          }) || [])
+        );
+      });
+
+      resp.times.sort((a, b) => {
+        const normalize = (time: string) => time.trim().toLowerCase();
+        const getWeight = (time: string): number => {
+          if (time.includes('parada')) return 0;
+          if (time.match(/^\d+/)) return parseInt(time);
+          if (time.includes('estimación')) return 9999;
+          return 999;
+        };
+        return getWeight(normalize(a.time)) - getWeight(normalize(b.time));
+      });
+
+      await axios.put(backupUrl, resp);
+      await this.cacheManager.set(
+        `tram/stations/${id}/${source ?? 'api'}`,
+        resp,
+        10000
+      );
       return resp;
     } catch (exception) {
       throw new InternalServerErrorException(

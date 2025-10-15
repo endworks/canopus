@@ -14,7 +14,7 @@ export const isRomanNumeral = (word: string): boolean => {
   return /^[IVXLCDM]+$/.test(upper);
 };
 
-const alwaysLowercaseWords = ['y', 'a', 'de', 'del', 'la'];
+const alwaysLowercaseWords = ['y', 'a', 'de', 'en', 'del', 'la', 'los', 'las'];
 
 export const capitalizeEachWord = (
   text: string,
@@ -64,11 +64,13 @@ export const isInt = (number: number | string) => {
 };
 
 const wordReplacements: Record<string, string> = {
+  aragon: 'aragón',
   aragn: 'aragón',
   jess: 'jesús',
   peaflor: 'peñaflor',
   via: 'vía',
   espaa: 'españa',
+  espana: 'españa',
   quinto: 'V',
   aljafera: 'aljafería',
   minguijn: 'minguijón',

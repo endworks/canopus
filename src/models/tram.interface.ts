@@ -1,12 +1,11 @@
-import { StationTime } from './common.interface';
+import { IdPayload, StationTime } from './common.interface';
 
-export interface TramStationPayload {
-  id: string;
+export interface TramStationPayload extends IdPayload {
+  source: string;
 }
 
 export interface TramStationResponse {
   id: string;
-  number: number;
   street: string;
   lines: string[];
   times: StationTime[];
@@ -15,7 +14,6 @@ export interface TramStationResponse {
   sourceUrl?: string;
   lastUpdated?: string;
   type?: string;
-  transports: StationTime[];
 }
 
 export interface TramStationsResponse {

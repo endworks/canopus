@@ -8,12 +8,13 @@ import {
 } from '@nestjs/common';
 import axios from 'axios';
 import { Cache } from 'cache-manager';
+import * as Fuse from 'fuse.js';
 import { lastValueFrom } from 'rxjs';
 import {
   TramStationResponse,
   TramStationsResponse
 } from 'src/models/tram.interface';
-import { capitalizeEachWord, fixWords } from 'src/utils';
+import { capitalizeEachWord, fixWords, isInt } from 'src/utils';
 import { ErrorResponse } from '../models/common.interface';
 
 @Injectable()
@@ -90,6 +91,26 @@ export class TramService {
     source?: string
   ): Promise<TramStationResponse | ErrorResponse> {
     try {
+      if (!isInt(id)) {
+        const stationResponse = await this.getStations();
+        const stations = Object.keys(stationResponse).map(
+          (station) => stationResponse[station]
+        );
+        console.log(
+          'stations',
+          stations.length,
+          Object.keys(stationResponse).length
+        );
+
+        const fuse = new Fuse.default(stations, {
+          keys: ['street'],
+          includeScore: true,
+          threshold: 0.4
+        });
+        const results = fuse.search(id);
+        console.log(results);
+      }
+
       const cache: TramStationResponse = await this.cacheManager.get(
         `tram/stations/${id}`
       );
@@ -172,6 +193,7 @@ export class TramService {
         };
         return getWeight(normalize(a.time)) - getWeight(normalize(b.time));
       });
+      resp.source = 'api';
 
       await axios.put(backupUrl, resp);
       await this.cacheManager.set(

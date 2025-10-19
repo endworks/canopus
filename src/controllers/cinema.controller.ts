@@ -1,5 +1,6 @@
 import { Controller, Logger } from '@nestjs/common';
 import { MessagePattern, Payload, Transport } from '@nestjs/microservices';
+import { CinemaPayload } from 'src/models/cinema.interface';
 import { IdPayload } from 'src/models/common.interface';
 import { CinemaService } from 'src/services/cinema.service';
 
@@ -10,8 +11,8 @@ export class CinemaController {
   constructor(private readonly cinemaService: CinemaService) {}
 
   @MessagePattern('cinemas', Transport.TCP)
-  async cinemas() {
-    return this.cinemaService.getCinemas().catch((ex) => {
+  async cinemas(@Payload() data: CinemaPayload) {
+    return this.cinemaService.getCinemas(data.location).catch((ex) => {
       this.logger.error(ex.message);
       return ex.response;
     });

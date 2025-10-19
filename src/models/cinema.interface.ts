@@ -1,3 +1,7 @@
+export interface CinemaPayload {
+  location?: string;
+}
+
 export interface BaseCinema {
   name: string;
   address?: string;

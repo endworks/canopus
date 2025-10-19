@@ -8,6 +8,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { lastValueFrom } from 'rxjs';
 import {
@@ -42,38 +43,52 @@ export class CinemaService {
     private theMovieDb: TheMovieDBService,
   ) {}
 
-  public async getCinemas(): Promise<Cinema[] | ErrorResponse> {
-    const cache: Cinema[] = await this.cacheManager.get('cinema');
+  public async getCinemas(
+    location?: string,
+  ): Promise<Cinema[] | ErrorResponse> {
+    const cache: Cinema[] = await this.cacheManager.get(
+      location ? `cinema/${location}` : 'cinema',
+    );
     if (cache) return cache;
-    const resp = await this.getCinemasReservaEntradas();
-    await this.cacheManager.set('cinema', resp);
+    const url = 'https://zgzpls.firebaseio.com/zine/cinemas.json';
+    const response = await lastValueFrom(this.httpService.get(url));
+    const resp = Object.keys(response.data)
+      .map((key) => response.data[key])
+      .filter((cinema) =>
+        location
+          ? cinema.location.toLowerCase().includes(location.toLowerCase())
+          : true,
+      );
+    await this.cacheManager.set(
+      location ? `cinema/${location}` : 'cinema',
+      resp,
+    );
     return resp;
   }
 
   public async getCinemaBasic(
     id: string,
   ): Promise<CinemaDetailsBasic | ErrorResponse> {
-    const cinema = ((await this.getCinemas()) as Cinema[]).find(
-      (cinema) => cinema.id === id,
-    );
+    const url = `https://zgzpls.firebaseio.com/zine/cinemas/${id}.json`;
+    const response = await lastValueFrom(this.httpService.get(url));
+    const cinema = response.data;
     if (cinema) {
       const cache: CinemaDetailsBasic = await this.cacheManager.get(
         `cinema/${id}/basic`,
       );
       if (cache) return cache;
       try {
-        let movies;
-        switch (id) {
-          default:
-            movies = await this.getMoviesReservaEntradas(id);
-        }
+        const movies = await this.getMoviesReservaEntradas(id);
 
         const resp = {
           id,
           ...cinema,
           lastUpdated: new Date().toISOString(),
-          movies: movies,
+          movies,
         };
+
+        const backupUrl = `https://zgzpls.firebaseio.com/zine/cinemas/${id}/movies.json`;
+        await axios.put(backupUrl, movies);
         await this.cacheManager.set(`cinema/${id}/basic`, resp);
         return resp;
       } catch (exception) {
@@ -102,7 +117,6 @@ export class CinemaService {
       const cache: CinemaDetails = await this.cacheManager.get(`cinema/${id}`);
       if (cache) return cache;
       try {
-        const cinema = await this.getCinemaBasic(id);
         let movies = 'movies' in cinema ? (cinema.movies as Movie[]) : [];
         const config = await this.theMovieDb.configuration();
         movies = await Promise.all(
@@ -110,6 +124,7 @@ export class CinemaService {
             const search = await this.theMovieDb.search(
               sanitizeTitle(movie.name),
               'es-ES',
+              movie.year,
             );
             if (!search.results || search.results.length === 0) {
               this.logger.error(
@@ -265,8 +280,10 @@ export class CinemaService {
 
         const resp = {
           ...cinema,
-          movies: movies,
+          movies,
         };
+        const backupUrl = `https://zgzpls.firebaseio.com/zine/cinemas/${id}/movies.json`;
+        await axios.put(backupUrl, movies);
         await this.cacheManager.set(`cinema/${id}`, resp);
         return resp;
       } catch (exception) {
@@ -323,7 +340,8 @@ export class CinemaService {
   async updateAll(): Promise<CacheData | ErrorResponse> {
     try {
       await this.cacheManager.clear();
-      const cinemas = await this.getCinemas();
+      await this.getCinemasReservaEntradas();
+      const cinemas = await this.getCinemas('zaragoza');
       if ('statusCode' in cinemas) return;
       await Promise.all(
         cinemas.map(async (cinema) => {
@@ -385,26 +403,40 @@ export class CinemaService {
             name = name.replace(/^\s*Cines?\s+/i, '');
           }
           name = name.replace(/\s+/g, ' ').trim();
-          const href = $(a).attr('href') || '';
-          const id = href.split('/')[5].replace(/^cines?/i, '') || '';
+          const source = $(a).attr('href') || '';
+          const id = source.split('/')[5].replace(/^cines?/i, '') || '';
+          const location =
+            source.split('/')[4] ||
+            city.toLocaleLowerCase().replace(/\s+/g, '-');
 
-          cinemas.push({
+          const cinema = {
             id,
             name,
-            location: city,
-            source: href,
-          });
+            location,
+            city,
+            source,
+          };
+          cinemas.push(cinema);
         });
 
       result.push(...cinemas);
     });
+    await Promise.all(
+      result.map(async (cinema) => {
+        const backupUrl = `https://zgzpls.firebaseio.com/zine/cinemas/${cinema.id}.json`;
+        await axios.patch(backupUrl, cinema);
+      }),
+    );
     await this.cacheManager.set('cinema/reservaEntradas', result);
     return result;
   }
 
   async getMoviesReservaEntradas(id: string): Promise<MovieBasic[]> {
-    const cinema = (await this.getCinemaBasic(id)) as CinemaDetailsBasic;
-    const response = await lastValueFrom(this.httpService.get(cinema.source));
+    const url = `https://zgzpls.firebaseio.com/zine/cinemas/${id}.json`;
+    const cinema = await lastValueFrom(this.httpService.get(url));
+    const response = await lastValueFrom(
+      this.httpService.get(cinema.data.source),
+    );
     const $ = cheerio.load(response.data);
     return (await Promise.all(
       $('.movie.row')
@@ -415,23 +447,27 @@ export class CinemaService {
           );
           const $2 = cheerio.load(filmResponse.data);
           let name = $2('h2 strong').first().text();
+          const nameLower = name.toLowerCase();
           let specialEdition = null;
-          if (name.toLowerCase().includes('cine club lys')) {
+          if (nameLower.includes('cine club lys')) {
             specialEdition = 'Cine Club Lys';
             name = name.replace(/CINE CLUB LYS :/, '');
-          } else if (name.toLowerCase().includes('proyecto viridiana')) {
+          } else if (nameLower.includes('proyecto viridiana')) {
             specialEdition = 'Proyecto Viridiana';
             name = name.replace(/PROYECTO VIRIDIANA: /, '');
-          } else if (name.toLowerCase().includes('club rosebud')) {
+          } else if (nameLower.includes('club rosebud')) {
             specialEdition = 'Club Rosebud';
             name = name.replace(/ - CLUB ROSEBUD/, '');
-          } else if (name.toLowerCase().includes('4K')) {
+          } else if (nameLower.includes('4k')) {
             specialEdition = '4K';
             name = name.replace(/4K/, '');
           } else if (/(\d+ aniversario)/gim.test(name)) {
             specialEdition = /(\d+ aniversario)/gim.exec(name)[0];
             name = name.replace(/\(\d+ aniversario\)/gim, '');
+          } else if (nameLower.includes('.') || nameLower.includes(':')) {
+            name = name.split(/[.:]/)[0];
           }
+          name = name.replace(/\(\s*\d{4}\s*\)/g, '');
           const id = generateSlug(name);
           const sessions = [];
           const poster = $2('.media-object').attr('src').split('?')[0];

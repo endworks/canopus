@@ -94,6 +94,7 @@ export class ZaragozaController {
   @Get('tram/stations/:id')
   @ApiOperation({ summary: 'Get tram station by ID' })
   @ApiParam({ name: 'id', type: String })
+  @ApiQuery({ name: 'source', enum: ['api', 'web', 'backup'], required: false })
   @ApiResponse({
     status: 200,
     description: 'Return tram station',
@@ -102,7 +103,8 @@ export class ZaragozaController {
   async zaragozaTramStation(
     @Res({ passthrough: true }) res: Response,
     @Param('id') id: string,
+    @Query('source') source: 'api' | 'web' | 'backup',
   ) {
-    return this.zaragozaService.getTramStation(res, id);
+    return this.zaragozaService.getTramStation(res, id, source);
   }
 }

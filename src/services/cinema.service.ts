@@ -1,4 +1,5 @@
 import { HttpService } from '@nestjs/axios';
+import { Cache, CACHE_MANAGER } from '@nestjs/cache-manager';
 import {
   HttpStatus,
   Inject,
@@ -7,31 +8,29 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  Cinema,
-  CinemaDetailsBasic,
-  CinemaDetails,
-  MovieBasic,
-  Movie,
-  Session,
-  CacheData,
-} from 'src/models/cinema.interface';
-import { ErrorResponse } from '../models/common.interface';
-import { cinemas } from 'src/data/cinemas';
-import { lastValueFrom } from 'rxjs';
 import * as cheerio from 'cheerio';
+import { lastValueFrom } from 'rxjs';
 import {
-  minutesToString,
-  sanitizeTitle,
-  generateSlug,
-  cacheMaxSize,
-} from 'src/utils';
-import { TheMovieDBService } from './themoviedb.service';
+  CacheData,
+  Cinema,
+  CinemaDetails,
+  CinemaDetailsBasic,
+  Movie,
+  MovieBasic,
+  Session,
+} from 'src/models/cinema.interface';
 import {
   TheMovieDBMovie,
   TheMovieDBSearchResult,
 } from 'src/models/themoviedb.interface';
-import { Cache, CACHE_MANAGER } from '@nestjs/cache-manager';
+import {
+  cacheMaxSize,
+  generateSlug,
+  minutesToString,
+  sanitizeTitle,
+} from 'src/utils';
+import { ErrorResponse } from '../models/common.interface';
+import { TheMovieDBService } from './themoviedb.service';
 
 @Injectable()
 export class CinemaService {
@@ -46,12 +45,7 @@ export class CinemaService {
   public async getCinemas(): Promise<Cinema[] | ErrorResponse> {
     const cache: Cinema[] = await this.cacheManager.get('cinema');
     if (cache) return cache;
-    const resp: Cinema[] = Object.keys(cinemas).map((id) => {
-      return {
-        id,
-        ...cinemas[id],
-      };
-    });
+    const resp = await this.getCinemasReservaEntradas();
     await this.cacheManager.set('cinema', resp);
     return resp;
   }
@@ -59,7 +53,10 @@ export class CinemaService {
   public async getCinemaBasic(
     id: string,
   ): Promise<CinemaDetailsBasic | ErrorResponse> {
-    if (cinemas[id]) {
+    const cinema = ((await this.getCinemas()) as Cinema[]).find(
+      (cinema) => cinema.id === id,
+    );
+    if (cinema) {
       const cache: CinemaDetailsBasic = await this.cacheManager.get(
         `cinema/${id}/basic`,
       );
@@ -67,32 +64,13 @@ export class CinemaService {
       try {
         let movies;
         switch (id) {
-          case 'victoria':
-          case 'maravillas':
-          case 'lys':
-          case 'abcpark':
-          case 'abcgranturia':
-          case 'abcelsaler':
-          case 'abcgandia':
-          case 'palafox':
-          case 'aragonia':
-          case 'cervantes':
-            movies = await this.getMoviesReservaEntradas(id);
-            break;
-          case 'grancasa':
-          case 'venecia':
-            movies = await this.getMoviesCinesa(id);
-            break;
-          case 'cinemundo':
-            movies = await this.getMoviesCineapolis(id);
-            break;
           default:
-            movies = [];
+            movies = await this.getMoviesReservaEntradas(id);
         }
 
         const resp = {
           id,
-          ...cinemas[id],
+          ...cinema,
           lastUpdated: new Date().toISOString(),
           movies: movies,
         };
@@ -119,7 +97,8 @@ export class CinemaService {
   }
 
   public async getCinema(id: string): Promise<CinemaDetails | ErrorResponse> {
-    if (cinemas[id]) {
+    const cinema = await this.getCinemaBasic(id);
+    if (cinema) {
       const cache: CinemaDetails = await this.cacheManager.get(`cinema/${id}`);
       if (cache) return cache;
       try {
@@ -384,10 +363,48 @@ export class CinemaService {
     }
   }
 
-  async getMoviesReservaEntradas(id: string): Promise<MovieBasic[]> {
-    const response = await lastValueFrom(
-      this.httpService.get(cinemas[id].source),
+  async getCinemasReservaEntradas(): Promise<Cinema[]> {
+    const cache: Cinema[] = await this.cacheManager.get(
+      'cinema/reservaEntradas',
     );
+    if (cache) return cache;
+    const url = 'https://www.reservaentradas.com/cines';
+    const { data: html } = await lastValueFrom(this.httpService.get(url));
+    const $ = cheerio.load(html);
+
+    const result: Cinema[] = [];
+
+    $('li.provincia').each((_, el) => {
+      const city = $(el).clone().children().remove().end().text().trim();
+      const cinemas: Cinema[] = [];
+      $(el)
+        .find('ul.list-cinemas li a')
+        .each((_, a) => {
+          let name = $(a).text().trim();
+          if (!name.includes('Cine Y')) {
+            name = name.replace(/^\s*Cines?\s+/i, '');
+          }
+          name = name.replace(/\s+/g, ' ').trim();
+          const href = $(a).attr('href') || '';
+          const id = href.split('/')[5].replace(/^cines?/i, '') || '';
+
+          cinemas.push({
+            id,
+            name,
+            location: city,
+            source: href,
+          });
+        });
+
+      result.push(...cinemas);
+    });
+    await this.cacheManager.set('cinema/reservaEntradas', result);
+    return result;
+  }
+
+  async getMoviesReservaEntradas(id: string): Promise<MovieBasic[]> {
+    const cinema = (await this.getCinemaBasic(id)) as CinemaDetailsBasic;
+    const response = await lastValueFrom(this.httpService.get(cinema.source));
     const $ = cheerio.load(response.data);
     return (await Promise.all(
       $('.movie.row')
@@ -450,207 +467,6 @@ export class CinemaService {
             duration,
             durationReadable,
             sessions,
-            poster,
-            trailer,
-            source,
-          };
-          return movie;
-        })
-        .toArray(),
-    )) as any;
-  }
-
-  async getMoviesPalafox(id: string): Promise<MovieBasic[]> {
-    const response = await lastValueFrom(
-      this.httpService.get(cinemas[id].source),
-    );
-    const $ = cheerio.load(response.data);
-    return (await Promise.all(
-      $('.views-field-nothing')
-        .map(async (_, value) => {
-          const source = `https://www.cinespalafox.com${$(value)
-            .find('a')
-            .attr('href')}`;
-          const filmResponse = await lastValueFrom(
-            this.httpService.get(source),
-          );
-          const $2 = cheerio.load(filmResponse.data);
-          const name = $2('h1').text();
-          const id = generateSlug(name);
-          const poster = $2('.imagecache-cartelDetalle').attr('src');
-          const trailer = $2('#urlvideo').text();
-          const synopsis = $2('.sinopsis p').first().text();
-          const details = $2('.datos span');
-          const genres = details.eq(0).text().split(', ');
-          const duration = parseInt(
-            details
-              .eq(details.length - 3)
-              .text()
-              .replace(/[^\d]/g, ''),
-          );
-          const durationReadable = minutesToString(duration);
-          const director = details.eq(details.length - 2).text();
-          const actors = details
-            .eq(details.length - 1)
-            .text()
-            .split(', ');
-          const sessions = [];
-          const parsedDate = $2('.horarios ul li').eq(0).text();
-          const splitDate = parsedDate.split('/');
-          const date = `${splitDate[2]}-${splitDate[1]}-${splitDate[0]}`;
-          const schedules = $2('.horarios ul li').eq(1).find('a');
-          schedules.each((index) => {
-            const inputMatch = /Sala (\d+) - (\d+:\d+)(?: \((\w.+)\))?/.exec(
-              schedules.eq(index).text(),
-            );
-            const session: Session = {
-              date,
-              time: inputMatch[2],
-              room: inputMatch[1],
-              type: inputMatch[3],
-              url: schedules.eq(index).attr('href'),
-            };
-            sessions.push(session);
-          });
-          const movie: MovieBasic = {
-            id,
-            name,
-            synopsis,
-            duration,
-            durationReadable,
-            sessions,
-            director: {
-              name: director,
-            },
-            actors: actors.map((actor) => {
-              return {
-                name: actor,
-              };
-            }),
-            genres,
-            poster,
-            trailer,
-            source,
-          };
-          return movie;
-        })
-        .toArray(),
-    )) as any;
-  }
-
-  async getMoviesCinesa(id: string): Promise<MovieBasic[]> {
-    const cinema = id === 'venecia' ? 'puerto-venecia' : id;
-    const response = await lastValueFrom(
-      this.httpService.get(cinemas[id].source),
-    );
-    return response.data.cartelera[0].peliculas.map((item): MovieBasic => {
-      const sessions: Session[] = [];
-      item.cines.forEach((cine) => {
-        cine.tipos.forEach((tipo) => {
-          tipo.salas.forEach((sala) => {
-            sala.sesiones.forEach((sesion) => {
-              sessions.push({
-                date: response.data.cartelera[0].dia,
-                time: sesion.hora,
-                room: sala.salanum,
-                type: sala.sala !== sala.salanum ? sala.sala : null,
-                url: sesion.ao,
-              });
-            });
-          });
-        });
-      });
-
-      return {
-        id: item.url,
-        name: item.titulo,
-        duration: item.duracion,
-        durationReadable: minutesToString(item.duracion),
-        sessions,
-        director: {
-          name: item.directores,
-        },
-        actors: (item.actores || '').split(', ').map((actor) => {
-          return {
-            name: actor,
-          };
-        }),
-        genres: (item.genero || '').split(' - '),
-        poster: item.cartel,
-        source: `https://www.cinesa.es/Peliculas/${item.url}/${cinema}`,
-      };
-    });
-  }
-
-  async getMoviesCineapolis(id: string): Promise<MovieBasic[]> {
-    const response = await lastValueFrom(
-      this.httpService.get(cinemas[id].source),
-    );
-    const $ = cheerio.load(response.data);
-    return (await Promise.all(
-      $('.portfolio-item')
-        .map(async (_, value) => {
-          const source = `https://cineapolis.es/${$(value)
-            .find('a')
-            .attr('href')}`;
-          const filmResponse = await lastValueFrom(
-            this.httpService.get(source),
-          );
-          const $2 = cheerio.load(filmResponse.data);
-          const name = $2('.h3 [itemprop=name]').text();
-          const id = generateSlug(name);
-          const poster = $2('.card-img-top').attr('src');
-          const trailer = $2('.embed-responsive-item').attr('src');
-          const synopsis = $2('[itemprop=description]').text();
-          const genres = $2('[itemprop=genre]').text().split(', ');
-          const duration = parseInt(
-            $2('[itemprop=duration]').text().split(' ')[0],
-          );
-          const durationReadable = minutesToString(duration);
-          const director = $2('[itemprop=director]').text();
-          const actors = $2('[itemprop=actor]').text().split(', ');
-          const sessions = [];
-          const tickets = $2(
-            '.row [itemtype=http://schema.org/doorTime]',
-          ).first();
-          const parsedDate = tickets
-            .find('[itemprop=DateTime]')
-            .first()
-            .text()
-            .replace(/\s/gm, '');
-          const type = tickets
-            .find('[itemprop=videoformat]')
-            .first()
-            .text()
-            .replace(/\s/gm, '');
-          const splitDate = parsedDate.split('/');
-          const date = `${splitDate[2]}-${splitDate[1]}-${splitDate[0]}`;
-          const schedules = tickets.find('[itemprop=DateTime] a');
-          schedules.each((index) => {
-            const session: Session = {
-              date,
-              time: schedules.eq(index).text().trim(),
-              type,
-              url: `https://cineapolis.es${schedules.eq(index).attr('href')}`,
-            };
-            sessions.push(session);
-          });
-          const movie: MovieBasic = {
-            id,
-            name,
-            synopsis,
-            duration,
-            durationReadable,
-            sessions,
-            director: {
-              name: director,
-            },
-            actors: actors.map((actor) => {
-              return {
-                name: actor.replace(/\s/gm, ''),
-              };
-            }),
-            genres,
             poster,
             trailer,
             source,

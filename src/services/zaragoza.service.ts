@@ -65,9 +65,13 @@ export class ZaragozaService {
     );
   }
 
-  public getTramStation(res: Response, id: string): Promise<string> {
+  public getTramStation(
+    res: Response,
+    id: string,
+    source: 'api' | 'web' | 'backup',
+  ): Promise<string> {
     return lastValueFrom(
-      this.client.send<any, any>('tram/station', { id }),
+      this.client.send<any, any>('tram/station', { id, source }),
     ).then((response) => {
       if (response.statusCode) res.statusCode = response.statusCode;
       return response;

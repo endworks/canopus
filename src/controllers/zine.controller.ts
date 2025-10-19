@@ -1,13 +1,19 @@
-import { Controller, Get, Param, Res } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Controller, Get, Param, Query, Res } from '@nestjs/common';
 import {
-  Cinema,
-  CinemaDetailsBasic,
-  CinemaDetails,
+  ApiOperation,
+  ApiParam,
+  ApiQuery,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import { Response } from 'express';
+import {
   CacheData,
+  Cinema,
+  CinemaDetails,
+  CinemaDetailsBasic,
 } from '../models/zine.interface';
 import { ZineService } from '../services/zine.service';
-import { Response } from 'express';
 
 @ApiTags('Zine, cinemas and movies')
 @Controller('zine')
@@ -16,13 +22,21 @@ export class ZineController {
 
   @Get('cinema')
   @ApiOperation({ summary: 'Get cinemas' })
+  @ApiQuery({
+    name: 'location',
+    type: String,
+    required: false,
+  })
   @ApiResponse({
     status: 200,
     description: 'Return cinemas',
     type: [Cinema],
   })
-  async zineCinemas(@Res({ passthrough: true }) res: Response) {
-    return this.zineService.getCinemas(res);
+  async zineCinemas(
+    @Res({ passthrough: true }) res: Response,
+    @Query('location') location: string,
+  ) {
+    return this.zineService.getCinemas(res, location);
   }
 
   @Get('cinema/:id')

@@ -124,7 +124,7 @@ export class CinemaService {
             const search = await this.theMovieDb.search(
               sanitizeTitle(movie.name),
               'es-ES',
-              movie.year,
+              new Date().getFullYear(),
             );
             if (!search.results || search.results.length === 0) {
               this.logger.error(
@@ -148,6 +148,10 @@ export class CinemaService {
               matches = search.results.filter((result) =>
                 sanitizeTitle(result.title).includes(sanitizeTitle(movie.name)),
               );
+            }
+
+            if (search.results.length === 1) {
+              matches = search.results;
             }
 
             let movieDB: TheMovieDBMovie;
@@ -464,8 +468,6 @@ export class CinemaService {
           } else if (/(\d+ aniversario)/gim.test(name)) {
             specialEdition = /(\d+ aniversario)/gim.exec(name)[0];
             name = name.replace(/\(\d+ aniversario\)/gim, '');
-          } else if (nameLower.includes('.') || nameLower.includes(':')) {
-            name = name.split(/[.:]/)[0];
           }
           name = name.replace(/\(\s*\d{4}\s*\)/g, '');
           const id = generateSlug(name);

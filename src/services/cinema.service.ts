@@ -52,12 +52,15 @@ export class CinemaService {
     if (cache) return cache;
     const url = 'https://zgzpls.firebaseio.com/zine/cinemas.json';
     const response = await lastValueFrom(this.httpService.get(url));
+    const locations = location
+      ? location.includes(',')
+        ? location.split(',').map((item) => item.toLowerCase())
+        : [location.toLowerCase()]
+      : undefined;
     const resp = Object.keys(response.data)
       .map((key) => response.data[key])
       .filter((cinema) =>
-        location
-          ? cinema.location.toLowerCase().includes(location.toLowerCase())
-          : true,
+        locations ? locations.includes(cinema.location.toLowerCase()) : true,
       );
     await this.cacheManager.set(
       location ? `cinema/${location}` : 'cinema',

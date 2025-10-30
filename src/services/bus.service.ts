@@ -303,10 +303,12 @@ export class BusService {
     source?: string
   ): Promise<BusLinesResponse | ErrorResponse> {
     try {
+      /*
       const busApiURL =
         'https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/transporte-urbano/linea-autobus';
 
       const url = busApiURL;
+      */
 
       let backup: BusLinesResponse = null;
       const backupUrl = 'https://zgzpls.firebaseio.com/bus/lines.json';
@@ -319,17 +321,18 @@ export class BusService {
         backup = null;
       }
 
-      const response = await lastValueFrom(this.httpService.get(url));
+      //const response = await lastValueFrom(this.httpService.get(url));
+      const webLines = await this.fetchZaragozaLinesFromWeb();
       const availableLines = await this.fetchZaragozaLines();
-      const linesWithoutStations = [];
+      const linesToBeUpdated = [];
 
       for (const line of availableLines) {
-        if (!backup[line.value].stations) {
-          linesWithoutStations.push(line.value);
-        }
+        //if (!backup[line.value].stations) {
+        linesToBeUpdated.push(line.value);
+        //}
       }
 
-      await Promise.all(
+      /*await Promise.all(
         response.data.result.map(async (lineUrl: string) => {
           const resp = await lastValueFrom(this.httpService.get(lineUrl));
           const lineId = lineUrl.split('/').pop();
@@ -356,15 +359,15 @@ export class BusService {
             !resp.data.result &&
             availableLines.find((item) => item.value === lineId)
           ) {
-            linesWithoutStations.push(lineId);
+            linesToBeUpdated.push(lineId);
           }
           const backupLineUrl = `https://zgzpls.firebaseio.com/bus/lines/${line.id}.json`;
           await axios.put(backupLineUrl, line);
         })
-      );
+      );*/
 
       await Promise.all(
-        linesWithoutStations.map(async (lineId) => {
+        linesToBeUpdated.map(async (lineId) => {
           const lineStations = await this.fetchZaragozaLineFromWeb(lineId);
           const stations = [];
 
@@ -397,7 +400,17 @@ export class BusService {
           }
 
           const hidden = !stations.length ? true : undefined;
-          const line = {
+          const line: BusLineResponse = {
+            id: lineId,
+            number: lineId,
+            name: capitalizeEachWord(
+              fixWords(
+                webLines.find((item) => item.value === lineId)?.label ??
+                  backup[lineId]?.name ??
+                  lineId
+              )
+            ),
+            lastUpdated: new Date().toISOString(),
             stations,
             hidden
           };
@@ -451,6 +464,44 @@ export class BusService {
       });
 
       await this.cacheManager.set(`bus/lines/available`, lines);
+      return lines;
+    } catch (exception) {
+      console.error('Failed to fetch or parse Zaragoza lines data:', exception);
+      throw new InternalServerErrorException(
+        {
+          statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+          message: exception.message
+        },
+        exception.message
+      );
+    }
+  }
+
+  async fetchZaragozaLinesFromWeb(): Promise<
+    { value: string; label: string }[]
+  > {
+    try {
+      const cache: { value: string; label: string }[] =
+        await this.cacheManager.get(`bus/lines/web`);
+      if (cache) return cache;
+      const url = `https://zaragoza.avanzagrupo.com/lineas-y-horarios`;
+      const response = await lastValueFrom(this.httpService.get(url));
+      const html = await response.data;
+
+      const lines: { value: string; label: string }[] = [];
+
+      const $ = cheerio.load(html);
+      $('#linea-lineas-horarios option').each((_, el) => {
+        const value = $(el).attr('value') || '';
+        const text = $(el).text().trim();
+
+        if (value === 'lineDefault' || !text.includes('–')) return;
+
+        const label = text.split(' – ').slice(1).join(' - ');
+        lines.push({ value, label });
+      });
+
+      await this.cacheManager.set(`bus/lines/web`, lines);
       return lines;
     } catch (exception) {
       console.error('Failed to fetch or parse Zaragoza lines data:', exception);

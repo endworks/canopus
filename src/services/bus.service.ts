@@ -17,8 +17,18 @@ import {
   BusStationResponse,
   BusStationsResponse
 } from '../models/bus.interface';
-import { ErrorResponse } from '../models/common.interface';
-import { capitalize, capitalizeEachWord, fixWords } from '../utils';
+import {
+  ErrorResponse,
+  StationBase,
+  ValueLabel
+} from '../models/common.interface';
+import {
+  capitalize,
+  capitalizeEachWord,
+  fixWords,
+  isInt,
+  KmlForLine
+} from '../utils';
 
 const busApiURL =
   'https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/transporte-urbano/poste-autobus/tuzsa-';
@@ -318,14 +328,34 @@ export class BusService {
         backup = null;
       }
 
+      let stationsBackup: BusStationsResponse = null;
+      const stationsBackupUrl =
+        'https://zgzpls.firebaseio.com/bus/stations.json';
+      try {
+        const backupResponse = await lastValueFrom(
+          this.httpService.get(stationsBackupUrl)
+        );
+        stationsBackup = backupResponse.data;
+      } catch {
+        stationsBackup = null;
+      }
+
       const webLines = await this.fetchZaragozaLinesFromWeb();
       const availableLines = await this.fetchZaragozaLines();
       const linesToBeUpdated = availableLines.map((line) => line.value);
-
       await Promise.all(
         linesToBeUpdated.map(async (lineId) => {
-          const lineStations = await this.fetchZaragozaLineFromWeb(lineId);
-          const stations = lineStations.map((station) => station.value);
+          const lineStations = await this.fetchZaragozaLineFromKml(lineId);
+          const stations = lineStations.map((station) => station.id);
+          const stationsToUpdate = {};
+          lineStations.forEach((station) => {
+            stationsToUpdate[station.id] = {
+              ...(stationsBackup[station.id] || { lines: [lineId] }),
+              id: station.id,
+              street: station.street,
+              coordinates: station.coordinates
+            };
+          });
           const hidden = !stations.length ? true : undefined;
           const line: BusLineResponse = {
             id: lineId,
@@ -342,6 +372,15 @@ export class BusService {
           };
           const backupLineUrl = `https://zgzpls.firebaseio.com/bus/lines/${lineId}.json`;
           await axios.patch(backupLineUrl, line);
+          await axios.patch(stationsBackupUrl, stationsToUpdate);
+          /*await Promise.all(
+            lineStations.map((station) =>
+              axios.patch(
+                `https://zgzpls.firebaseio.com/bus/stations/${station.id}.json`,
+                stationsBackup[station.id]
+              )
+            )
+          );*/
         })
       );
 
@@ -356,6 +395,7 @@ export class BusService {
       await this.cacheManager.set('bus/lines', backup);
       return backup;
     } catch (exception) {
+      console.log('exception', exception);
       throw new InternalServerErrorException(
         {
           statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
@@ -366,9 +406,9 @@ export class BusService {
     }
   }
 
-  async fetchZaragozaLines(): Promise<{ value: string; label: string }[]> {
+  async fetchZaragozaLines(): Promise<ValueLabel[]> {
     try {
-      const cache: { value: string; label: string }[] =
+      const cache: ValueLabel[] =
         await this.cacheManager.get(`bus/lines/available`);
       if (cache) return cache;
       const url = 'https://zaragoza.avanzagrupo.com/lineas-y-horarios/';
@@ -378,13 +418,13 @@ export class BusService {
 
       const $ = cheerio.load(html);
 
-      const lines: { value: string; label: string }[] = [];
+      const lines: ValueLabel[] = [];
 
       $('select#linea-lineas-horarios option').each((_, el) => {
         const value = $(el).attr('value');
-        const label = $(el).text().trim();
+        const label = $(el).text().split(' – ').slice(1).join(' - ').trim();
 
-        if (value && value !== 'default') {
+        if (value && value !== 'lineDefault') {
           lines.push({ value, label });
         }
       });
@@ -403,18 +443,15 @@ export class BusService {
     }
   }
 
-  async fetchZaragozaLinesFromWeb(): Promise<
-    { value: string; label: string }[]
-  > {
+  async fetchZaragozaLinesFromWeb(): Promise<ValueLabel[]> {
     try {
-      const cache: { value: string; label: string }[] =
-        await this.cacheManager.get(`bus/lines/web`);
+      const cache: ValueLabel[] = await this.cacheManager.get(`bus/lines/web`);
       if (cache) return cache;
       const url = `https://zaragoza.avanzagrupo.com/lineas-y-horarios`;
       const response = await lastValueFrom(this.httpService.get(url));
       const html = await response.data;
 
-      const lines: { value: string; label: string }[] = [];
+      const lines: ValueLabel[] = [];
 
       const $ = cheerio.load(html);
       $('#linea-lineas-horarios option').each((_, el) => {
@@ -441,18 +478,17 @@ export class BusService {
     }
   }
 
-  async fetchZaragozaLineFromWeb(
-    id: string
-  ): Promise<{ value: string; label: string }[]> {
+  async fetchZaragozaLineFromWeb(id: string): Promise<ValueLabel[]> {
     try {
-      const cache: { value: string; label: string }[] =
-        await this.cacheManager.get(`bus/lines/${id}/web`);
+      const cache: ValueLabel[] = await this.cacheManager.get(
+        `bus/lines/${id}/web`
+      );
       if (cache) return cache;
       const url = `https://zaragoza.avanzagrupo.com/lineas-y-horarios/?selectLinea=${id}&selectSentido=-1`;
       const response = await lastValueFrom(this.httpService.get(url));
       const html = await response.data;
 
-      const stations: { value: string; label: string }[] = [];
+      const stations: ValueLabel[] = [];
 
       const getStationsFromDestination = (html: string) => {
         const $ = cheerio.load(html);
@@ -490,11 +526,58 @@ export class BusService {
     }
   }
 
-  async fetchZaragozaLinesLegacy(): Promise<
-    { value: string; label: string }[]
-  > {
+  async fetchZaragozaLineFromKml(id: string): Promise<StationBase[]> {
     try {
-      const cache: { value: string; label: string }[] =
+      const cache: StationBase[] = await this.cacheManager.get(
+        `bus/lines/${id}/kml`
+      );
+      if (cache) return cache;
+      const urls = KmlForLine(id);
+      const responses = await Promise.all(
+        urls.map((url) => lastValueFrom(this.httpService.get(url)))
+      );
+
+      const stations: StationBase[] = [];
+      responses.map((response) => {
+        const xml = response.data;
+        const $ = cheerio.load(xml, { xmlMode: true });
+
+        $('Placemark').each((_, el) => {
+          const name = $(el).find('name').text().trim();
+
+          const match = name.match(/poste\s*(\d+)\s*-\s*(.+)/i);
+          const stationId = match ? match[1] : '';
+          const street = match ? match[2].trim() : '';
+          const coordsText = $(el).find('coordinates').text().trim();
+          const [lonStr, latStr] = coordsText.split(',').map((s) => s.trim());
+
+          if (isInt(stationId)) {
+            stations.push({
+              id: stationId,
+              street,
+              coordinates: [lonStr, latStr]
+            });
+          }
+        });
+      });
+
+      await this.cacheManager.set(`bus/lines/${id}/kml`, stations);
+      return stations;
+    } catch (exception) {
+      console.error('Failed to fetch or parse Zaragoza lines data:', exception);
+      throw new InternalServerErrorException(
+        {
+          statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+          message: exception.message
+        },
+        exception.message
+      );
+    }
+  }
+
+  async fetchZaragozaLinesLegacy(): Promise<ValueLabel[]> {
+    try {
+      const cache: ValueLabel[] =
         await this.cacheManager.get(`bus/lines/available`);
       if (cache) return cache;
       const response = await fetch(

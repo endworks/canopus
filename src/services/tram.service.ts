@@ -42,30 +42,13 @@ export class TramService {
             id: stationId,
             street: capitalizeEachWord(fixWords(station.title)),
             lines: ['L1'],
-            times:
-              station.destinos?.map((destino) => {
-                return {
-                  line: destino.linea,
-                  destination: capitalizeEachWord(fixWords(destino.destino)),
-                  time: `${destino.minutos} min.`
-                };
-              }) || [],
+            times: [],
             coordinates: station.geometry.coordinates,
             source: 'api',
             sourceUrl: station.uri,
-            lastUpdated: station.lastUpdated,
+            lastUpdated: undefined,
             type: 'tram'
           };
-        } else {
-          stations[stationId].times.push(
-            ...(station.destinos?.map((destino) => {
-              return {
-                line: destino.linea,
-                destination: capitalizeEachWord(fixWords(destino.destino)),
-                time: `${destino.minutos} min.`
-              };
-            }) || [])
-          );
         }
       });
 
@@ -95,11 +78,6 @@ export class TramService {
         const stationResponse = await this.getStations();
         const stations = Object.keys(stationResponse).map(
           (station) => stationResponse[station]
-        );
-        console.log(
-          'stations',
-          stations.length,
-          Object.keys(stationResponse).length
         );
 
         const fuse = new Fuse.default(stations, {

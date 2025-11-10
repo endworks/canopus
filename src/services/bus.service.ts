@@ -40,8 +40,12 @@ export class BusService {
       if (cache) return cache;
       const url = 'https://zgzpls.firebaseio.com/bus/stations.json';
       const response = await lastValueFrom(this.httpService.get(url));
-      await this.cacheManager.set(`bus/stations`, response.data);
-      return response.data;
+      const resp: BusStationsResponse = {};
+      response.data.forEach((station) => {
+        resp[station.id] = { ...station, lastUpdated: undefined, times: [] };
+      });
+      await this.cacheManager.set(`bus/stations`, resp);
+      return resp;
     } catch (exception) {
       throw new InternalServerErrorException(
         {
@@ -68,7 +72,7 @@ export class BusService {
         : `${busApiURL + id}.json?srsname=wgs84`;
 
     let backup = null;
-    const backupUrl = `https://zgzpls.firebaseio.com/bus/stations/tuzsa-${id}.json`;
+    const backupUrl = `https://zgzpls.firebaseio.com/bus/stations/${id}.json`;
     try {
       const backupResponse = await lastValueFrom(
         this.httpService.get(backupUrl)
@@ -113,12 +117,14 @@ export class BusService {
           resp.source = 'api';
           resp.sourceUrl = url;
           resp.lastUpdated = response.data.lastUpdated;
-          resp.street = capitalizeEachWord(
-            fixWords(
-              response.data.title.split(')')[1].slice(1).split('Lí')[0].trim()
-            )
-          );
-          resp.coordinates = response.data.geometry.coordinates;
+          if (!backup) {
+            resp.street = capitalizeEachWord(
+              fixWords(
+                response.data.title.split(')')[1].slice(1).split('Lí')[0].trim()
+              )
+            );
+            resp.coordinates = response.data.geometry.coordinates;
+          }
           const times = [];
           response.data.destinos.map((destination) => {
             ['primero', 'segundo'].map((element) => {
@@ -299,17 +305,8 @@ export class BusService {
     }
   }
 
-  public async getLinesUpdate(
-    source?: string
-  ): Promise<BusLinesResponse | ErrorResponse> {
+  public async getLinesUpdate(): Promise<BusLinesResponse | ErrorResponse> {
     try {
-      /*
-      const busApiURL =
-        'https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/transporte-urbano/linea-autobus';
-
-      const url = busApiURL;
-      */
-
       let backup: BusLinesResponse = null;
       const backupUrl = 'https://zgzpls.firebaseio.com/bus/lines.json';
       try {
@@ -321,88 +318,17 @@ export class BusService {
         backup = null;
       }
 
-      //const response = await lastValueFrom(this.httpService.get(url));
       const webLines = await this.fetchZaragozaLinesFromWeb();
       const availableLines = await this.fetchZaragozaLines();
-      const linesToBeUpdated = [];
-
-      for (const line of availableLines) {
-        //if (!backup[line.value].stations) {
-        linesToBeUpdated.push(line.value);
-        //}
-      }
-
-      /*await Promise.all(
-        response.data.result.map(async (lineUrl: string) => {
-          const resp = await lastValueFrom(this.httpService.get(lineUrl));
-          const lineId = lineUrl.split('/').pop();
-          const found = availableLines.find(
-            (line) => line.value.toUpperCase() == lineId.toUpperCase()
-          );
-          const name = found
-            ? found.label
-                .split(' - ')
-                .slice(1)
-                .map((word) => capitalizeEachWord(fixWords(word.trim())))
-                .join(' - ')
-            : undefined;
-          const line: BusLineResponse = {
-            ...backup[found?.value || lineId],
-            id: found?.value || lineId,
-            number: found?.value || lineId,
-            name: name ?? backup[found?.value || lineId].name,
-            stations: resp.data.result,
-            lastUpdated: resp.data.lastUpdated,
-            hidden: Boolean(!found)
-          };
-          if (
-            !resp.data.result &&
-            availableLines.find((item) => item.value === lineId)
-          ) {
-            linesToBeUpdated.push(lineId);
-          }
-          const backupLineUrl = `https://zgzpls.firebaseio.com/bus/lines/${line.id}.json`;
-          await axios.put(backupLineUrl, line);
-        })
-      );*/
+      const linesToBeUpdated = availableLines.map((line) => line.value);
 
       await Promise.all(
         linesToBeUpdated.map(async (lineId) => {
           const lineStations = await this.fetchZaragozaLineFromWeb(lineId);
-          const stations = [];
-
-          for (const missingStation of lineStations) {
-            let found;
-            for (const line in backup) {
-              found = backup[line].stations?.find(
-                (station) =>
-                  station.description === `Poste ${missingStation.value}`
-              );
-              if (found) {
-                stations.push(found);
-                break;
-              }
-            }
-            if (!found) {
-              console.log('not found', missingStation);
-              const stationData = {
-                about: `http://www.zaragoza.es/api/recurso/urbanismo-infraestructuras/transporte-urbano/poste/tuzsa-${missingStation.value}`,
-                description: `Poste ${missingStation.value}`,
-                link: `http://www.urbanosdezaragoza.es/frm_esquemaparadatime.php?poste=${missingStation.value}`,
-                title: missingStation.label,
-                geometry: {
-                  coordinates: [0, 0],
-                  type: 'Point'
-                }
-              };
-              stations.push(stationData);
-            }
-          }
-
+          const stations = lineStations.map((station) => station.value);
           const hidden = !stations.length ? true : undefined;
           const line: BusLineResponse = {
             id: lineId,
-            number: lineId,
             name: capitalizeEachWord(
               fixWords(
                 webLines.find((item) => item.value === lineId)?.label ??

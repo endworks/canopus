@@ -50,12 +50,8 @@ export class BusService {
       if (cache) return cache;
       const url = 'https://zgzpls.firebaseio.com/bus/stations.json';
       const response = await lastValueFrom(this.httpService.get(url));
-      const resp: BusStationsResponse = {};
-      response.data.forEach((station) => {
-        resp[station.id] = { ...station, lastUpdated: undefined, times: [] };
-      });
-      await this.cacheManager.set(`bus/stations`, resp);
-      return resp;
+      await this.cacheManager.set(`bus/stations`, response.data);
+      return response.data;
     } catch (exception) {
       throw new InternalServerErrorException(
         {

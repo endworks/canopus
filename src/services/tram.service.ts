@@ -28,6 +28,28 @@ export class TramService {
   public async getStations(): Promise<TramStationsResponse | ErrorResponse> {
     try {
       const cache: TramStationsResponse =
+        await this.cacheManager.get('tram/stations');
+      if (cache) return cache;
+      const url = 'https://zgzpls.firebaseio.com/tram/stations.json';
+      const response = await lastValueFrom(this.httpService.get(url));
+      await this.cacheManager.set(`tram/stations`, response.data);
+      return response.data;
+    } catch (exception) {
+      throw new InternalServerErrorException(
+        {
+          statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+          message: exception.message
+        },
+        exception.message
+      );
+    }
+  }
+
+  public async getStationsLegacy(): Promise<
+    TramStationsResponse | ErrorResponse
+  > {
+    try {
+      const cache: TramStationsResponse =
         await this.cacheManager.get(`tram/stations`);
       if (cache) return cache;
       const url =
@@ -173,7 +195,6 @@ export class TramService {
       });
       resp.source = 'api';
 
-      await axios.put(backupUrl, resp);
       await this.cacheManager.set(
         `tram/stations/${id}/${source ?? 'api'}`,
         resp,

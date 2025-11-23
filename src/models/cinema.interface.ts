@@ -52,7 +52,7 @@ export interface Movie extends MovieBasic {
 
 export interface Session {
   time: string;
-  room?: string;
+  screen?: string;
   date?: string;
   type?: string;
   url?: string;

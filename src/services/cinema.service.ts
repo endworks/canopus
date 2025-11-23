@@ -100,6 +100,7 @@ export class CinemaService {
           ...cinemaDetails,
           lastUpdated: new Date().toISOString(),
           movies,
+          sessions,
         };
 
         await this.saveCinema({ ...resp, movies: movieIds, sessions });
@@ -201,7 +202,6 @@ export class CinemaService {
               return movie;
             }
 
-            // Check the duration to be sure that is the same movie
             if (
               movieDB.runtime > 0 &&
               (movie.duration + 20 < movieDB.runtime ||
@@ -463,8 +463,8 @@ export class CinemaService {
           const filmResponse = await lastValueFrom(
             this.httpService.get(source),
           );
-          const $2 = cheerio.load(filmResponse.data);
-          let name = $2('h2 strong').first().text();
+          const $film = cheerio.load(filmResponse.data);
+          let name = $film('h2 strong').first().text();
           const nameLower = name.toLowerCase();
           let specialEdition = null;
           if (nameLower.includes('cine club lys')) {
@@ -485,32 +485,60 @@ export class CinemaService {
           }
           name = name.replace(/\(\s*\d{4}\s*\)/g, '');
           const id = generateSlug(name);
-          const sessions = [];
-          const poster = $2('.media-object').attr('src').split('?')[0];
-          const trailer = $2('#trailer iframe').attr('src');
-          const synopsis = $2('#sinopsis_info span')
+          const sessions: Session[] = [];
+          const poster = $film('.media-object').attr('src').split('?')[0];
+          const trailer = $film('#trailer iframe').attr('src');
+          const synopsis = $film('#sinopsis_info span')
             .text()
             .replace(/\n/, '')
             .trim();
           const duration = parseInt(
-            $2('.member-descriptionX > p > strong').text().split(' ')[0],
+            $film('.member-descriptionX > p > strong').text().split(' ')[0],
           );
           const durationReadable = minutesToString(duration);
-          const tickets = $2('#1.tab-pane > div');
-          const type = tickets
-            .find('p')
-            .first()
-            .text()
-            .replace(/[\s()]/gm, '');
-          const schedules = tickets.find('.sessions-list a');
-          schedules.each((index) => {
-            const session: Session = {
-              time: schedules.eq(index).text().trim(),
-              type,
-              url: schedules.eq(index).attr('href'),
-            };
-            sessions.push(session);
+
+          const currentYear = new Date().getFullYear();
+          const dates = [];
+          $film('ul.nav-tabs li a').each((_, el) => {
+            const text = $(el).text().trim();
+
+            const match = text.match(/(\d{1,2})\s*\/\s*(\d{1,2})/);
+            if (match) {
+              const day = parseInt(match[1], 10);
+              const month = parseInt(match[2], 10);
+
+              const isoDate = new Date(currentYear, month - 1, day)
+                .toISOString()
+                .split('T')[0];
+
+              dates.push(isoDate);
+            }
           });
+          dates.forEach((date, index) => {
+            $film(`#${index + 1} > div`).each((_, formatBlock) => {
+              const type = $film(formatBlock)
+                .find('p')
+                .first()
+                .text()
+                .trim()
+                .replace(/\(|\)/g, '')
+                .trim();
+
+              $film(formatBlock)
+                .find('.session-container')
+                .each((_, session) => {
+                  const time = $film(session).find('a.sesion').text().trim();
+                  const url = $film(session).find('a.sesion').attr('href');
+
+                  const popover = $film(session).attr('popover-content') || '';
+                  const screenMatch = popover.match(/Sala:\s*<b>(\d+)<\/b>/i);
+                  const screen = screenMatch ? screenMatch[1] : null;
+
+                  sessions.push({ time, url, screen, date, type });
+                });
+            });
+          });
+
           const movie: MovieBasic = {
             id,
             name,

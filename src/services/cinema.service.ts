@@ -564,6 +564,19 @@ export class CinemaService {
     )) as any;
   }
 
+  public async getMovies(): Promise<Movie[] | ErrorResponse> {
+    const cache: Movie[] = await this.cacheManager.get('movies');
+    if (cache) return cache;
+    const movies = await this.getAllMovies();
+
+    const resp: Movie[] = movies.map((movie) => {
+      const { _id, __v, ...movieDetails } = movie;
+      return movieDetails;
+    });
+    await this.cacheManager.set('movies', resp);
+    return resp;
+  }
+
   async getAllCinemas() {
     return this.cinemaModel.find().sort({ id: 1 }).lean().exec();
   }

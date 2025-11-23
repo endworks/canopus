@@ -34,6 +34,14 @@ export class CinemaController {
     });
   }
 
+  @MessagePattern('movies', Transport.TCP)
+  async movies() {
+    return this.cinemaService.getMovies().catch((ex) => {
+      this.logger.error(ex.message);
+      return ex.response;
+    });
+  }
+
   @MessagePattern('cached', Transport.TCP)
   async cached() {
     return this.cinemaService.cached().catch((ex) => {

@@ -22,7 +22,7 @@ export interface MovieBasic {
   id: string;
   name: string;
   specialEdition?: string;
-  sessions: Session[];
+  sessions?: Session[];
   synopsis?: string;
   duration?: number;
   durationReadable?: string;

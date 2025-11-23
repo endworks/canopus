@@ -61,9 +61,14 @@ export class CinemaService {
         ? location.split(',').map((item) => item.toLowerCase())
         : [location.toLowerCase()]
       : undefined;
-    const resp: Cinema[] = cinemas.filter((cinema) =>
-      locations ? locations.includes(cinema.location.toLowerCase()) : true,
-    );
+    const resp: Cinema[] = cinemas
+      .filter((cinema) =>
+        locations ? locations.includes(cinema.location.toLowerCase()) : true,
+      )
+      .map((cinema) => {
+        const { _id, __v, ...cinemaDetails } = cinema;
+        return cinemaDetails;
+      });
     await this.cacheManager.set(
       location ? `cinema/${location}` : 'cinema',
       resp,
@@ -88,7 +93,7 @@ export class CinemaService {
           sessions[movie.id] = movie.sessions;
         });
 
-        const { _id, ...cinemaDetails } = cinema;
+        const { _id, __v, ...cinemaDetails } = cinema;
 
         const resp = {
           id,
@@ -292,10 +297,6 @@ export class CinemaService {
         );
 
         const movieIds = movies.map((movie) => movie.id);
-        const sessions = {};
-        movies.forEach((movie) => {
-          sessions[movie.id] = movie.sessions;
-        });
 
         const resp = {
           ...cinema,
@@ -304,7 +305,7 @@ export class CinemaService {
         for (const movie of movies) {
           await this.saveMovie(movie);
         }
-        this.saveCinema({ ...resp, movies: movieIds, sessions });
+        this.saveCinema({ ...resp, movies: movieIds });
         await this.cacheManager.set(`cinema/${id}`, resp);
         return resp;
       } catch (exception) {

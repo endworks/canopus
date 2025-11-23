@@ -539,6 +539,13 @@ export class CinemaService {
             });
           });
 
+          sessions.sort((a, b) => {
+            const da = new Date(`${a.date}T${a.time}:00`);
+            const db = new Date(`${b.date}T${b.time}:00`);
+
+            return da.getTime() - db.getTime();
+          });
+
           const movie: MovieBasic = {
             id,
             name,

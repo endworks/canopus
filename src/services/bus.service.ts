@@ -8,7 +8,6 @@ import {
   NotFoundException
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import axios from 'axios';
 import { Cache } from 'cache-manager';
 import * as cheerio from 'cheerio';
 import { Model } from 'mongoose';
@@ -61,10 +60,14 @@ export class BusService {
       const cache: BusStationsResponse =
         await this.cacheManager.get('bus/stations');
       if (cache) return cache;
-      const url = 'https://zgzpls.firebaseio.com/bus/stations.json';
-      const response = await lastValueFrom(this.httpService.get(url));
-      await this.cacheManager.set(`bus/stations`, response.data);
-      return response.data;
+      const resp: BusStationsResponse = {};
+      const stations = await this.getAllStations();
+      stations.forEach((station) => {
+        const { _id, ...stationWithoutId } = station;
+        resp[station.id] = stationWithoutId;
+      });
+      await this.cacheManager.set(`bus/stations`, resp);
+      return resp;
     } catch (exception) {
       throw new InternalServerErrorException(
         {
@@ -90,16 +93,7 @@ export class BusService {
         ? busWebURL + id
         : `${busApiURL + id}.json?srsname=wgs84`;
 
-    let backup = null;
-    const backupUrl = `https://zgzpls.firebaseio.com/bus/stations/${id}.json`;
-    try {
-      const backupResponse = await lastValueFrom(
-        this.httpService.get(backupUrl)
-      );
-      backup = backupResponse.data;
-    } catch {
-      backup = null;
-    }
+    const backup = await this.getStationById(id);
 
     try {
       const response = await lastValueFrom(this.httpService.get(url));
@@ -198,7 +192,7 @@ export class BusService {
           resp.sourceUrl = url;
           resp.lastUpdated = new Date().toISOString();
         } else if (source === 'backup') {
-          return { ...backup, source: 'backup', sourceUrl: backupUrl };
+          return { ...backup, source: 'backup' };
         } else {
           throw new NotFoundException(
             {
@@ -267,10 +261,14 @@ export class BusService {
     try {
       const cache: BusLinesResponse = await this.cacheManager.get(`bus/lines`);
       if (cache) return cache;
-      const url = 'https://zgzpls.firebaseio.com/bus/lines.json';
-      const response = await lastValueFrom(this.httpService.get(url));
-      await this.cacheManager.set(`bus/lines`, response.data);
-      return response.data;
+      const resp: BusLinesResponse = {};
+      const lines = await this.getAllLines();
+      lines.forEach((line) => {
+        const { _id, ...lineWithoutId } = line;
+        resp[line.id] = lineWithoutId;
+      });
+      await this.cacheManager.set(`bus/lines`, resp);
+      return resp;
     } catch (exception) {
       throw new InternalServerErrorException(
         {
@@ -289,9 +287,8 @@ export class BusService {
         `bus/lines/${id}`
       );
       if (cache) return cache;
-      const url = `https://zgzpls.firebaseio.com/bus/lines/${id}.json`;
-      const response = await lastValueFrom(this.httpService.get(url));
-      if (!response.data) {
+      const line = await this.getLineById(id);
+      if (!line) {
         throw new NotFoundException(
           {
             statusCode: HttpStatus.NOT_FOUND,
@@ -300,8 +297,9 @@ export class BusService {
           `Resource with ID '${id}' was not found`
         );
       }
-      await this.cacheManager.set(`bus/lines/${id}`, response.data);
-      return response.data;
+      const { _id, ...lineWithoutId } = line;
+      await this.cacheManager.set(`bus/lines/${id}`, lineWithoutId);
+      return lineWithoutId;
     } catch (exception) {
       throw new InternalServerErrorException(
         {
@@ -315,28 +313,8 @@ export class BusService {
 
   public async getLinesUpdate(): Promise<BusLinesResponse | ErrorResponse> {
     try {
-      let backup: BusLinesResponse = null;
-      const backupUrl = 'https://zgzpls.firebaseio.com/bus/lines.json';
-      try {
-        const backupResponse = await lastValueFrom(
-          this.httpService.get(backupUrl)
-        );
-        backup = backupResponse.data;
-      } catch {
-        backup = null;
-      }
-
-      let stationsBackup: BusStationsResponse = null;
-      const stationsBackupUrl =
-        'https://zgzpls.firebaseio.com/bus/stations.json';
-      try {
-        const backupResponse = await lastValueFrom(
-          this.httpService.get(stationsBackupUrl)
-        );
-        stationsBackup = backupResponse.data;
-      } catch {
-        stationsBackup = null;
-      }
+      const backup = await this.getAllLines();
+      const stationsBackup = await this.getAllStations();
 
       const webLines = await this.fetchZaragozaLinesFromWeb();
       const availableLines = await this.fetchZaragozaLines();
@@ -380,22 +358,17 @@ export class BusService {
             hidden
           };
           await this.saveLine(line);
-          const backupLineUrl = `https://zgzpls.firebaseio.com/bus/lines/${lineId}.json`;
-          await axios.patch(backupLineUrl, line);
-          await axios.patch(stationsBackupUrl, stationsToUpdate);
         })
       );
 
-      try {
-        const backupResponse = await lastValueFrom(
-          this.httpService.get(backupUrl)
-        );
-        backup = backupResponse.data;
-      } catch {
-        backup = null;
-      }
-      await this.cacheManager.set('bus/lines', backup);
-      return backup;
+      const resp: BusLinesResponse = {};
+      const lines = await this.getAllLines();
+      lines.forEach((line) => {
+        const { _id, ...lineWithoutId } = line;
+        resp[line.id] = lineWithoutId;
+      });
+      await this.cacheManager.set('bus/lines', resp);
+      return resp;
     } catch (exception) {
       console.log('exception', exception);
       throw new InternalServerErrorException(
@@ -527,6 +500,14 @@ export class BusService {
         exception.message
       );
     }
+  }
+
+  async getAllStations() {
+    return this.busStationModel.find().sort({ id: 1 }).lean().exec();
+  }
+
+  async getAllLines() {
+    return this.busLineModel.find().sort({ id: 1 }).lean().exec();
   }
 
   async getStationById(id: string) {

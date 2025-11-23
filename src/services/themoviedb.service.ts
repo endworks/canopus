@@ -1,15 +1,15 @@
-import { Inject, Injectable } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
-import { lastValueFrom } from 'rxjs';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Inject, Injectable } from '@nestjs/common';
 import { Cache } from 'cache-manager';
+import { lastValueFrom } from 'rxjs';
 import {
   TheMovieDBConfiguration,
   TheMovieDBCredits,
   TheMovieDBMovie,
   TheMovieDBSearch,
   TheMovieDBVideos,
-} from 'src/models/themoviedb.interface';
-import { CACHE_MANAGER } from '@nestjs/cache-manager';
+} from '../models/themoviedb.interface';
 
 const API_URL = 'https://api.themoviedb.org/3';
 

@@ -1,4 +1,4 @@
-import { CinemaData } from 'src/models/cinema.interface';
+import { CinemaData } from '../models/cinema.interface';
 
 export const cinemas: CinemaData = {
   aragonia: {

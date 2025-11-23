@@ -1,8 +1,8 @@
 import { Controller, Logger } from '@nestjs/common';
 import { MessagePattern, Payload, Transport } from '@nestjs/microservices';
-import { CinemaPayload } from 'src/models/cinema.interface';
-import { IdPayload } from 'src/models/common.interface';
-import { CinemaService } from 'src/services/cinema.service';
+import { CinemaPayload } from '../models/cinema.interface';
+import { IdPayload } from '../models/common.interface';
+import { CinemaService } from '../services/cinema.service';
 
 @Controller()
 export class CinemaController {

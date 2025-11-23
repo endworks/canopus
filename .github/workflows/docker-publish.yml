@@ -9,9 +9,9 @@ on:
   push:
     branches:
       - main
-      - 'feature/**'
+      - "feature/**"
     # Publish semver tags as releases.
-    tags: ['v*.*.*']
+    tags: ["v*.*.*"]
   pull_request:
     branches:
       - main
@@ -42,7 +42,7 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: sigstore/cosign-installer@v3.3.0
         with:
-          cosign-release: 'v2.2.2'
+          cosign-release: "v2.2.2"
 
       # Set up BuildKit Docker container builder to be able to build
       # multi-platform images and export cache
@@ -149,6 +149,7 @@ jobs:
           USERNAME: op://end.works/end.works/username
           KEY: op://end.works/SSH Key/private key
           FINGERPRINT: op://end.works/SSH Key/fingerprint
+          MONGODB_URI: op://end.works/MongoDB ZgzPls/mongodb uri
           THE_MOVIE_DB_API_KEY: op://end.works/The Movie DB API Key/credential
 
       - name: Run container on host
@@ -162,7 +163,7 @@ jobs:
             docker pull ghcr.io/${{ github.repository }}:${{ env.TAG }}
             docker stop ${{ env.CONTAINER_NAME }}
             docker rm ${{ env.CONTAINER_NAME }}
-            docker run --network canopus -p 8878:3000/tcp -e THE_MOVIE_DB_API_KEY='${{ env.THE_MOVIE_DB_API_KEY }}' -ti -d --restart unless-stopped --name ${{ env.CONTAINER_NAME }} ghcr.io/${{ github.repository }}:${{ env.TAG }}
+            docker run --network canopus -p 8878:3000/tcp -e MONGODB_URI='${{ env.MONGODB_URI }}' -e THE_MOVIE_DB_API_KEY='${{ env.THE_MOVIE_DB_API_KEY }}' -ti -d --restart unless-stopped --name ${{ env.CONTAINER_NAME }} ghcr.io/${{ github.repository }}:${{ env.TAG }}
       - name: Generate summary
         id: generate-summary
         run: |

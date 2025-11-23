@@ -1,10 +1,9 @@
 import { HttpModule } from '@nestjs/axios';
-import { Module } from '@nestjs/common';
-import { CinemaController } from './controllers/cinema.controller';
-import { CinemaService } from './services/cinema.service';
-import { TheMovieDBService } from './services/themoviedb.service';
-import { cacheMaxSize, cacheTTL } from './utils';
 import { CacheModule } from '@nestjs/cache-manager';
+import { Module } from '@nestjs/common';
+import { MongooseModule } from '@nestjs/mongoose';
+import { CinemaModule } from './modules/cinema.module';
+import { cacheMaxSize, cacheTTL } from './utils';
 
 @Module({
   imports: [
@@ -13,8 +12,12 @@ import { CacheModule } from '@nestjs/cache-manager';
       ttl: cacheTTL,
       max: cacheMaxSize,
     }),
+    MongooseModule.forRoot(process.env.MONGODB_URI, {
+      dbName: 'zine',
+    }),
+    CinemaModule,
   ],
-  controllers: [CinemaController],
-  providers: [CinemaService, TheMovieDBService],
+  controllers: [],
+  providers: [],
 })
 export class AppModule {}

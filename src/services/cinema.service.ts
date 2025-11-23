@@ -8,8 +8,9 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import axios from 'axios';
+import { InjectModel } from '@nestjs/mongoose';
 import * as cheerio from 'cheerio';
+import { Model } from 'mongoose';
 import { lastValueFrom } from 'rxjs';
 import {
   CacheData,
@@ -19,18 +20,20 @@ import {
   Movie,
   MovieBasic,
   Session,
-} from 'src/models/cinema.interface';
+} from '../models/cinema.interface';
+import { ErrorResponse } from '../models/common.interface';
 import {
   TheMovieDBMovie,
   TheMovieDBSearchResult,
-} from 'src/models/themoviedb.interface';
+} from '../models/themoviedb.interface';
+import { Cinema as CinemaSchema } from '../schemas/cinema.schema';
+import { Movie as MovieSchema } from '../schemas/movie.schema';
 import {
   cacheMaxSize,
   generateSlug,
   minutesToString,
   sanitizeTitle,
-} from 'src/utils';
-import { ErrorResponse } from '../models/common.interface';
+} from '../utils';
 import { TheMovieDBService } from './themoviedb.service';
 
 @Injectable()
@@ -39,6 +42,8 @@ export class CinemaService {
 
   constructor(
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
+    @InjectModel(CinemaSchema.name) private cinemaModel: Model<CinemaSchema>,
+    @InjectModel(MovieSchema.name) private movieModel: Model<MovieSchema>,
     private httpService: HttpService,
     private theMovieDb: TheMovieDBService,
   ) {}
@@ -50,18 +55,15 @@ export class CinemaService {
       location ? `cinema/${location}` : 'cinema',
     );
     if (cache) return cache;
-    const url = 'https://zgzpls.firebaseio.com/zine/cinemas.json';
-    const response = await lastValueFrom(this.httpService.get(url));
+    const cinemas = await this.getAllCinemas();
     const locations = location
       ? location.includes(',')
         ? location.split(',').map((item) => item.toLowerCase())
         : [location.toLowerCase()]
       : undefined;
-    const resp = Object.keys(response.data)
-      .map((key) => response.data[key])
-      .filter((cinema) =>
-        locations ? locations.includes(cinema.location.toLowerCase()) : true,
-      );
+    const resp: Cinema[] = cinemas.filter((cinema) =>
+      locations ? locations.includes(cinema.location.toLowerCase()) : true,
+    );
     await this.cacheManager.set(
       location ? `cinema/${location}` : 'cinema',
       resp,
@@ -72,9 +74,7 @@ export class CinemaService {
   public async getCinemaBasic(
     id: string,
   ): Promise<CinemaDetailsBasic | ErrorResponse> {
-    const url = `https://zgzpls.firebaseio.com/zine/cinemas/${id}.json`;
-    const response = await lastValueFrom(this.httpService.get(url));
-    const cinema = response.data;
+    const cinema = await this.getCinemaById(id);
     if (cinema) {
       const cache: CinemaDetailsBasic = await this.cacheManager.get(
         `cinema/${id}/basic`,
@@ -82,16 +82,22 @@ export class CinemaService {
       if (cache) return cache;
       try {
         const movies = await this.getMoviesReservaEntradas(id);
+        const movieIds = movies.map((movie) => movie.id);
+        const sessions = {};
+        movies.forEach((movie) => {
+          sessions[movie.id] = movie.sessions;
+        });
+
+        const { _id, ...cinemaDetails } = cinema;
 
         const resp = {
           id,
-          ...cinema,
+          ...cinemaDetails,
           lastUpdated: new Date().toISOString(),
           movies,
         };
 
-        const backupUrl = `https://zgzpls.firebaseio.com/zine/cinemas/${id}/movies.json`;
-        await axios.put(backupUrl, movies);
+        await this.saveCinema({ ...resp, movies: movieIds, sessions });
         await this.cacheManager.set(`cinema/${id}/basic`, resp);
         return resp;
       } catch (exception) {
@@ -285,12 +291,20 @@ export class CinemaService {
           }),
         );
 
+        const movieIds = movies.map((movie) => movie.id);
+        const sessions = {};
+        movies.forEach((movie) => {
+          sessions[movie.id] = movie.sessions;
+        });
+
         const resp = {
           ...cinema,
           movies,
         };
-        const backupUrl = `https://zgzpls.firebaseio.com/zine/cinemas/${id}/movies.json`;
-        await axios.put(backupUrl, movies);
+        for (const movie of movies) {
+          await this.saveMovie(movie);
+        }
+        this.saveCinema({ ...resp, movies: movieIds, sessions });
         await this.cacheManager.set(`cinema/${id}`, resp);
         return resp;
       } catch (exception) {
@@ -430,8 +444,7 @@ export class CinemaService {
     });
     await Promise.all(
       result.map(async (cinema) => {
-        const backupUrl = `https://zgzpls.firebaseio.com/zine/cinemas/${cinema.id}.json`;
-        await axios.patch(backupUrl, cinema);
+        await this.saveCinema(cinema);
       }),
     );
     await this.cacheManager.set('cinema/reservaEntradas', result);
@@ -439,11 +452,8 @@ export class CinemaService {
   }
 
   async getMoviesReservaEntradas(id: string): Promise<MovieBasic[]> {
-    const url = `https://zgzpls.firebaseio.com/zine/cinemas/${id}.json`;
-    const cinema = await lastValueFrom(this.httpService.get(url));
-    const response = await lastValueFrom(
-      this.httpService.get(cinema.data.source),
-    );
+    const cinema = await this.getCinemaById(id);
+    const response = await lastValueFrom(this.httpService.get(cinema.source));
     const $ = cheerio.load(response.data);
     return (await Promise.all(
       $('.movie.row')
@@ -516,5 +526,41 @@ export class CinemaService {
         })
         .toArray(),
     )) as any;
+  }
+
+  async getAllCinemas() {
+    return this.cinemaModel.find().sort({ id: 1 }).lean().exec();
+  }
+
+  async getAllMovies() {
+    return this.movieModel.find().sort({ id: 1 }).lean().exec();
+  }
+
+  async getCinemaById(id: string) {
+    return this.cinemaModel.findOne({ id }).lean();
+  }
+
+  async getMovieById(id: string) {
+    return this.movieModel.findOne({ id }).lean();
+  }
+
+  async saveCinema(data: Partial<CinemaSchema>) {
+    return this.cinemaModel
+      .findOneAndUpdate(
+        { id: data.id },
+        { $set: data },
+        { new: true, upsert: true },
+      )
+      .lean();
+  }
+
+  async saveMovie(data: Partial<MovieSchema>) {
+    return this.movieModel
+      .findOneAndUpdate(
+        { id: data.id },
+        { $set: data },
+        { new: true, upsert: true },
+      )
+      .lean();
   }
 }

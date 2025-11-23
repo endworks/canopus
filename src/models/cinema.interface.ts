@@ -75,6 +75,7 @@ export interface CinemaDetails extends Cinema {
 export interface CinemaDetailsBasic extends Cinema {
   lastUpdated: string;
   movies: MovieBasic[];
+  sessions?: Record<string, Session[]>;
 }
 
 export interface CacheData {

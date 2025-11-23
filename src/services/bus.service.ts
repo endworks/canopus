@@ -63,7 +63,7 @@ export class BusService {
       const resp: BusStationsResponse = {};
       const stations = await this.getAllStations();
       stations.forEach((station) => {
-        const { _id, ...stationWithoutId } = station;
+        const { _id, times, ...stationWithoutId } = station;
         resp[station.id] = stationWithoutId;
       });
       await this.cacheManager.set(`bus/stations`, resp);

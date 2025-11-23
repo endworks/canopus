@@ -39,7 +39,7 @@ export class TramService {
       const resp: TramStationsResponse = {};
       const stations = await this.getAllStations();
       stations.forEach((station) => {
-        const { _id, ...stationWithoutId } = station;
+        const { _id, times, ...stationWithoutId } = station;
         resp[station.id] = stationWithoutId;
       });
       await this.cacheManager.set(`tram/stations`, resp);

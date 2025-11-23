@@ -12,6 +12,7 @@ import {
   Cinema,
   CinemaDetails,
   CinemaDetailsBasic,
+  Movie,
 } from '../models/zine.interface';
 import { ZineService } from '../services/zine.service';
 
@@ -69,6 +70,17 @@ export class ZineController {
     @Param('id') id: string,
   ) {
     return this.zineService.getCinemaBasic(res, id);
+  }
+
+  @Get('movies')
+  @ApiOperation({ summary: 'Get movies' })
+  @ApiResponse({
+    status: 200,
+    description: 'Return movies',
+    type: [Movie],
+  })
+  async zineMovies(@Res({ passthrough: true }) res: Response) {
+    return this.zineService.getMovies(res);
   }
 
   @Get('cached')

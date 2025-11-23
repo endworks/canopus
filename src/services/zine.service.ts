@@ -34,6 +34,15 @@ export class ZineService {
     });
   }
 
+  public getMovies(res: Response): Promise<string> {
+    return lastValueFrom(this.client.send<any, any>('movies', {})).then(
+      (response) => {
+        if (response.statusCode) res.statusCode = response.statusCode;
+        return response;
+      },
+    );
+  }
+
   public cached(res: Response): Promise<string> {
     return lastValueFrom(this.client.send<any, any>('cached', {})).then(
       (response) => {

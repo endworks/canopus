@@ -7,9 +7,11 @@ import {
   InternalServerErrorException,
   NotFoundException
 } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
 import axios from 'axios';
 import { Cache } from 'cache-manager';
 import * as cheerio from 'cheerio';
+import { Model } from 'mongoose';
 import { lastValueFrom } from 'rxjs';
 import {
   BusLineResponse,
@@ -22,6 +24,12 @@ import {
   StationBase,
   ValueLabel
 } from '../models/common.interface';
+import {
+  BusLine,
+  BusLineDocument,
+  BusStation,
+  BusStationDocument
+} from '../schemas/bus.schema';
 import {
   capitalize,
   capitalizeEachWord,
@@ -38,7 +46,12 @@ const busWebURL =
 @Injectable()
 export class BusService {
   constructor(
-    @Inject(CACHE_MANAGER) private cacheManager: Cache,
+    @Inject(CACHE_MANAGER)
+    private cacheManager: Cache,
+    @InjectModel(BusStation.name)
+    private busStationModel: Model<BusStationDocument>,
+    @InjectModel(BusLine.name)
+    private busLineModel: Model<BusLineDocument>,
     private httpService: HttpService
   ) {}
 
@@ -333,7 +346,7 @@ export class BusService {
           const lineStations = await this.fetchZaragozaLineFromKml(lineId);
           const stations = lineStations.map((station) => station.id);
           const stationsToUpdate = {};
-          lineStations.forEach((station) => {
+          lineStations.forEach(async (station) => {
             const lines = stationsBackup[station.id]?.lines ?? [lineId];
             if (!lines.includes(lineId)) {
               lines.push(lineId);
@@ -350,6 +363,7 @@ export class BusService {
               lastUpdated: null,
               type: 'bus'
             };
+            await this.saveStation(stationsToUpdate[station.id]);
           });
           const hidden = !stations.length ? true : undefined;
           const line: BusLineResponse = {
@@ -365,6 +379,7 @@ export class BusService {
             stations,
             hidden
           };
+          await this.saveLine(line);
           const backupLineUrl = `https://zgzpls.firebaseio.com/bus/lines/${lineId}.json`;
           await axios.patch(backupLineUrl, line);
           await axios.patch(stationsBackupUrl, stationsToUpdate);
@@ -512,5 +527,33 @@ export class BusService {
         exception.message
       );
     }
+  }
+
+  async getStationById(id: string) {
+    return this.busStationModel.findOne({ id }).lean();
+  }
+
+  async getLineById(id: string) {
+    return this.busLineModel.findOne({ id }).lean();
+  }
+
+  async saveStation(data: Partial<BusStation>) {
+    return this.busStationModel
+      .findOneAndUpdate(
+        { id: data.id },
+        { $set: data },
+        { new: true, upsert: true }
+      )
+      .lean();
+  }
+
+  async saveLine(data: Partial<BusLine>) {
+    return this.busLineModel
+      .findOneAndUpdate(
+        { id: data.id },
+        { $set: data },
+        { new: true, upsert: true }
+      )
+      .lean();
   }
 }

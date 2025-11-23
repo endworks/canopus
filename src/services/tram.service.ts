@@ -6,9 +6,11 @@ import {
   Injectable,
   InternalServerErrorException
 } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
 import axios from 'axios';
 import { Cache } from 'cache-manager';
 import * as Fuse from 'fuse.js';
+import { Model } from 'mongoose';
 import { lastValueFrom } from 'rxjs';
 import {
   TramStationResponse,
@@ -16,11 +18,15 @@ import {
 } from 'src/models/tram.interface';
 import { capitalizeEachWord, fixWords, isInt } from 'src/utils';
 import { ErrorResponse } from '../models/common.interface';
+import { TramStation, TramStationDocument } from '../schemas/tram.schema';
 
 @Injectable()
 export class TramService {
   constructor(
-    @Inject(CACHE_MANAGER) private cacheManager: Cache,
+    @Inject(CACHE_MANAGER)
+    private cacheManager: Cache,
+    @InjectModel(TramStation.name)
+    private tramStationModel: Model<TramStationDocument>,
     private httpService: HttpService
   ) {}
 
@@ -33,6 +39,7 @@ export class TramService {
       const url = 'https://zgzpls.firebaseio.com/tram/stations.json';
       const response = await lastValueFrom(this.httpService.get(url));
       await this.cacheManager.set(`tram/stations`, response.data);
+      await this.saveStation(response.data);
       return response.data;
     } catch (exception) {
       throw new InternalServerErrorException(
@@ -210,5 +217,19 @@ export class TramService {
         exception.message
       );
     }
+  }
+
+  async getStationById(id: string) {
+    return this.tramStationModel.findOne({ id }).lean();
+  }
+
+  async saveStation(data: Partial<TramStation>) {
+    return this.tramStationModel
+      .findOneAndUpdate(
+        { id: data.id },
+        { $set: data },
+        { new: true, upsert: true }
+      )
+      .lean();
   }
 }

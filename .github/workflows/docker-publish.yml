@@ -145,6 +145,7 @@ jobs:
           USERNAME: op://end.works/end.works/username
           KEY: op://end.works/SSH Key/private key
           FINGERPRINT: op://end.works/SSH Key/fingerprint
+          MONGODB_URI: op://end.works/MongoDB ZgzPls/mongodb uri
 
       - name: Deploy image to server
         uses: appleboy/ssh-action@master
@@ -157,4 +158,4 @@ jobs:
             docker pull ghcr.io/${{ github.repository }}:${{ env.TAG }}
             docker stop ${{ env.CONTAINER_NAME }}
             docker rm ${{ env.CONTAINER_NAME }}
-            docker run --network canopus -p 8877:3000/tcp -ti -d --restart unless-stopped --name ${{ env.CONTAINER_NAME }} ghcr.io/${{ github.repository }}:${{ env.TAG }}
+            docker run --network canopus -p 8877:3000/tcp -e MONGODB_URI='${{ env.MONGODB_URI }}' -ti -d --restart unless-stopped --name ${{ env.CONTAINER_NAME }} ghcr.io/${{ github.repository }}:${{ env.TAG }}

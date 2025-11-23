@@ -8,7 +8,7 @@ export interface TramStationResponse {
   id: string;
   street: string;
   lines: string[];
-  times: StationTime[];
+  times?: StationTime[];
   coordinates: string[];
   source?: string;
   sourceUrl?: string;

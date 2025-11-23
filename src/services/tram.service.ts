@@ -7,7 +7,6 @@ import {
   InternalServerErrorException
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import axios from 'axios';
 import { Cache } from 'cache-manager';
 import * as Fuse from 'fuse.js';
 import { Model } from 'mongoose';
@@ -36,56 +35,15 @@ export class TramService {
       const cache: TramStationsResponse =
         await this.cacheManager.get('tram/stations');
       if (cache) return cache;
-      const url = 'https://zgzpls.firebaseio.com/tram/stations.json';
-      const response = await lastValueFrom(this.httpService.get(url));
-      await this.cacheManager.set(`tram/stations`, response.data);
-      await this.saveStation(response.data);
-      return response.data;
-    } catch (exception) {
-      throw new InternalServerErrorException(
-        {
-          statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-          message: exception.message
-        },
-        exception.message
-      );
-    }
-  }
 
-  public async getStationsLegacy(): Promise<
-    TramStationsResponse | ErrorResponse
-  > {
-    try {
-      const cache: TramStationsResponse =
-        await this.cacheManager.get(`tram/stations`);
-      if (cache) return cache;
-      const url =
-        'https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/transporte-urbano/parada-tranvia';
-      const response = await lastValueFrom(this.httpService.get(url));
-
-      const stations: TramStationsResponse = {};
-      response.data.result.forEach((station) => {
-        const stationId = station.id.slice(0, station.id.length - 1) + '0';
-        if (!stations[stationId]) {
-          stations[stationId] = {
-            id: stationId,
-            street: capitalizeEachWord(fixWords(station.title)),
-            lines: ['L1'],
-            times: [],
-            coordinates: station.geometry.coordinates,
-            source: 'api',
-            sourceUrl: station.uri,
-            lastUpdated: undefined,
-            type: 'tram'
-          };
-        }
+      const resp: TramStationsResponse = {};
+      const stations = await this.getAllStations();
+      stations.forEach((station) => {
+        const { _id, ...stationWithoutId } = station;
+        resp[station.id] = stationWithoutId;
       });
-
-      const backupUrl = `https://zgzpls.firebaseio.com/tram/stations.json`;
-      await axios.put(backupUrl, stations);
-
-      await this.cacheManager.set(`tram/stations`, stations);
-      return stations;
+      await this.cacheManager.set(`tram/stations`, resp);
+      return resp;
     } catch (exception) {
       throw new InternalServerErrorException(
         {
@@ -123,16 +81,7 @@ export class TramService {
       );
       if (cache) return cache;
 
-      let backup = null;
-      const backupUrl = `https://zgzpls.firebaseio.com/tram/stations/${id}.json`;
-      try {
-        const backupResponse = await lastValueFrom(
-          this.httpService.get(backupUrl)
-        );
-        backup = backupResponse.data;
-      } catch {
-        backup = null;
-      }
+      const backup = await this.getStationById(id);
 
       const resp: TramStationResponse = {
         id: id,
@@ -161,7 +110,6 @@ export class TramService {
         }
 
         resp.source = 'backup';
-        resp.sourceUrl = backupUrl;
       }
 
       const url =
@@ -217,6 +165,10 @@ export class TramService {
         exception.message
       );
     }
+  }
+
+  async getAllStations() {
+    return this.tramStationModel.find().sort({ id: 1 }).lean().exec();
   }
 
   async getStationById(id: string) {

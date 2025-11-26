@@ -77,4 +77,35 @@ export class ZaragozaService {
       return response;
     });
   }
+
+  public getBiziStations(res: Response): Promise<string> {
+    return lastValueFrom(this.client.send<any, any>('bizi/stations', {})).then(
+      (response) => {
+        if (response.statusCode) res.statusCode = response.statusCode;
+        return response;
+      },
+    );
+  }
+
+  public getBiziStation(
+    res: Response,
+    id: string,
+    source: 'api' | 'web' | 'backup',
+  ): Promise<string> {
+    return lastValueFrom(
+      this.client.send<any, any>('bizi/station', { id, source }),
+    ).then((response) => {
+      if (response.statusCode) res.statusCode = response.statusCode;
+      return response;
+    });
+  }
+
+  public getBiziStationsUpdate(res: Response): Promise<string> {
+    return lastValueFrom(
+      this.client.send<any, any>('bizi/stations/update', {}),
+    ).then((response) => {
+      if (response.statusCode) res.statusCode = response.statusCode;
+      return response;
+    });
+  }
 }

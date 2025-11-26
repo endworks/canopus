@@ -1,6 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
 
-// Bus
 export class StationTime {
   @ApiProperty()
   destination: string;
@@ -84,4 +83,36 @@ export class Line {
 
   @ApiProperty()
   lastUpdated: string;
+}
+
+export class BiziStation {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty()
+  street: string;
+
+  @ApiProperty({ required: false })
+  state?: string | null;
+
+  @ApiProperty({ required: false })
+  availableBikes?: number | null;
+
+  @ApiProperty({ required: false })
+  availableDocks?: number | null;
+
+  @ApiProperty()
+  coordinates: string[];
+
+  @ApiProperty()
+  source?: string;
+
+  @ApiProperty()
+  sourceUrl?: string;
+
+  @ApiProperty()
+  lastUpdated?: string;
+
+  @ApiProperty()
+  type?: string;
 }

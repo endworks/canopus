@@ -1,6 +1,6 @@
 {
   "name": "canopus",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "I write microservices no one wants",
   "author": {
     "name": "end.works",
@@ -58,8 +58,8 @@
     "@types/node": "^24.10.1",
     "@types/passport-local": "^1.0.38",
     "@types/supertest": "^6.0.3",
-    "@typescript-eslint/eslint-plugin": "^8.47.0",
-    "@typescript-eslint/parser": "^8.47.0",
+    "@typescript-eslint/eslint-plugin": "^8.48.0",
+    "@typescript-eslint/parser": "^8.48.0",
     "eslint": "^9.39.1",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.4",

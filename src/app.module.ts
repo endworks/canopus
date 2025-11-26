@@ -3,6 +3,7 @@ import { CacheModule } from '@nestjs/cache-manager';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { BusModule } from './modules/bus.module';
+import { BiziModule } from './modules/bizi.module';
 import { TramModule } from './modules/tram.module';
 
 @Module({
@@ -13,7 +14,8 @@ import { TramModule } from './modules/tram.module';
       dbName: 'zaragoza'
     }),
     BusModule,
-    TramModule
+    TramModule,
+    BiziModule
   ],
   controllers: [],
   providers: []

@@ -7,7 +7,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { Response } from 'express';
-import { Line, Station } from '../models/zaragoza.interface';
+import { BiziStation, Line, Station } from '../models/zaragoza.interface';
 import { ZaragozaService } from '../services/zaragoza.service';
 
 @ApiTags('Zaragoza')
@@ -106,5 +106,44 @@ export class ZaragozaController {
     @Query('source') source: 'api' | 'web' | 'backup',
   ) {
     return this.zaragozaService.getTramStation(res, id, source);
+  }
+
+  @Get('bizi/stations')
+  @ApiOperation({ summary: 'Get bizi stations' })
+  @ApiResponse({
+    status: 200,
+    description: 'Return bizi stations',
+    type: [BiziStation],
+  })
+  async zaragozaBiziStations(@Res({ passthrough: true }) res: Response) {
+    return this.zaragozaService.getBiziStations(res);
+  }
+
+  @Get('bizi/stations/update')
+  @ApiOperation({ summary: 'Update bizi stations data' })
+  @ApiResponse({
+    status: 200,
+    description: 'Return updated bizi stations',
+    type: [BiziStation],
+  })
+  async zaragozaBiziStationsUpdate(@Res({ passthrough: true }) res: Response) {
+    return this.zaragozaService.getBiziStationsUpdate(res);
+  }
+
+  @Get('bizi/stations/:id')
+  @ApiOperation({ summary: 'Get bizi station by ID' })
+  @ApiParam({ name: 'id', type: String })
+  @ApiQuery({ name: 'source', enum: ['api', 'web', 'backup'], required: false })
+  @ApiResponse({
+    status: 200,
+    description: 'Return bizi station',
+    type: BiziStation,
+  })
+  async zaragozaBiziStation(
+    @Res({ passthrough: true }) res: Response,
+    @Param('id') id: string,
+    @Query('source') source: 'api' | 'web' | 'backup',
+  ) {
+    return this.zaragozaService.getBiziStation(res, id, source);
   }
 }

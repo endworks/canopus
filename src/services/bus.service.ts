@@ -11,7 +11,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Cache } from 'cache-manager';
 import * as cheerio from 'cheerio';
 import { Model } from 'mongoose';
-import { lastValueFrom } from 'rxjs';
+import { lastValueFrom, timeout, TimeoutError } from 'rxjs';
 import {
   BusLineResponse,
   BusLinesResponse,
@@ -96,7 +96,9 @@ export class BusService {
     const backup = await this.getStationById(id);
 
     try {
-      const response = await lastValueFrom(this.httpService.get(url));
+      const response = await lastValueFrom(
+        this.httpService.get(url).pipe(timeout(10000))
+      );
 
       try {
         const resp: BusStationResponse = {
@@ -236,7 +238,17 @@ export class BusService {
         );
       }
     } catch (exception) {
-      if (exception.response.status === HttpStatus.NOT_FOUND) {
+      if (exception instanceof TimeoutError) {
+        throw new InternalServerErrorException(
+          {
+            statusCode: HttpStatus.REQUEST_TIMEOUT,
+            message:
+              'Request timeout: The API request took too long to complete'
+          },
+          'Request timeout: The API request took too long to complete'
+        );
+      }
+      if (exception.response?.status === HttpStatus.NOT_FOUND) {
         throw new NotFoundException(
           {
             statusCode: HttpStatus.NOT_FOUND,
@@ -248,9 +260,9 @@ export class BusService {
         throw new InternalServerErrorException(
           {
             statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-            message: exception.response.data?.mensaje || exception.message
+            message: exception.response?.data?.mensaje || exception.message
           },
-          exception.response.data?.mensaje || exception.message
+          exception.response?.data?.mensaje || exception.message
         );
       }
     }
@@ -387,7 +399,9 @@ export class BusService {
         await this.cacheManager.get(`bus/lines/available`);
       if (cache) return cache;
       const url = 'https://zaragoza.avanzagrupo.com/lineas-y-horarios/';
-      const response = await lastValueFrom(this.httpService.get(url));
+      const response = await lastValueFrom(
+        this.httpService.get(url).pipe(timeout(10000))
+      );
 
       const html = await response.data;
 
@@ -407,6 +421,16 @@ export class BusService {
       await this.cacheManager.set(`bus/lines/available`, lines);
       return lines;
     } catch (exception) {
+      if (exception instanceof TimeoutError) {
+        throw new InternalServerErrorException(
+          {
+            statusCode: HttpStatus.REQUEST_TIMEOUT,
+            message:
+              'Request timeout: The API request took too long to complete'
+          },
+          'Request timeout: The API request took too long to complete'
+        );
+      }
       console.error('Failed to fetch or parse Zaragoza lines data:', exception);
       throw new InternalServerErrorException(
         {
@@ -423,7 +447,9 @@ export class BusService {
       const cache: ValueLabel[] = await this.cacheManager.get(`bus/lines/web`);
       if (cache) return cache;
       const url = `https://zaragoza.avanzagrupo.com/lineas-y-horarios`;
-      const response = await lastValueFrom(this.httpService.get(url));
+      const response = await lastValueFrom(
+        this.httpService.get(url).pipe(timeout(10000))
+      );
       const html = await response.data;
 
       const lines: ValueLabel[] = [];
@@ -442,6 +468,16 @@ export class BusService {
       await this.cacheManager.set(`bus/lines/web`, lines);
       return lines;
     } catch (exception) {
+      if (exception instanceof TimeoutError) {
+        throw new InternalServerErrorException(
+          {
+            statusCode: HttpStatus.REQUEST_TIMEOUT,
+            message:
+              'Request timeout: The API request took too long to complete'
+          },
+          'Request timeout: The API request took too long to complete'
+        );
+      }
       console.error('Failed to fetch or parse Zaragoza lines data:', exception);
       throw new InternalServerErrorException(
         {
@@ -461,7 +497,9 @@ export class BusService {
       if (cache) return cache;
       const urls = KmlForLine(id);
       const responses = await Promise.all(
-        urls.map((url) => lastValueFrom(this.httpService.get(url)))
+        urls.map((url) =>
+          lastValueFrom(this.httpService.get(url).pipe(timeout(10000)))
+        )
       );
 
       const stations: StationBase[] = [];
@@ -491,6 +529,16 @@ export class BusService {
       await this.cacheManager.set(`bus/lines/${id}/kml`, stations);
       return stations;
     } catch (exception) {
+      if (exception instanceof TimeoutError) {
+        throw new InternalServerErrorException(
+          {
+            statusCode: HttpStatus.REQUEST_TIMEOUT,
+            message:
+              'Request timeout: The API request took too long to complete'
+          },
+          'Request timeout: The API request took too long to complete'
+        );
+      }
       console.error('Failed to fetch or parse Zaragoza lines data:', exception);
       throw new InternalServerErrorException(
         {

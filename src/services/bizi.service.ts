@@ -10,7 +10,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Cache } from 'cache-manager';
 import { Model } from 'mongoose';
-import { lastValueFrom } from 'rxjs';
+import { lastValueFrom, timeout, TimeoutError } from 'rxjs';
 import {
   BiziApiResponse,
   BiziStationApiResponse
@@ -79,9 +79,9 @@ export class BiziService {
 
     try {
       const response = await lastValueFrom(
-        this.httpService.get<BiziStationApiResponse>(
-          `${biziStationApiURL}/${id}.json`
-        )
+        this.httpService
+          .get<BiziStationApiResponse>(`${biziStationApiURL}/${id}.json`)
+          .pipe(timeout(10000))
       );
 
       const stationData = response.data;
@@ -117,6 +117,16 @@ export class BiziService {
 
       return resp;
     } catch (exception) {
+      if (exception instanceof TimeoutError) {
+        throw new InternalServerErrorException(
+          {
+            statusCode: HttpStatus.REQUEST_TIMEOUT,
+            message:
+              'Request timeout: The API request took too long to complete'
+          },
+          'Request timeout: The API request took too long to complete'
+        );
+      }
       if (exception instanceof NotFoundException) {
         throw exception;
       }
@@ -150,9 +160,11 @@ export class BiziService {
 
       while (hasMore) {
         const response = await lastValueFrom(
-          this.httpService.get<BiziApiResponse>(
-            `${biziApiURL}?start=${start}&rows=${rows}&srsname=wgs84`
-          )
+          this.httpService
+            .get<BiziApiResponse>(
+              `${biziApiURL}?start=${start}&rows=${rows}&srsname=wgs84`
+            )
+            .pipe(timeout(10000))
         );
 
         const stations = await Promise.all(
@@ -210,6 +222,16 @@ export class BiziService {
       await this.cacheManager.set('bizi/stations', resp);
       return resp;
     } catch (exception) {
+      if (exception instanceof TimeoutError) {
+        throw new InternalServerErrorException(
+          {
+            statusCode: HttpStatus.REQUEST_TIMEOUT,
+            message:
+              'Request timeout: The API request took too long to complete'
+          },
+          'Request timeout: The API request took too long to complete'
+        );
+      }
       throw new InternalServerErrorException(
         {
           statusCode: HttpStatus.INTERNAL_SERVER_ERROR,

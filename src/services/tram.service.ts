@@ -10,7 +10,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Cache } from 'cache-manager';
 import * as Fuse from 'fuse.js';
 import { Model } from 'mongoose';
-import { lastValueFrom } from 'rxjs';
+import { lastValueFrom, timeout, TimeoutError } from 'rxjs';
 import {
   TramStationResponse,
   TramStationsResponse
@@ -118,9 +118,9 @@ export class TramService {
       const responses = await Promise.all(
         ['1', '2'].map((station) =>
           lastValueFrom(
-            this.httpService.get(
-              url + `${id.slice(0, id.length - 1) + station}`
-            )
+            this.httpService
+              .get(url + `${id.slice(0, id.length - 1) + station}`)
+              .pipe(timeout(10000))
           )
         )
       );
@@ -157,6 +157,16 @@ export class TramService {
       );
       return resp;
     } catch (exception) {
+      if (exception instanceof TimeoutError) {
+        throw new InternalServerErrorException(
+          {
+            statusCode: HttpStatus.REQUEST_TIMEOUT,
+            message:
+              'Request timeout: The API request took too long to complete'
+          },
+          'Request timeout: The API request took too long to complete'
+        );
+      }
       throw new InternalServerErrorException(
         {
           statusCode: HttpStatus.INTERNAL_SERVER_ERROR,

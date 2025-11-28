@@ -96,10 +96,10 @@ export class BiziStation {
   state?: string | null;
 
   @ApiProperty({ required: false })
-  availableBikes?: number | null;
+  bikes?: number | null;
 
   @ApiProperty({ required: false })
-  availableDocks?: number | null;
+  openDocks?: number | null;
 
   @ApiProperty()
   coordinates: string[];

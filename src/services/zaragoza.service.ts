@@ -87,13 +87,9 @@ export class ZaragozaService {
     );
   }
 
-  public getBiziStation(
-    res: Response,
-    id: string,
-    source: 'api' | 'web' | 'backup',
-  ): Promise<string> {
+  public getBiziStation(res: Response, id: string): Promise<string> {
     return lastValueFrom(
-      this.client.send<any, any>('bizi/station', { id, source }),
+      this.client.send<any, any>('bizi/station', { id }),
     ).then((response) => {
       if (response.statusCode) res.statusCode = response.statusCode;
       return response;

@@ -133,7 +133,6 @@ export class ZaragozaController {
   @Get('bizi/stations/:id')
   @ApiOperation({ summary: 'Get bizi station by ID' })
   @ApiParam({ name: 'id', type: String })
-  @ApiQuery({ name: 'source', enum: ['api', 'web', 'backup'], required: false })
   @ApiResponse({
     status: 200,
     description: 'Return bizi station',
@@ -142,8 +141,7 @@ export class ZaragozaController {
   async zaragozaBiziStation(
     @Res({ passthrough: true }) res: Response,
     @Param('id') id: string,
-    @Query('source') source: 'api' | 'web' | 'backup',
   ) {
-    return this.zaragozaService.getBiziStation(res, id, source);
+    return this.zaragozaService.getBiziStation(res, id);
   }
 }

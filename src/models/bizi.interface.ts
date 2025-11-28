@@ -8,8 +8,8 @@ export interface BiziStationResponse {
   id: string;
   street: string;
   state?: string | null;
-  availableBikes?: number | null;
-  availableDocks?: number | null;
+  bikes?: number | null;
+  openDocks?: number | null;
   coordinates: string[];
   source?: string;
   sourceUrl?: string;

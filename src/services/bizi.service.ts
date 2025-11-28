@@ -12,16 +12,16 @@ import { Cache } from 'cache-manager';
 import { Model } from 'mongoose';
 import { lastValueFrom } from 'rxjs';
 import {
+  BiziApiResponse,
+  BiziStationApiResponse
+} from '../models/api-responses.interface';
+import {
   BiziStationResponse,
   BiziStationsResponse
 } from '../models/bizi.interface';
 import { ErrorResponse } from '../models/common.interface';
 import { BiziStation, BiziStationDocument } from '../schemas/bizi.schema';
 import { capitalizeEachWord, fixWords } from '../utils';
-import {
-  BiziApiResponse,
-  BiziStationApiResponse
-} from '../models/api-responses.interface';
 
 const biziApiURL =
   'https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/estacion-bicicleta.json';
@@ -51,8 +51,8 @@ export class BiziService {
         resp[station.id] = {
           ...stationWithoutId,
           state: null,
-          availableBikes: null,
-          availableDocks: null
+          bikes: null,
+          openDocks: null
         };
       });
       await this.cacheManager.set(`bizi/stations`, resp);
@@ -98,8 +98,8 @@ export class BiziService {
         id: id,
         street: backup?.street || capitalizeEachWord(fixWords(streetName)),
         state: stationData.estado,
-        availableBikes: stationData.bicisDisponibles,
-        availableDocks: stationData.anclajesDisponibles,
+        bikes: stationData.bicisDisponibles,
+        openDocks: stationData.anclajesDisponibles,
         coordinates:
           backup?.coordinates ||
           stationData.geometry.coordinates.map((coord) => coord.toString()),
@@ -167,8 +167,8 @@ export class BiziService {
               id: station.id,
               street: capitalizeEachWord(fixWords(streetName)),
               state: station.estado,
-              availableBikes: station.bicisDisponibles,
-              availableDocks: station.anclajesDisponibles,
+              bikes: station.bicisDisponibles,
+              openDocks: station.anclajesDisponibles,
               coordinates: station.geometry.coordinates.map((coord) =>
                 coord.toString()
               ),

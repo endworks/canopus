@@ -1,29 +1,32 @@
-FROM node:alpine AS builder
+# syntax=docker/dockerfile:1
+# Build from the monorepo root:
+#   docker build -f apps/gateway/Dockerfile -t canopus .
 
-WORKDIR /usr/src/app
+FROM node:alpine AS base
+RUN npm install -g pnpm@11.7.0 turbo@2.9.18
+WORKDIR /app
 
-COPY package.json ./
-COPY yarn.lock ./
-
-RUN yarn
-
+# Prune the workspace down to this service and its workspace deps.
+FROM base AS pruner
 COPY . .
+RUN turbo prune @canopus/gateway --docker
 
-RUN yarn run build
+# Install against the pruned manifests (well-cached), then build.
+FROM base AS installer
+COPY --from=pruner /app/out/json/ .
+RUN pnpm install --frozen-lockfile
+COPY --from=pruner /app/out/full/ .
+COPY tsconfig.base.json ./tsconfig.base.json
+RUN turbo build --filter=@canopus/gateway
 
-FROM node:alpine AS production
-LABEL org.opencontainers.image.source https://github.com/endworks/canopus
-
-WORKDIR /usr/src/app
-
-COPY package.json ./
-COPY yarn.lock ./
-COPY .env ./
-
-RUN yarn --prod
-
-COPY --from=builder /usr/src/app/dist ./dist
-
+# Runtime image.
+FROM node:alpine AS runner
+LABEL org.opencontainers.image.source=https://github.com/endworks/canopus
+ENV NODE_ENV=production
+WORKDIR /app
+COPY --from=installer /app/ .
+# The gateway reads configuration from its .env at runtime.
+COPY apps/gateway/.env ./apps/gateway/.env
+WORKDIR /app/apps/gateway
 EXPOSE 3000/tcp
-
-CMD ["yarn", "run", "start:prod"]
+CMD ["node", "dist/main.js"]

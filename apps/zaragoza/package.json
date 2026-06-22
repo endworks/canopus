@@ -1,5 +1,5 @@
 {
-  "name": "canopus-zaragoza",
+  "name": "@canopus/zaragoza",
   "version": "0.5.0",
   "description": "Zaragoza microservice no one asked for",
   "author": {

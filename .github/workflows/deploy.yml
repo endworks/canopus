@@ -1,0 +1,204 @@
+name: deploy
+
+on:
+  push:
+    branches:
+      - main
+      - "feature/**"
+    tags: ["v*.*.*"]
+  pull_request:
+    branches:
+      - main
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  # Work out which deployable services this change affects. A service is
+  # affected by its own files, by the shared package it depends on, or by
+  # root-level config that affects every package. A version tag releases all.
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      any: ${{ steps.set-matrix.outputs.any }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect changed paths
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            gateway:
+              - 'apps/gateway/**'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'turbo.json'
+              - 'tsconfig.base.json'
+              - 'package.json'
+            zaragoza:
+              - 'apps/zaragoza/**'
+              - 'packages/shared/**'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'turbo.json'
+              - 'tsconfig.base.json'
+              - 'package.json'
+            zine:
+              - 'apps/zine/**'
+              - 'packages/shared/**'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'turbo.json'
+              - 'tsconfig.base.json'
+              - 'package.json'
+
+      - name: Build deploy matrix from affected services
+        id: set-matrix
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            CHANGED='["gateway","zaragoza","zine"]'
+          else
+            CHANGED='${{ steps.filter.outputs.changes }}'
+          fi
+          MATRIX=$(jq -cn --argjson changed "$CHANGED" '
+            {
+              gateway:  {service:"gateway",  image:"canopus",          container:"canopus",          port:"3000:3000", db:false},
+              zaragoza: {service:"zaragoza", image:"canopus-zaragoza", container:"canopus-zaragoza", port:"8877:3000", db:true},
+              zine:     {service:"zine",     image:"canopus-zine",     container:"canopus-zine",     port:"8878:3000", db:true}
+            } as $cfg
+            | {include: [ $changed[] | select($cfg[.] != null) | $cfg[.] ]}
+          ')
+          COUNT=$(echo "$MATRIX" | jq '.include | length')
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+          echo "any=$([ "$COUNT" -gt 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "Affected services: $MATRIX"
+
+  # Build, sign and deploy each affected service in parallel.
+  deploy:
+    needs: detect
+    if: ${{ needs.detect.outputs.any == 'true' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.detect.outputs.matrix) }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install cosign
+        if: github.event_name != 'pull_request'
+        uses: sigstore/cosign-installer@v3.3.0
+        with:
+          cosign-release: "v2.2.2"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f95db51fddba0c2d1ec667646a06c2ce06100226 # v3.0.0
+
+      - name: Load registry secret
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          GITHUB_TOKEN: op://end.works/GitHub Token/credential
+
+      - name: Log into registry ${{ env.REGISTRY }}
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d # v3.0.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ env.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@96383f45573cb7f253c731d3b3ab81c87ef81934 # v5.0.0
+        with:
+          images: ${{ env.REGISTRY }}/endworks/${{ matrix.image }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        id: build-and-push
+        uses: docker/build-push-action@0565240e2d4ab88bba5387d719585280857ece09 # v5.0.0
+        with:
+          context: .
+          file: apps/${{ matrix.service }}/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+      - name: Sign the published Docker image
+        if: ${{ github.event_name != 'pull_request' }}
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          DIGEST: ${{ steps.build-and-push.outputs.digest }}
+        run: echo "${TAGS}" | xargs -I {} cosign sign --yes {}@${DIGEST}
+
+      - name: Load deploy secrets
+        if: ${{ github.event_name != 'pull_request' }}
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          HOST: op://end.works/end.works/URL
+          PORT: op://end.works/end.works/port
+          USERNAME: op://end.works/end.works/username
+          KEY: op://end.works/SSH Key/private key
+
+      - name: Load database secret
+        if: ${{ github.event_name != 'pull_request' && matrix.db }}
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          MONGODB_URI: op://end.works/MongoDB ZgzPls/mongodb uri
+
+      - name: Compute tag, container name and image ref
+        if: ${{ github.event_name != 'pull_request' }}
+        run: |
+          VERSION=$(echo "${{ github.ref_name }}" | sed 's,.*/,,')
+          CONTAINER="${{ matrix.container }}"
+          if [ "$VERSION" = "main" ]; then
+            TAG=latest
+          else
+            TAG="sha-$(echo "${{ github.sha }}" | cut -c1-7)"
+            CONTAINER="${CONTAINER}-${VERSION}"
+          fi
+          echo "CONTAINER=$CONTAINER" >> "$GITHUB_ENV"
+          echo "IMAGE=${{ env.REGISTRY }}/endworks/${{ matrix.image }}:$TAG" >> "$GITHUB_ENV"
+
+      - name: Deploy image to server
+        if: ${{ github.event_name != 'pull_request' }}
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ env.HOST }}
+          port: ${{ env.PORT }}
+          username: ${{ env.USERNAME }}
+          key: ${{ env.KEY }}
+          envs: IMAGE,CONTAINER,MONGODB_URI
+          script: |
+            docker pull "$IMAGE"
+            docker stop "$CONTAINER" 2>/dev/null || true
+            docker rm "$CONTAINER" 2>/dev/null || true
+            if [ -n "$MONGODB_URI" ]; then
+              docker run --network canopus -p ${{ matrix.port }}/tcp -e MONGODB_URI="$MONGODB_URI" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
+            else
+              docker run --network canopus -p ${{ matrix.port }}/tcp -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
+            fi

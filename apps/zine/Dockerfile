@@ -22,7 +22,6 @@ RUN turbo build --filter=@canopus/zine
 # Runtime image.
 FROM node:alpine AS runner
 LABEL org.opencontainers.image.source=https://github.com/endworks/canopus
-ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=installer /app/ .
 WORKDIR /app/apps/zine

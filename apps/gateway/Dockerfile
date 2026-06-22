@@ -22,11 +22,12 @@ RUN turbo build --filter=@canopus/gateway
 # Runtime image.
 FROM node:alpine AS runner
 LABEL org.opencontainers.image.source=https://github.com/endworks/canopus
-ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=installer /app/ .
-# The gateway reads configuration from its .env at runtime.
+# The gateway's ConfigModule loads `.env.${NODE_ENV}` when NODE_ENV is set and
+# `.env` otherwise; only `.env` exists, so NODE_ENV is intentionally left unset.
 COPY apps/gateway/.env ./apps/gateway/.env
 WORKDIR /app/apps/gateway
 EXPOSE 3000/tcp
-CMD ["node", "dist/main.js"]
+# Run via npm so process.env.npm_package_* (used for the Swagger title/version) is populated.
+CMD ["npm", "run", "start:prod"]

@@ -1,6 +1,10 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+# Force patched versions of vulnerable transitive deps shipped in production.
+overrides:
+  multer: '>=2.2.0'
+  '@nestjs/swagger>js-yaml': '>=4.1.2'
 allowBuilds:
   '@scarf/scarf': false
   unrs-resolver: true

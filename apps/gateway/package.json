@@ -1,6 +1,6 @@
 {
   "name": "@canopus/gateway",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "description": "I write microservices no one wants",
   "author": {
     "name": "end.works",

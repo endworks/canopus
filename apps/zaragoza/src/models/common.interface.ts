@@ -1,9 +1,3 @@
-export interface ErrorResponse {
-  statusCode: number;
-  message: string;
-  error: string;
-}
-
 export interface StationBase {
   id: string;
   street: string;
@@ -25,10 +19,6 @@ export interface LineGeometry {
     type: string;
     coordinates: string[];
   };
-}
-
-export interface IdPayload {
-  id: string;
 }
 
 export interface ValueLabel {

@@ -1,4 +1,4 @@
-import { IdPayload } from './common.interface';
+import { IdPayload } from '@canopus/shared';
 
 export interface BiziStationPayload extends IdPayload {
   source: string;

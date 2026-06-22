@@ -19,7 +19,7 @@ import {
   BiziStationResponse,
   BiziStationsResponse
 } from '../models/bizi.interface';
-import { ErrorResponse } from '../models/common.interface';
+import { ErrorResponse } from '@canopus/shared';
 import { BiziStation, BiziStationDocument } from '../schemas/bizi.schema';
 import { capitalizeEachWord, fixWords } from '../utils';
 

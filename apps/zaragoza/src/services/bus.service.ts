@@ -18,11 +18,8 @@ import {
   BusStationResponse,
   BusStationsResponse
 } from '../models/bus.interface';
-import {
-  ErrorResponse,
-  StationBase,
-  ValueLabel
-} from '../models/common.interface';
+import { ErrorResponse } from '@canopus/shared';
+import { StationBase, ValueLabel } from '../models/common.interface';
 import {
   BusLine,
   BusLineDocument,

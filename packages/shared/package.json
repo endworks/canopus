@@ -1,0 +1,19 @@
+{
+  "name": "@canopus/shared",
+  "version": "0.1.0",
+  "description": "Shared RPC contract types for Canopus services",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "prebuild": "rimraf dist",
+    "build": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "rimraf": "^6.1.3",
+    "typescript": "^6.0.3"
+  }
+}

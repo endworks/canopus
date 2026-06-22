@@ -21,7 +21,7 @@ import {
   MovieBasic,
   Session,
 } from '../models/cinema.interface';
-import { ErrorResponse } from '../models/common.interface';
+import { ErrorResponse } from '@canopus/shared';
 import {
   TheMovieDBMovie,
   TheMovieDBSearchResult,

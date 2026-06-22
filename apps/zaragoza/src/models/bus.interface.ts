@@ -1,4 +1,5 @@
-import { IdPayload, StationTime } from './common.interface';
+import { IdPayload } from '@canopus/shared';
+import { StationTime } from './common.interface';
 
 export interface BusStationPayload extends IdPayload {
   source: string;

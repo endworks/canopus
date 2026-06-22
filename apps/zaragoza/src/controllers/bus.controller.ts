@@ -1,7 +1,7 @@
 import { Controller, Logger } from '@nestjs/common';
 import { MessagePattern, Payload, Transport } from '@nestjs/microservices';
 import { BusStationPayload } from 'src/models/bus.interface';
-import { IdPayload } from 'src/models/common.interface';
+import { IdPayload } from '@canopus/shared';
 import { BusService } from '../services/bus.service';
 
 @Controller()

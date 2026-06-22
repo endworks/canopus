@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Cache } from 'cache-manager';
-import * as Fuse from 'fuse.js';
+import Fuse = require('fuse.js');
 import { Model } from 'mongoose';
 import { lastValueFrom, timeout, TimeoutError } from 'rxjs';
 import {
@@ -16,7 +16,7 @@ import {
   TramStationsResponse
 } from 'src/models/tram.interface';
 import { capitalizeEachWord, fixWords, isInt } from 'src/utils';
-import { ErrorResponse } from '../models/common.interface';
+import { ErrorResponse } from '@canopus/shared';
 import { TramStation, TramStationDocument } from '../schemas/tram.schema';
 
 @Injectable()

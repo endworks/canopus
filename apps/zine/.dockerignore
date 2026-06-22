@@ -1,0 +1,10 @@
+node_modules
+dist
+.vscode
+.editorconfig
+.env
+.gitattributes
+.gitignore
+.prettierrc.js
+*.log
+LICENSE

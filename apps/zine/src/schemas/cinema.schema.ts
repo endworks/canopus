@@ -15,6 +15,9 @@ export class Cinema extends Document {
   @Prop()
   address?: string;
 
+  @Prop({ type: [String], default: [] })
+  coordinates: string[];
+
   @Prop()
   location?: string;
 

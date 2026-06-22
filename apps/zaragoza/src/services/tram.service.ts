@@ -67,7 +67,7 @@ export class TramService {
           (station) => stationResponse[station]
         );
 
-        const fuse = new Fuse.default(stations, {
+        const fuse = new Fuse(stations, {
           keys: ['street'],
           includeScore: true,
           threshold: 0.4

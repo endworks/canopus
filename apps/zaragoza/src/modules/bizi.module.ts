@@ -9,13 +9,13 @@ import { BiziService } from '../services/bizi.service';
 @Module({
   imports: [
     MongooseModule.forFeature([
-      { name: BiziStation.name, schema: BiziStationSchema }
+      { name: BiziStation.name, schema: BiziStationSchema },
     ]),
     HttpModule,
-    CacheModule.register()
+    CacheModule.register(),
   ],
   controllers: [BiziController],
   providers: [BiziService],
-  exports: [BiziService]
+  exports: [BiziService],
 })
 export class BiziModule {}

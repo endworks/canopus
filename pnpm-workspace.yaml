@@ -3,7 +3,6 @@ packages:
   - 'packages/*'
 allowBuilds:
   '@scarf/scarf': false
-  bcrypt: true
   unrs-resolver: true
 minimumReleaseAgeExclude:
   - ts-loader@9.6.2

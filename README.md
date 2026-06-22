@@ -25,7 +25,8 @@ Requires Node 20+ and pnpm 11.
 ```bash
 pnpm install            # install the whole workspace
 pnpm turbo build        # build every package (shared first, then dependents)
-pnpm turbo lint         # lint
+pnpm lint               # lint (one flat config at the repo root)
+pnpm format             # format all TypeScript with Prettier
 pnpm --filter @canopus/zaragoza start:dev   # run one service in watch mode
 ```
 
@@ -45,12 +46,14 @@ MONGODB_URI=mongodb://... docker compose up --build
 
 ## CI/CD
 
-`.github/workflows/deploy.yml` runs on push/PR:
-
-1. **detect** — `dorny/paths-filter` determines which services are affected
-   (own files, `packages/shared`, or root config). Version tags release all.
-2. **deploy** — builds, signs (cosign) and SSH-deploys **only** the affected
-   services in parallel, publishing to `ghcr.io/endworks/canopus[-service]`.
+- **`ci.yml`** — builds every package and lints on each push/PR.
+- **`deploy.yml`**:
+  1. **detect** — `dorny/paths-filter` determines which services are affected
+     (own files, `packages/shared`, or root config).
+  2. **deploy** — builds, signs (cosign) and SSH-deploys **only** the affected
+     services to `ghcr.io/endworks/canopus[-service]`. Deploys run on `main`
+     and version tags (`vX.Y.Z` → image tag `X.Y.Z`); feature branches build
+     and push images but do not deploy (they'd collide on the host port).
 
 ## Migrating from the standalone repos (one-time cutover)
 

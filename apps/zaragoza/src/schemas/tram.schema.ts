@@ -16,7 +16,7 @@ export class TramStation {
 
   @Prop({
     type: [{ destination: String, line: String, time: String }],
-    default: []
+    default: [],
   })
   times?: StationTime[];
 

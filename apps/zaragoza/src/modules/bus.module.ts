@@ -7,7 +7,7 @@ import {
   BusLine,
   BusLineSchema,
   BusStation,
-  BusStationSchema
+  BusStationSchema,
 } from '../schemas/bus.schema';
 import { BusService } from '../services/bus.service';
 
@@ -15,13 +15,13 @@ import { BusService } from '../services/bus.service';
   imports: [
     MongooseModule.forFeature([
       { name: BusStation.name, schema: BusStationSchema },
-      { name: BusLine.name, schema: BusLineSchema }
+      { name: BusLine.name, schema: BusLineSchema },
     ]),
     HttpModule,
-    CacheModule.register()
+    CacheModule.register(),
   ],
   controllers: [BusController],
   providers: [BusService],
-  exports: [BusService]
+  exports: [BusService],
 })
 export class BusModule {}

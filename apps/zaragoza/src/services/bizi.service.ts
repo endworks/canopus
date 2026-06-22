@@ -5,7 +5,7 @@ import {
   Inject,
   Injectable,
   InternalServerErrorException,
-  NotFoundException
+  NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Cache } from 'cache-manager';
@@ -13,11 +13,11 @@ import { Model } from 'mongoose';
 import { lastValueFrom, timeout, TimeoutError } from 'rxjs';
 import {
   BiziApiResponse,
-  BiziStationApiResponse
+  BiziStationApiResponse,
 } from '../models/api-responses.interface';
 import {
   BiziStationResponse,
-  BiziStationsResponse
+  BiziStationsResponse,
 } from '../models/bizi.interface';
 import { ErrorResponse } from '@canopus/shared';
 import { BiziStation, BiziStationDocument } from '../schemas/bizi.schema';
@@ -35,7 +35,7 @@ export class BiziService {
     private cacheManager: Cache,
     @InjectModel(BiziStation.name)
     private biziStationModel: Model<BiziStationDocument>,
-    private httpService: HttpService
+    private httpService: HttpService,
   ) {}
 
   public async getStations(): Promise<BiziStationsResponse | ErrorResponse> {
@@ -52,7 +52,7 @@ export class BiziService {
           ...stationWithoutId,
           state: null,
           bikes: null,
-          openDocks: null
+          openDocks: null,
         };
       });
       await this.cacheManager.set(`bizi/stations`, resp);
@@ -61,19 +61,19 @@ export class BiziService {
       throw new InternalServerErrorException(
         {
           statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-          message: exception.message
+          message: exception.message,
         },
-        exception.message
+        exception.message,
       );
     }
   }
 
   public async getStation(
     id: string,
-    source?: string
+    source?: string,
   ): Promise<BiziStationResponse | ErrorResponse> {
     const cache: BiziStationResponse = await this.cacheManager.get(
-      `bizi/stations/${id}/${source ?? 'api'}`
+      `bizi/stations/${id}/${source ?? 'api'}`,
     );
     if (cache) return cache;
 
@@ -81,7 +81,7 @@ export class BiziService {
       const response = await lastValueFrom(
         this.httpService
           .get<BiziStationApiResponse>(`${biziStationApiURL}/${id}.json`)
-          .pipe(timeout(10000))
+          .pipe(timeout(10000)),
       );
 
       const stationData = response.data;
@@ -106,13 +106,13 @@ export class BiziService {
         source: 'api',
         sourceUrl: stationData.about || `${biziStationApiURL}/${id}.json`,
         lastUpdated: stationData.lastUpdated,
-        type: 'bizi'
+        type: 'bizi',
       };
 
       await this.cacheManager.set(
         `bizi/stations/${id}/${source ?? 'api'}`,
         resp,
-        10000
+        10000,
       );
 
       return resp;
@@ -122,9 +122,9 @@ export class BiziService {
           {
             statusCode: HttpStatus.REQUEST_TIMEOUT,
             message:
-              'Request timeout: The API request took too long to complete'
+              'Request timeout: The API request took too long to complete',
           },
-          'Request timeout: The API request took too long to complete'
+          'Request timeout: The API request took too long to complete',
         );
       }
       if (exception instanceof NotFoundException) {
@@ -134,17 +134,17 @@ export class BiziService {
         throw new NotFoundException(
           {
             statusCode: HttpStatus.NOT_FOUND,
-            message: `Resource with ID '${id}' was not found`
+            message: `Resource with ID '${id}' was not found`,
           },
-          `Resource with ID '${id}' was not found`
+          `Resource with ID '${id}' was not found`,
         );
       }
       throw new InternalServerErrorException(
         {
           statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-          message: exception.response?.data?.mensaje || exception.message
+          message: exception.response?.data?.mensaje || exception.message,
         },
-        exception.response?.data?.mensaje || exception.message
+        exception.response?.data?.mensaje || exception.message,
       );
     }
   }
@@ -162,9 +162,9 @@ export class BiziService {
         const response = await lastValueFrom(
           this.httpService
             .get<BiziApiResponse>(
-              `${biziApiURL}?start=${start}&rows=${rows}&srsname=wgs84`
+              `${biziApiURL}?start=${start}&rows=${rows}&srsname=wgs84`,
             )
-            .pipe(timeout(10000))
+            .pipe(timeout(10000)),
         );
 
         const stations = await Promise.all(
@@ -182,27 +182,27 @@ export class BiziService {
               bikes: station.bicisDisponibles,
               openDocks: station.anclajesDisponibles,
               coordinates: station.geometry.coordinates.map((coord) =>
-                coord.toString()
+                coord.toString(),
               ),
               source: 'api',
               sourceUrl: station.about || `${biziApiURL}?id=${station.id}`,
               lastUpdated: station.lastUpdated,
-              type: 'bizi'
+              type: 'bizi',
             };
 
             await this.saveStation({
               id: station.id,
               street: capitalizeEachWord(fixWords(streetName)),
               coordinates: station.geometry.coordinates.map((coord) =>
-                coord.toString()
+                coord.toString(),
               ),
               source: 'api',
               sourceUrl: station.about || `${biziApiURL}?id=${station.id}`,
-              type: 'bizi'
+              type: 'bizi',
             });
 
             return stationResponse;
-          })
+          }),
         );
 
         allStations.push(...stations);
@@ -227,17 +227,17 @@ export class BiziService {
           {
             statusCode: HttpStatus.REQUEST_TIMEOUT,
             message:
-              'Request timeout: The API request took too long to complete'
+              'Request timeout: The API request took too long to complete',
           },
-          'Request timeout: The API request took too long to complete'
+          'Request timeout: The API request took too long to complete',
         );
       }
       throw new InternalServerErrorException(
         {
           statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-          message: exception.message
+          message: exception.message,
         },
-        exception.message
+        exception.message,
       );
     }
   }
@@ -255,7 +255,7 @@ export class BiziService {
       .findOneAndUpdate(
         { id: data.id },
         { $set: data },
-        { new: true, upsert: true }
+        { new: true, upsert: true },
       )
       .lean();
   }

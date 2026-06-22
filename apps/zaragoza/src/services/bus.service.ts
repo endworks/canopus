@@ -5,7 +5,7 @@ import {
   Inject,
   Injectable,
   InternalServerErrorException,
-  NotFoundException
+  NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Cache } from 'cache-manager';
@@ -16,7 +16,7 @@ import {
   BusLineResponse,
   BusLinesResponse,
   BusStationResponse,
-  BusStationsResponse
+  BusStationsResponse,
 } from '../models/bus.interface';
 import { ErrorResponse } from '@canopus/shared';
 import { StationBase, ValueLabel } from '../models/common.interface';
@@ -24,14 +24,14 @@ import {
   BusLine,
   BusLineDocument,
   BusStation,
-  BusStationDocument
+  BusStationDocument,
 } from '../schemas/bus.schema';
 import {
   capitalize,
   capitalizeEachWord,
   fixWords,
   isInt,
-  KmlForLine
+  KmlForLine,
 } from '../utils';
 
 const busApiURL =
@@ -48,7 +48,7 @@ export class BusService {
     private busStationModel: Model<BusStationDocument>,
     @InjectModel(BusLine.name)
     private busLineModel: Model<BusLineDocument>,
-    private httpService: HttpService
+    private httpService: HttpService,
   ) {}
 
   // Stations
@@ -69,9 +69,9 @@ export class BusService {
       throw new InternalServerErrorException(
         {
           statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-          message: exception.message
+          message: exception.message,
         },
-        exception.message
+        exception.message,
       );
     }
   }
@@ -79,10 +79,10 @@ export class BusService {
   // Station
   public async getStation(
     id: string,
-    source?: string
+    source?: string,
   ): Promise<BusStationResponse | ErrorResponse> {
     const cache: BusStationResponse = await this.cacheManager.get(
-      `bus/stations/${id}/${source ?? 'api'}`
+      `bus/stations/${id}/${source ?? 'api'}`,
     );
     if (cache) return cache;
     const url =
@@ -94,7 +94,7 @@ export class BusService {
 
     try {
       const response = await lastValueFrom(
-        this.httpService.get(url).pipe(timeout(10000))
+        this.httpService.get(url).pipe(timeout(10000)),
       );
 
       try {
@@ -106,7 +106,7 @@ export class BusService {
           coordinates: [],
           source: null,
           sourceUrl: null,
-          type: 'bus'
+          type: 'bus',
         };
 
         if (backup) {
@@ -122,8 +122,12 @@ export class BusService {
           if (!backup) {
             resp.street = capitalizeEachWord(
               fixWords(
-                response.data.title.split(')')[1].slice(1).split('Lí')[0].trim()
-              )
+                response.data.title
+                  .split(')')[1]
+                  .slice(1)
+                  .split('Lí')[0]
+                  .trim(),
+              ),
             );
             resp.coordinates = response.data.geometry.coordinates;
           }
@@ -140,7 +144,7 @@ export class BusService {
               const transport = {
                 line: capitalize(fixWords(destination.linea)),
                 destination: destinationFixed,
-                time: null
+                time: null,
               };
               if (destination[element].includes('minutos')) {
                 transport.time = `${destination[element]
@@ -148,7 +152,7 @@ export class BusService {
                   .replace(/(^\.)|(\.$)/g, '')} min.`;
               } else {
                 transport.time = capitalize(
-                  fixWords(destination[element].replace(/(^\.)|(\.$)/g, ''))
+                  fixWords(destination[element].replace(/(^\.)|(\.$)/g, '')),
                 );
               }
               times.push(transport);
@@ -196,9 +200,9 @@ export class BusService {
           throw new NotFoundException(
             {
               statusCode: HttpStatus.NOT_FOUND,
-              message: `Resource with ID '${id}' was not found`
+              message: `Resource with ID '${id}' was not found`,
             },
-            `Resource with ID '${id}' was not found`
+            `Resource with ID '${id}' was not found`,
           );
         }
         resp.times.forEach((time) => {
@@ -221,7 +225,7 @@ export class BusService {
         await this.cacheManager.set(
           `bus/stations/${id}/${source ?? 'api'}`,
           resp,
-          10000
+          10000,
         );
 
         return resp;
@@ -229,9 +233,9 @@ export class BusService {
         throw new InternalServerErrorException(
           {
             statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-            message: exception.message
+            message: exception.message,
           },
-          exception.message
+          exception.message,
         );
       }
     } catch (exception) {
@@ -240,26 +244,26 @@ export class BusService {
           {
             statusCode: HttpStatus.REQUEST_TIMEOUT,
             message:
-              'Request timeout: The API request took too long to complete'
+              'Request timeout: The API request took too long to complete',
           },
-          'Request timeout: The API request took too long to complete'
+          'Request timeout: The API request took too long to complete',
         );
       }
       if (exception.response?.status === HttpStatus.NOT_FOUND) {
         throw new NotFoundException(
           {
             statusCode: HttpStatus.NOT_FOUND,
-            message: `Resource with ID '${id}' was not found`
+            message: `Resource with ID '${id}' was not found`,
           },
-          `Resource with ID '${id}' was not found`
+          `Resource with ID '${id}' was not found`,
         );
       } else {
         throw new InternalServerErrorException(
           {
             statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-            message: exception.response?.data?.mensaje || exception.message
+            message: exception.response?.data?.mensaje || exception.message,
           },
-          exception.response?.data?.mensaje || exception.message
+          exception.response?.data?.mensaje || exception.message,
         );
       }
     }
@@ -282,9 +286,9 @@ export class BusService {
       throw new InternalServerErrorException(
         {
           statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-          message: exception.message
+          message: exception.message,
         },
-        exception.message
+        exception.message,
       );
     }
   }
@@ -293,7 +297,7 @@ export class BusService {
   public async getLine(id: string): Promise<BusLineResponse | ErrorResponse> {
     try {
       const cache: BusLineResponse = await this.cacheManager.get(
-        `bus/lines/${id}`
+        `bus/lines/${id}`,
       );
       if (cache) return cache;
       const line = await this.getLineById(id);
@@ -301,9 +305,9 @@ export class BusService {
         throw new NotFoundException(
           {
             statusCode: HttpStatus.NOT_FOUND,
-            message: `Resource with ID '${id}' was not found`
+            message: `Resource with ID '${id}' was not found`,
           },
-          `Resource with ID '${id}' was not found`
+          `Resource with ID '${id}' was not found`,
         );
       }
       const { _id, ...lineWithoutId } = line;
@@ -313,9 +317,9 @@ export class BusService {
       throw new InternalServerErrorException(
         {
           statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-          message: exception.message
+          message: exception.message,
         },
-        exception.message
+        exception.message,
       );
     }
   }
@@ -348,7 +352,7 @@ export class BusService {
               source: 'backup',
               sourceUrl: null,
               lastUpdated: null,
-              type: 'bus'
+              type: 'bus',
             };
             await this.saveStation(stationsToUpdate[station.id]);
           });
@@ -359,15 +363,15 @@ export class BusService {
               fixWords(
                 webLines.find((item) => item.value === lineId)?.label ??
                   backup[lineId]?.name ??
-                  lineId
-              )
+                  lineId,
+              ),
             ),
             lastUpdated: new Date().toISOString(),
             stations,
-            hidden
+            hidden,
           };
           await this.saveLine(line);
-        })
+        }),
       );
 
       const resp: BusLinesResponse = {};
@@ -383,9 +387,9 @@ export class BusService {
       throw new InternalServerErrorException(
         {
           statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-          message: exception.message
+          message: exception.message,
         },
-        exception.message
+        exception.message,
       );
     }
   }
@@ -397,7 +401,7 @@ export class BusService {
       if (cache) return cache;
       const url = 'https://zaragoza.avanzagrupo.com/lineas-y-horarios/';
       const response = await lastValueFrom(
-        this.httpService.get(url).pipe(timeout(10000))
+        this.httpService.get(url).pipe(timeout(10000)),
       );
 
       const html = await response.data;
@@ -423,18 +427,18 @@ export class BusService {
           {
             statusCode: HttpStatus.REQUEST_TIMEOUT,
             message:
-              'Request timeout: The API request took too long to complete'
+              'Request timeout: The API request took too long to complete',
           },
-          'Request timeout: The API request took too long to complete'
+          'Request timeout: The API request took too long to complete',
         );
       }
       console.error('Failed to fetch or parse Zaragoza lines data:', exception);
       throw new InternalServerErrorException(
         {
           statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-          message: exception.message
+          message: exception.message,
         },
-        exception.message
+        exception.message,
       );
     }
   }
@@ -445,7 +449,7 @@ export class BusService {
       if (cache) return cache;
       const url = `https://zaragoza.avanzagrupo.com/lineas-y-horarios`;
       const response = await lastValueFrom(
-        this.httpService.get(url).pipe(timeout(10000))
+        this.httpService.get(url).pipe(timeout(10000)),
       );
       const html = await response.data;
 
@@ -470,18 +474,18 @@ export class BusService {
           {
             statusCode: HttpStatus.REQUEST_TIMEOUT,
             message:
-              'Request timeout: The API request took too long to complete'
+              'Request timeout: The API request took too long to complete',
           },
-          'Request timeout: The API request took too long to complete'
+          'Request timeout: The API request took too long to complete',
         );
       }
       console.error('Failed to fetch or parse Zaragoza lines data:', exception);
       throw new InternalServerErrorException(
         {
           statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-          message: exception.message
+          message: exception.message,
         },
-        exception.message
+        exception.message,
       );
     }
   }
@@ -489,14 +493,14 @@ export class BusService {
   async fetchZaragozaLineFromKml(id: string): Promise<StationBase[]> {
     try {
       const cache: StationBase[] = await this.cacheManager.get(
-        `bus/lines/${id}/kml`
+        `bus/lines/${id}/kml`,
       );
       if (cache) return cache;
       const urls = KmlForLine(id);
       const responses = await Promise.all(
         urls.map((url) =>
-          lastValueFrom(this.httpService.get(url).pipe(timeout(10000)))
-        )
+          lastValueFrom(this.httpService.get(url).pipe(timeout(10000))),
+        ),
       );
 
       const stations: StationBase[] = [];
@@ -517,7 +521,7 @@ export class BusService {
             stations.push({
               id: stationId,
               street,
-              coordinates: [lonStr, latStr]
+              coordinates: [lonStr, latStr],
             });
           }
         });
@@ -531,18 +535,18 @@ export class BusService {
           {
             statusCode: HttpStatus.REQUEST_TIMEOUT,
             message:
-              'Request timeout: The API request took too long to complete'
+              'Request timeout: The API request took too long to complete',
           },
-          'Request timeout: The API request took too long to complete'
+          'Request timeout: The API request took too long to complete',
         );
       }
       console.error('Failed to fetch or parse Zaragoza lines data:', exception);
       throw new InternalServerErrorException(
         {
           statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-          message: exception.message
+          message: exception.message,
         },
-        exception.message
+        exception.message,
       );
     }
   }
@@ -568,7 +572,7 @@ export class BusService {
       .findOneAndUpdate(
         { id: data.id },
         { $set: data },
-        { new: true, upsert: true }
+        { new: true, upsert: true },
       )
       .lean();
   }
@@ -578,7 +582,7 @@ export class BusService {
       .findOneAndUpdate(
         { id: data.id },
         { $set: data },
-        { new: true, upsert: true }
+        { new: true, upsert: true },
       )
       .lean();
   }

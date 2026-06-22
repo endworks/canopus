@@ -18,7 +18,7 @@ const alwaysLowercaseWords = ['y', 'a', 'de', 'en', 'del', 'la', 'los', 'las'];
 
 export const capitalizeEachWord = (
   text: string,
-  setLowercase: boolean = true
+  setLowercase: boolean = true,
 ) => {
   if (text) {
     return text
@@ -79,7 +79,7 @@ const wordReplacements: Record<string, string> = {
   jos: 'josé',
   'Ã“': 'Ó',
   'Ã': 'Í',
-  'Ã‰': 'É'
+  'Ã‰': 'É',
 };
 
 export const fixWords = (text: string): string => {
@@ -96,23 +96,23 @@ export const fixWords = (text: string): string => {
 export const KmlForLine = (lineId: string): string[] => {
   const kml = {
     Ci3: [
-      'https://zaragoza.avanzagrupo.com/wp-content/uploads/2025/03/Ci3-1.kml'
+      'https://zaragoza.avanzagrupo.com/wp-content/uploads/2025/03/Ci3-1.kml',
     ],
     Ci4: [
-      'https://zaragoza.avanzagrupo.com/wp-content/uploads/2025/03/Ci4-1.kml'
+      'https://zaragoza.avanzagrupo.com/wp-content/uploads/2025/03/Ci4-1.kml',
     ],
     EM1: [
       'https://zaragoza.avanzagrupo.com/wp-content/uploads/2025/08/EM1-1.kml',
-      'https://zaragoza.avanzagrupo.com/wp-content/uploads/2025/08/EM1-2.kml'
+      'https://zaragoza.avanzagrupo.com/wp-content/uploads/2025/08/EM1-2.kml',
     ],
     EM2: [
       'https://zaragoza.avanzagrupo.com/wp-content/uploads/2025/08/EM2-1.kml',
-      'https://zaragoza.avanzagrupo.com/wp-content/uploads/2025/08/EM2-2.kml'
+      'https://zaragoza.avanzagrupo.com/wp-content/uploads/2025/08/EM2-2.kml',
     ],
     TUR: [
       'https://zaragoza.avanzagrupo.com/wp-content/uploads/2024/02/TUR-1.kml',
-      'https://zaragoza.avanzagrupo.com/wp-content/uploads/2024/02/TUR-2.kml'
-    ]
+      'https://zaragoza.avanzagrupo.com/wp-content/uploads/2024/02/TUR-2.kml',
+    ],
   };
   if (Object.keys(kml).includes(lineId)) {
     return kml[lineId];
@@ -130,16 +130,16 @@ export const KmlForLine = (lineId: string): string[] => {
     'N3',
     'N4',
     'N5',
-    'N7'
+    'N7',
   ];
   if (singleDestinationLines.includes(lineId)) {
     return [
-      `https://zaragoza.avanzagrupo.com/wp-content/uploads/2019/12/${lineId}-1.kml`
+      `https://zaragoza.avanzagrupo.com/wp-content/uploads/2019/12/${lineId}-1.kml`,
     ];
   }
 
   return [
     `https://zaragoza.avanzagrupo.com/wp-content/uploads/2019/12/${lineId}-1.kml`,
-    `https://zaragoza.avanzagrupo.com/wp-content/uploads/2019/12/${lineId}-2.kml`
+    `https://zaragoza.avanzagrupo.com/wp-content/uploads/2019/12/${lineId}-2.kml`,
   ];
 };

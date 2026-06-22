@@ -2,7 +2,7 @@
 # Build from the monorepo root:
 #   docker build -f apps/zine/Dockerfile -t canopus-zine .
 
-FROM node:alpine AS base
+FROM node:24-alpine AS base
 RUN npm install -g pnpm@11.7.0 turbo@2.9.18
 WORKDIR /app
 
@@ -11,19 +11,20 @@ FROM base AS pruner
 COPY . .
 RUN turbo prune @canopus/zine --docker
 
-# Install against the pruned manifests (well-cached), then build.
+# Install against the pruned manifests (well-cached), build, then assemble a
+# production-only bundle (dist + prod node_modules, no devDependencies).
 FROM base AS installer
 COPY --from=pruner /app/out/json/ .
 RUN pnpm install --frozen-lockfile
 COPY --from=pruner /app/out/full/ .
 COPY tsconfig.base.json ./tsconfig.base.json
 RUN turbo build --filter=@canopus/zine
+RUN pnpm --filter @canopus/zine deploy --prod --legacy /prod
 
-# Runtime image.
-FROM node:alpine AS runner
+# Minimal runtime image: just the production bundle.
+FROM node:24-alpine AS runner
 LABEL org.opencontainers.image.source=https://github.com/endworks/canopus
 WORKDIR /app
-COPY --from=installer /app/ .
-WORKDIR /app/apps/zine
+COPY --from=installer /prod/ .
 EXPOSE 3000/tcp
 CMD ["node", "dist/main.js"]

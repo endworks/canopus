@@ -9,13 +9,13 @@ import { TramService } from '../services/tram.service';
 @Module({
   imports: [
     MongooseModule.forFeature([
-      { name: TramStation.name, schema: TramStationSchema }
+      { name: TramStation.name, schema: TramStationSchema },
     ]),
     HttpModule,
-    CacheModule.register()
+    CacheModule.register(),
   ],
   controllers: [TramController],
   providers: [TramService],
-  exports: [TramService]
+  exports: [TramService],
 })
 export class TramModule {}

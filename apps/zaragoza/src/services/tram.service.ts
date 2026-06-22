@@ -4,7 +4,7 @@ import {
   HttpStatus,
   Inject,
   Injectable,
-  InternalServerErrorException
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Cache } from 'cache-manager';
@@ -13,7 +13,7 @@ import { Model } from 'mongoose';
 import { lastValueFrom, timeout, TimeoutError } from 'rxjs';
 import {
   TramStationResponse,
-  TramStationsResponse
+  TramStationsResponse,
 } from 'src/models/tram.interface';
 import { capitalizeEachWord, fixWords, isInt } from 'src/utils';
 import { ErrorResponse } from '@canopus/shared';
@@ -26,7 +26,7 @@ export class TramService {
     private cacheManager: Cache,
     @InjectModel(TramStation.name)
     private tramStationModel: Model<TramStationDocument>,
-    private httpService: HttpService
+    private httpService: HttpService,
   ) {}
 
   // Stations
@@ -48,9 +48,9 @@ export class TramService {
       throw new InternalServerErrorException(
         {
           statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-          message: exception.message
+          message: exception.message,
         },
-        exception.message
+        exception.message,
       );
     }
   }
@@ -58,26 +58,26 @@ export class TramService {
   // Station
   public async getStation(
     id: string,
-    source?: string
+    source?: string,
   ): Promise<TramStationResponse | ErrorResponse> {
     try {
       if (!isInt(id)) {
         const stationResponse = await this.getStations();
         const stations = Object.keys(stationResponse).map(
-          (station) => stationResponse[station]
+          (station) => stationResponse[station],
         );
 
         const fuse = new Fuse(stations, {
           keys: ['street'],
           includeScore: true,
-          threshold: 0.4
+          threshold: 0.4,
         });
         const results = fuse.search(id);
         console.log(results);
       }
 
       const cache: TramStationResponse = await this.cacheManager.get(
-        `tram/stations/${id}`
+        `tram/stations/${id}`,
       );
       if (cache) return cache;
 
@@ -91,7 +91,7 @@ export class TramService {
         coordinates: [],
         source: null,
         sourceUrl: null,
-        type: 'tram'
+        type: 'tram',
       };
 
       if (backup) {
@@ -120,9 +120,9 @@ export class TramService {
           lastValueFrom(
             this.httpService
               .get(url + `${id.slice(0, id.length - 1) + station}`)
-              .pipe(timeout(10000))
-          )
-        )
+              .pipe(timeout(10000)),
+          ),
+        ),
       );
 
       responses.forEach((response) => {
@@ -132,9 +132,9 @@ export class TramService {
             return {
               line: destino.linea,
               destination: capitalizeEachWord(fixWords(destino.destino)),
-              time: `${destino.minutos} min.`
+              time: `${destino.minutos} min.`,
             };
-          }) || [])
+          }) || []),
         );
       });
 
@@ -153,7 +153,7 @@ export class TramService {
       await this.cacheManager.set(
         `tram/stations/${id}/${source ?? 'api'}`,
         resp,
-        10000
+        10000,
       );
       return resp;
     } catch (exception) {
@@ -162,17 +162,17 @@ export class TramService {
           {
             statusCode: HttpStatus.REQUEST_TIMEOUT,
             message:
-              'Request timeout: The API request took too long to complete'
+              'Request timeout: The API request took too long to complete',
           },
-          'Request timeout: The API request took too long to complete'
+          'Request timeout: The API request took too long to complete',
         );
       }
       throw new InternalServerErrorException(
         {
           statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-          message: exception.message
+          message: exception.message,
         },
-        exception.message
+        exception.message,
       );
     }
   }
@@ -190,7 +190,7 @@ export class TramService {
       .findOneAndUpdate(
         { id: data.id },
         { $set: data },
-        { new: true, upsert: true }
+        { new: true, upsert: true },
       )
       .lean();
   }

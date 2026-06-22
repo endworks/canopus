@@ -11,13 +11,13 @@ import { TramModule } from './modules/tram.module';
     HttpModule,
     CacheModule.register(),
     MongooseModule.forRoot(process.env.MONGODB_URI, {
-      dbName: 'zaragoza'
+      dbName: 'zaragoza',
     }),
     BusModule,
     TramModule,
-    BiziModule
+    BiziModule,
   ],
   controllers: [],
-  providers: []
+  providers: [],
 })
 export class AppModule {}

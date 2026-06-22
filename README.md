@@ -1,73 +1,66 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo_text.svg" width="320" alt="Nest Logo" /></a>
-</p>
+# Canopus
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+A pnpm + [Turborepo](https://turbo.build) monorepo for the Canopus API gateway
+and its NestJS microservices. Each service builds and deploys independently — a
+change to one service does not rebuild or redeploy the others.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://coveralls.io/github/nestjs/nest?branch=master" target="_blank"><img src="https://coveralls.io/repos/github/nestjs/nest/badge.svg?branch=master#9" alt="Coverage" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Structure
 
-## Description
-
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Installation
-
-```bash
-$ npm install
+```
+apps/
+  gateway/     # @canopus/gateway  — HTTP/REST gateway, proxies to services over TCP
+  zaragoza/    # @canopus/zaragoza — Zaragoza transport (bus/tram/bizi), MongoDB
+  zine/        # @canopus/zine     — cinema & movies, MongoDB
+packages/
+  shared/      # @canopus/shared   — RPC contract types shared across packages
 ```
 
-## Running the app
+`rae` and `twitter-downloader` remain separate repositories; the gateway calls
+them over TCP via the host env vars in `apps/gateway/.env`.
+
+## Develop
+
+Requires Node 20+ and pnpm 11.
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+pnpm install            # install the whole workspace
+pnpm turbo build        # build every package (shared first, then dependents)
+pnpm turbo lint         # lint
+pnpm --filter @canopus/zaragoza start:dev   # run one service in watch mode
 ```
 
-## Test
+Turbo only rebuilds what changed. Changing `packages/shared` rebuilds the
+services that depend on it (zaragoza, zine) but not the gateway.
+
+## Docker
+
+Each service has its own Dockerfile that builds from the **monorepo root** using
+`turbo prune` to ship a minimal image:
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+docker build -f apps/zaragoza/Dockerfile -t canopus-zaragoza .
+# or the whole stack for local dev:
+MONGODB_URI=mongodb://... docker compose up --build
 ```
 
-## Support
+## CI/CD
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+`.github/workflows/deploy.yml` runs on push/PR:
 
-## Stay in touch
+1. **detect** — `dorny/paths-filter` determines which services are affected
+   (own files, `packages/shared`, or root config). Version tags release all.
+2. **deploy** — builds, signs (cosign) and SSH-deploys **only** the affected
+   services in parallel, publishing to `ghcr.io/endworks/canopus[-service]`.
 
-- Author - [Kamil Myśliwiec](https://kamilmysliwiec.com)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+## Migrating from the standalone repos (one-time cutover)
 
-## License
+The `zaragoza` and `zine` services were merged here from
+`endworks/canopus-zaragoza` and `endworks/canopus-zine` with full history
+(`git subtree`). To finish the cutover:
 
-Nest is [MIT licensed](LICENSE).
+1. Push this branch and open a PR; confirm the `deploy` workflow builds the
+   affected services.
+2. Merge to `main`; confirm each service deploys (container names and ports are
+   unchanged: `canopus` :3000, `canopus-zaragoza` :8877, `canopus-zine` :8878).
+3. In the old `canopus-zaragoza` and `canopus-zine` repos: disable their Actions
+   workflows (so they stop deploying), then archive the repos.

@@ -1,26 +1,37 @@
-version: "3"
-
 services:
   canopus:
-    image: ghcr.io/drkcat/canopus:latest
+    build:
+      context: .
+      dockerfile: apps/gateway/Dockerfile
+    image: ghcr.io/endworks/canopus
     ports:
       - 3000:3000
     networks:
       - canopus
 
   canopus-zaragoza:
-    image: ghcr.io/drkcat/canopus-zaragoza:latest
+    build:
+      context: .
+      dockerfile: apps/zaragoza/Dockerfile
+    image: ghcr.io/endworks/canopus-zaragoza
     ports:
-      - 8877:8877
+      - 8877:3000
+    environment:
+      MONGODB_URI: ${MONGODB_URI:-}
     networks:
       - canopus
     depends_on:
       - canopus
 
   canopus-zine:
-    image: ghcr.io/drkcat/canopus-zine:latest
+    build:
+      context: .
+      dockerfile: apps/zine/Dockerfile
+    image: ghcr.io/endworks/canopus-zine
     ports:
-      - 8878:8878
+      - 8878:3000
+    environment:
+      MONGODB_URI: ${MONGODB_URI:-}
     networks:
       - canopus
     depends_on:

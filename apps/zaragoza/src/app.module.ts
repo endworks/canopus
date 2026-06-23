@@ -4,12 +4,14 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { requireEnv } from '@canopus/shared';
+import { LoggingModule } from '@canopus/nest';
 import { BusModule } from './modules/bus.module';
 import { BiziModule } from './modules/bizi.module';
 import { TramModule } from './modules/tram.module';
 
 @Module({
   imports: [
+    LoggingModule,
     ConfigModule.forRoot({
       isGlobal: true,
       validate: (config) => requireEnv(config, ['MONGODB_URI']),

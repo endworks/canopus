@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { requireEnv, SERVICE_TOKENS, TCP_PORT } from '@canopus/shared';
+import { LoggingModule } from '@canopus/nest';
 import { RAEController } from './controllers/rae.controller';
 import { TwitterDownloaderController } from './controllers/twitter-downloader.controller';
 import { ZaragozaController } from './controllers/zaragoza.controller';
@@ -14,6 +15,7 @@ import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
+    LoggingModule,
     HealthModule,
     ConfigModule.forRoot({
       isGlobal: true,

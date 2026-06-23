@@ -4,11 +4,13 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { requireEnv } from '@canopus/shared';
+import { LoggingModule } from '@canopus/nest';
 import { CinemaModule } from './modules/cinema.module';
 import { cacheMaxSize, cacheTTL } from './utils';
 
 @Module({
   imports: [
+    LoggingModule,
     ConfigModule.forRoot({
       isGlobal: true,
       validate: (config) => requireEnv(config, ['MONGODB_URI']),

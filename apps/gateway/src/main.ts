@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { SwaggerTheme, SwaggerThemeNameEnum } from 'swagger-themes';
 import { RpcResponseInterceptor } from '@canopus/nest';
 import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
@@ -41,6 +42,7 @@ async function bootstrap() {
     .build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('/', app, document, {
+    customCss: new SwaggerTheme().getBuffer(SwaggerThemeNameEnum.ONE_DARK),
     customSiteTitle: `Canopus API (${pkg.version})`,
     swaggerOptions: {
       docExpansion: 'none',

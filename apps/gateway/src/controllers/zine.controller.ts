@@ -1,5 +1,6 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
 import {
+  ApiDefaultResponse,
   ApiOperation,
   ApiParam,
   ApiQuery,
@@ -13,9 +14,11 @@ import {
   CinemaDetailsBasic,
   Movie,
 } from '../models/zine.interface';
+import { ErrorResponse } from '../models/error.interface';
 import { ZineService } from '../services/zine.service';
 
 @ApiTags('Zine, cinemas and movies')
+@ApiDefaultResponse({ description: 'Error response', type: ErrorResponse })
 @Controller('zine')
 export class ZineController {
   constructor(private readonly zineService: ZineService) {}

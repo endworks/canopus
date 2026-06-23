@@ -1,5 +1,6 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
 import {
+  ApiDefaultResponse,
   ApiOperation,
   ApiParam,
   ApiQuery,
@@ -8,9 +9,11 @@ import {
 } from '@nestjs/swagger';
 import { ApiMapResponse } from '../swagger';
 import { BiziStation, BusLine, Station } from '../models/zaragoza.interface';
+import { ErrorResponse } from '../models/error.interface';
 import { ZaragozaService } from '../services/zaragoza.service';
 
 @ApiTags('Zaragoza')
+@ApiDefaultResponse({ description: 'Error response', type: ErrorResponse })
 @Controller('zgz')
 export class ZaragozaController {
   constructor(private readonly zaragozaService: ZaragozaService) {}

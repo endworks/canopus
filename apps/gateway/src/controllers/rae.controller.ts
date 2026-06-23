@@ -1,9 +1,17 @@
 import { Controller, Get, Param } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiDefaultResponse,
+  ApiOperation,
+  ApiParam,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { RAEService } from 'src/services/rae.service';
 import { SearchResult } from 'src/models/rae.interface';
+import { ErrorResponse } from 'src/models/error.interface';
 
 @ApiTags('RAE definitions')
+@ApiDefaultResponse({ description: 'Error response', type: ErrorResponse })
 @Controller('rae')
 export class RAEController {
   constructor(private readonly raeService: RAEService) {}

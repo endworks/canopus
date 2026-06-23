@@ -38,16 +38,16 @@ import { HealthModule } from './health/health.module';
     ),
   ],
   controllers: [
-    TwitterDownloaderController,
     ZaragozaController,
     ZineController,
     RAEController,
+    TwitterDownloaderController,
   ],
   providers: [
-    TwitterDownloaderService,
     ZaragozaService,
     ZineService,
     RAEService,
+    TwitterDownloaderService,
   ],
 })
 export class AppModule {}

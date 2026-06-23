@@ -45,11 +45,11 @@ async function bootstrap() {
     customCss: new SwaggerTheme().getBuffer(SwaggerThemeNameEnum.ONE_DARK),
     customSiteTitle: `Canopus API (${pkg.version})`,
     swaggerOptions: {
+      // No tagsSorter/operationsSorter: keep the declaration order — services in
+      // the order they're added (Zaragoza, Zine, ...), routes in controller order.
       docExpansion: 'none',
       filter: true,
       displayRequestDuration: true,
-      tagsSorter: 'alpha',
-      operationsSorter: 'alpha',
       persistAuthorization: true,
     },
   });

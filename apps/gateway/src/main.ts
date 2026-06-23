@@ -45,12 +45,37 @@ async function bootstrap() {
     customCss: new SwaggerTheme().getBuffer(SwaggerThemeNameEnum.ONE_DARK),
     customSiteTitle: `Canopus API (${pkg.version})`,
     swaggerOptions: {
-      // No tagsSorter/operationsSorter: keep the declaration order — services in
-      // the order they're added (Zaragoza, Zine, ...), routes in controller order.
+      // Services follow addTag order; routes follow controller order. The only
+      // override: '/update' actions are shown LAST in their block. They must be
+      // REGISTERED before '/:id' (else the param route swallows '/update'), so we
+      // only reorder them for display. The sorter is self-contained because
+      // swagger-ui runs it client-side.
       docExpansion: 'none',
       filter: true,
       displayRequestDuration: true,
       persistAuthorization: true,
+      operationsSorter: (
+        a: { get(key: string): string },
+        b: { get(key: string): string },
+      ) => {
+        const order = [
+          '/zgz/bus/stations',
+          '/zgz/bus/stations/{id}',
+          '/zgz/bus/lines',
+          '/zgz/bus/lines/{id}',
+          '/zgz/bus/lines/update',
+          '/zgz/tram/stations',
+          '/zgz/tram/stations/{id}',
+          '/zgz/bizi/stations',
+          '/zgz/bizi/stations/{id}',
+          '/zgz/bizi/stations/update',
+        ];
+        const rank = (op: { get(x: string): string }) => {
+          const i = order.indexOf(op.get('path'));
+          return i === -1 ? 999 : i;
+        };
+        return rank(a) - rank(b);
+      },
     },
   });
   await app.listen(3000);

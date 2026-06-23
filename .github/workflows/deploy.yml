@@ -53,12 +53,26 @@ jobs:
               - 'turbo.json'
               - 'tsconfig.base.json'
               - 'package.json'
+            rae:
+              - 'apps/rae/**'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'turbo.json'
+              - 'tsconfig.base.json'
+              - 'package.json'
+            twitter-downloader:
+              - 'apps/twitter-downloader/**'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'turbo.json'
+              - 'tsconfig.base.json'
+              - 'package.json'
 
       - name: Build deploy matrix from affected services
         id: set-matrix
         run: |
           if [ "${{ github.ref_type }}" = "tag" ]; then
-            CHANGED='["gateway","zaragoza","zine"]'
+            CHANGED='["gateway","zaragoza","zine","rae","twitter-downloader"]'
           else
             CHANGED='${{ steps.filter.outputs.changes }}'
           fi
@@ -66,7 +80,9 @@ jobs:
             {
               gateway:  {service:"gateway",  image:"canopus",          container:"canopus",          port:"3000:3000", db:false},
               zaragoza: {service:"zaragoza", image:"canopus-zaragoza", container:"canopus-zaragoza", port:"8877:3000", db:true},
-              zine:     {service:"zine",     image:"canopus-zine",     container:"canopus-zine",     port:"8878:3000", db:true}
+              zine:     {service:"zine",     image:"canopus-zine",     container:"canopus-zine",     port:"8878:3000", db:true},
+              rae:      {service:"rae",      image:"canopus-rae",      container:"canopus-rae",      port:"8879:3000", db:false},
+              "twitter-downloader": {service:"twitter-downloader", image:"canopus-twitter-downloader", container:"canopus-twitter-downloader", port:"8876:3000", db:false}
             } as $cfg
             | {include: [ $changed[] | select($cfg[.] != null) | $cfg[.] ]}
           ')
@@ -185,19 +201,23 @@ jobs:
 
       - name: Deploy image to server
         if: ${{ github.event_name != 'pull_request' && (github.ref_name == 'main' || github.ref_type == 'tag') }}
+        env:
+          TWITTER_CLIENT_TOKEN: ${{ secrets.TWITTER_CLIENT_TOKEN }}
         uses: appleboy/ssh-action@master
         with:
           host: ${{ env.HOST }}
           port: ${{ env.PORT }}
           username: ${{ env.USERNAME }}
           key: ${{ env.KEY }}
-          envs: IMAGE,CONTAINER,MONGODB_URI
+          envs: IMAGE,CONTAINER,MONGODB_URI,TWITTER_CLIENT_TOKEN
           script: |
             docker pull "$IMAGE"
             docker stop "$CONTAINER" 2>/dev/null || true
             docker rm "$CONTAINER" 2>/dev/null || true
             if [ -n "$MONGODB_URI" ]; then
               docker run --network canopus -p ${{ matrix.port }}/tcp -e MONGODB_URI="$MONGODB_URI" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
+            elif [ "$CONTAINER" = "canopus-twitter-downloader" ]; then
+              docker run --network canopus -p ${{ matrix.port }}/tcp -e TWITTER_CLIENT_TOKEN="$TWITTER_CLIENT_TOKEN" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
             else
               docker run --network canopus -p ${{ matrix.port }}/tcp -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
             fi

@@ -37,6 +37,32 @@ services:
     depends_on:
       - canopus
 
+  canopus-rae:
+    build:
+      context: .
+      dockerfile: apps/rae/Dockerfile
+    image: ghcr.io/endworks/canopus-rae
+    ports:
+      - 8879:3000
+    networks:
+      - canopus
+    depends_on:
+      - canopus
+
+  canopus-twitter-downloader:
+    build:
+      context: .
+      dockerfile: apps/twitter-downloader/Dockerfile
+    image: ghcr.io/endworks/canopus-twitter-downloader
+    ports:
+      - 8876:3000
+    environment:
+      TWITTER_CLIENT_TOKEN: ${TWITTER_CLIENT_TOKEN:-}
+    networks:
+      - canopus
+    depends_on:
+      - canopus
+
 networks:
   canopus:
     driver: bridge

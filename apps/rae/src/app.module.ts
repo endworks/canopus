@@ -1,17 +1,11 @@
 import { HttpModule } from '@nestjs/axios';
-import { CacheModule, Module } from '@nestjs/common';
+import { CacheModule } from '@nestjs/cache-manager';
+import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { cacheMaxSize, cacheTTL } from './utils';
 
 @Module({
-  imports: [
-    HttpModule,
-    CacheModule.register({
-      ttl: cacheTTL,
-      max: cacheMaxSize,
-    }),
-  ],
+  imports: [HttpModule, CacheModule.register({ ttl: 1000 * 60 * 60 * 6 })],
   controllers: [AppController],
   providers: [AppService],
 })

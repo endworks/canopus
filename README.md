@@ -8,15 +8,17 @@ change to one service does not rebuild or redeploy the others.
 
 ```
 apps/
-  gateway/     # @canopus/gateway  — HTTP/REST gateway, proxies to services over TCP
-  zaragoza/    # @canopus/zaragoza — Zaragoza transport (bus/tram/bizi), MongoDB
-  zine/        # @canopus/zine     — cinema & movies, MongoDB
+  gateway/             # @canopus/gateway            — HTTP/REST gateway, proxies to services over TCP
+  zaragoza/            # @canopus/zaragoza           — Zaragoza transport (bus/tram/bizi), MongoDB
+  zine/                # @canopus/zine               — cinema & movies, MongoDB
+  rae/                 # @canopus/rae                — Spanish dictionary (RAE) scraper
+  twitter-downloader/  # @canopus/twitter-downloader — tweet media-URL extractor
 packages/
-  shared/      # @canopus/shared   — RPC contract types shared across packages
+  shared/              # @canopus/shared             — RPC contract types shared across packages
 ```
 
-`rae` and `twitter-downloader` remain separate repositories; the gateway calls
-them over TCP via the host env vars in `apps/gateway/.env`.
+The gateway reaches each backend over TCP via the host env vars in
+`apps/gateway/.env`.
 
 ## Develop
 
@@ -57,13 +59,16 @@ MONGODB_URI=mongodb://... docker compose up --build
 
 ## Migrating from the standalone repos (one-time cutover)
 
-The `zaragoza` and `zine` services were merged here from
-`endworks/canopus-zaragoza` and `endworks/canopus-zine` with full history
-(`git subtree`). To finish the cutover:
+The `zaragoza`, `zine`, `rae` and `twitter-downloader` services were merged here
+from their `endworks/canopus-*` repositories with full history (`git subtree`).
+To finish the cutover:
 
 1. Push this branch and open a PR; confirm the `deploy` workflow builds the
    affected services.
 2. Merge to `main`; confirm each service deploys (container names and ports are
-   unchanged: `canopus` :3000, `canopus-zaragoza` :8877, `canopus-zine` :8878).
-3. In the old `canopus-zaragoza` and `canopus-zine` repos: disable their Actions
-   workflows (so they stop deploying), then archive the repos.
+   unchanged: `canopus` :3000, `canopus-zaragoza` :8877, `canopus-zine` :8878,
+   `canopus-rae` :8879, `canopus-twitter-downloader` :8876).
+3. In the old `canopus-*` service repos: disable their Actions workflows (so they
+   stop deploying), then archive the repos.
+4. Add the `TWITTER_CLIENT_TOKEN` secret to `endworks/canopus` — the
+   twitter-downloader service reads it at runtime.

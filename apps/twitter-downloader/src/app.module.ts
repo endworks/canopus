@@ -1,14 +1,10 @@
-import { CacheModule, Module } from '@nestjs/common';
+import { CacheModule } from '@nestjs/cache-manager';
+import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
 @Module({
-  imports: [
-    CacheModule.register({
-      ttl: 60 * 60 * 6,
-      max: 60 * 60 * 24 * 7,
-    }),
-  ],
+  imports: [CacheModule.register({ ttl: 1000 * 60 * 60 * 6 })],
   controllers: [AppController],
   providers: [AppService],
 })

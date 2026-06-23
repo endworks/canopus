@@ -1,6 +1,6 @@
 import { HttpService } from '@nestjs/axios';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import {
-  CACHE_MANAGER,
   HttpStatus,
   Inject,
   Injectable,
@@ -39,10 +39,12 @@ export class AppService {
       };
       const definitions = $('#resultados article').first();
       const lines = definitions.find('p');
+      // Persists across iterations: a complex-form/expression header line sets
+      // it, and the meaning lines that follow read it to route their meanings.
+      let isComplexForm;
       if (lines.length >= 0) {
         lines.each((index) => {
           const line = lines.eq(index);
-          let isComplexForm;
           if (line.hasClass('n2')) {
             resp.etymology = line.text();
           } else if (line.hasClass('k5')) {
@@ -57,7 +59,7 @@ export class AppService {
             let country;
             try {
               country = line.find('.c').first().text().trim();
-            } catch (e) {
+            } catch {
               country = null;
             }
 
@@ -74,7 +76,7 @@ export class AppService {
             let country;
             try {
               country = line.find('.c').first().text().trim();
-            } catch (e) {
+            } catch {
               country = null;
             }
             const words = line.find('mark');

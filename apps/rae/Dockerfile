@@ -1,28 +1,30 @@
-FROM node:alpine AS builder
+# syntax=docker/dockerfile:1
+# Build from the monorepo root:
+#   docker build -f apps/rae/Dockerfile -t canopus-rae .
 
-WORKDIR /usr/src/app
+FROM node:24-alpine AS base
+RUN npm install -g pnpm@11.7.0 turbo@2.9.18
+WORKDIR /app
 
-COPY package.json ./
-COPY yarn.lock ./
-
-RUN yarn
-
+# Prune the workspace down to this service and its workspace deps.
+FROM base AS pruner
 COPY . .
+RUN turbo prune @canopus/rae --docker
 
-RUN yarn run build
+# Install against the pruned manifests (well-cached), build, then assemble a
+# production-only bundle (dist + prod node_modules, no devDependencies).
+FROM base AS installer
+COPY --from=pruner /app/out/json/ .
+RUN pnpm install --frozen-lockfile
+COPY --from=pruner /app/out/full/ .
+COPY tsconfig.base.json ./tsconfig.base.json
+RUN turbo build --filter=@canopus/rae
+RUN pnpm --filter @canopus/rae deploy --prod --legacy /prod
 
-FROM node:alpine AS production
-LABEL org.opencontainers.image.source https://github.com/drkcat/canopus-rae
-
-WORKDIR /usr/src/app
-
-COPY package.json ./
-COPY yarn.lock ./
-
-RUN yarn --prod
-
-COPY --from=builder /usr/src/app/dist ./dist
-
+# Minimal runtime image: just the production bundle.
+FROM node:24-alpine AS runner
+LABEL org.opencontainers.image.source=https://github.com/endworks/canopus
+WORKDIR /app
+COPY --from=installer /prod/ .
 EXPOSE 3000/tcp
-
-CMD ["yarn", "run", "start:prod"]
+CMD ["node", "dist/main.js"]

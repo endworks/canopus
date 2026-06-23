@@ -1,5 +1,5 @@
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import {
-  CACHE_MANAGER,
   HttpStatus,
   Inject,
   Injectable,

@@ -116,6 +116,170 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
+  apps/rae:
+    dependencies:
+      '@nestjs/axios':
+        specifier: ^4.0.1
+        version: 4.0.1(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(axios@1.18.0)(rxjs@7.8.2)
+      '@nestjs/cache-manager':
+        specifier: ^3.1.3
+        version: 3.1.3(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)(cache-manager@7.2.8)(keyv@5.6.0)(rxjs@7.8.2)
+      '@nestjs/common':
+        specifier: ^11.1.27
+        version: 11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/core':
+        specifier: ^11.1.27
+        version: 11.1.27(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/microservices@11.1.27)(@nestjs/platform-express@11.1.27)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/microservices':
+        specifier: ^11.1.27
+        version: 11.1.27(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)(cache-manager@7.2.8)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/platform-express':
+        specifier: ^11.1.27
+        version: 11.1.27(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)
+      axios:
+        specifier: ^1.18.0
+        version: 1.18.0
+      cache-manager:
+        specifier: ^7.2.8
+        version: 7.2.8
+      cheerio:
+        specifier: ^1.2.0
+        version: 1.2.0
+      reflect-metadata:
+        specifier: ^0.2.2
+        version: 0.2.2
+      rimraf:
+        specifier: ^6.1.3
+        version: 6.1.3
+      rxjs:
+        specifier: ^7.8.2
+        version: 7.8.2
+    devDependencies:
+      '@nestjs/cli':
+        specifier: ^11.0.23
+        version: 11.0.23(@types/node@26.0.0)(prettier@3.8.4)
+      '@nestjs/schematics':
+        specifier: ^11.1.0
+        version: 11.1.0(chokidar@4.0.3)(prettier@3.8.4)(typescript@6.0.3)
+      '@nestjs/testing':
+        specifier: ^11.1.27
+        version: 11.1.27(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)(@nestjs/microservices@11.1.27)(@nestjs/platform-express@11.1.27)
+      '@types/express':
+        specifier: ^5.0.6
+        version: 5.0.6
+      '@types/jest':
+        specifier: ^30.0.0
+        version: 30.0.0
+      '@types/node':
+        specifier: ^26.0.0
+        version: 26.0.0
+      '@types/supertest':
+        specifier: ^7.2.0
+        version: 7.2.0
+      jest:
+        specifier: ^30.4.2
+        version: 30.4.2(@types/node@26.0.0)(ts-node@10.9.2(@types/node@26.0.0)(typescript@6.0.3))
+      source-map-support:
+        specifier: ^0.5.21
+        version: 0.5.21
+      supertest:
+        specifier: ^7.2.2
+        version: 7.2.2
+      ts-jest:
+        specifier: ^29.4.11
+        version: 29.4.11(@babel/core@7.29.7)(@jest/transform@30.4.1)(@jest/types@30.4.1)(babel-jest@30.4.1(@babel/core@7.29.7))(jest-util@30.4.1)(jest@30.4.2(@types/node@26.0.0)(ts-node@10.9.2(@types/node@26.0.0)(typescript@6.0.3)))(typescript@6.0.3)
+      ts-loader:
+        specifier: ^9.6.2
+        version: 9.6.2(typescript@6.0.3)(webpack@5.106.2)
+      ts-node:
+        specifier: ^10.9.2
+        version: 10.9.2(@types/node@26.0.0)(typescript@6.0.3)
+      tsconfig-paths:
+        specifier: ^4.2.0
+        version: 4.2.0
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
+  apps/twitter-downloader:
+    dependencies:
+      '@nestjs/cache-manager':
+        specifier: ^3.1.3
+        version: 3.1.3(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)(cache-manager@7.2.8)(keyv@5.6.0)(rxjs@7.8.2)
+      '@nestjs/common':
+        specifier: ^11.1.27
+        version: 11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/core':
+        specifier: ^11.1.27
+        version: 11.1.27(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/microservices@11.1.27)(@nestjs/platform-express@11.1.27)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/microservices':
+        specifier: ^11.1.27
+        version: 11.1.27(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)(cache-manager@7.2.8)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/platform-express':
+        specifier: ^11.1.27
+        version: 11.1.27(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)
+      cache-manager:
+        specifier: ^7.2.8
+        version: 7.2.8
+      reflect-metadata:
+        specifier: ^0.2.2
+        version: 0.2.2
+      rimraf:
+        specifier: ^6.1.3
+        version: 6.1.3
+      rxjs:
+        specifier: ^7.8.2
+        version: 7.8.2
+      twitter-api-v2:
+        specifier: ^1.27.0
+        version: 1.29.0
+    devDependencies:
+      '@nestjs/cli':
+        specifier: ^11.0.23
+        version: 11.0.23(@types/node@26.0.0)(prettier@3.8.4)
+      '@nestjs/schematics':
+        specifier: ^11.1.0
+        version: 11.1.0(chokidar@4.0.3)(prettier@3.8.4)(typescript@6.0.3)
+      '@nestjs/testing':
+        specifier: ^11.1.27
+        version: 11.1.27(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27)(@nestjs/microservices@11.1.27)(@nestjs/platform-express@11.1.27)
+      '@types/express':
+        specifier: ^5.0.6
+        version: 5.0.6
+      '@types/jest':
+        specifier: ^30.0.0
+        version: 30.0.0
+      '@types/node':
+        specifier: ^26.0.0
+        version: 26.0.0
+      '@types/supertest':
+        specifier: ^7.2.0
+        version: 7.2.0
+      jest:
+        specifier: ^30.4.2
+        version: 30.4.2(@types/node@26.0.0)(ts-node@10.9.2(@types/node@26.0.0)(typescript@6.0.3))
+      source-map-support:
+        specifier: ^0.5.21
+        version: 0.5.21
+      supertest:
+        specifier: ^7.2.2
+        version: 7.2.2
+      ts-jest:
+        specifier: ^29.4.11
+        version: 29.4.11(@babel/core@7.29.7)(@jest/transform@30.4.1)(@jest/types@30.4.1)(babel-jest@30.4.1(@babel/core@7.29.7))(jest-util@30.4.1)(jest@30.4.2(@types/node@26.0.0)(ts-node@10.9.2(@types/node@26.0.0)(typescript@6.0.3)))(typescript@6.0.3)
+      ts-loader:
+        specifier: ^9.6.2
+        version: 9.6.2(typescript@6.0.3)(webpack@5.106.2)
+      ts-node:
+        specifier: ^10.9.2
+        version: 10.9.2(@types/node@26.0.0)(typescript@6.0.3)
+      tsconfig-paths:
+        specifier: ^4.2.0
+        version: 4.2.0
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
   apps/zaragoza:
     dependencies:
       '@canopus/shared':
@@ -3376,6 +3540,9 @@ packages:
   turbo@2.9.18:
     resolution: {integrity: sha512-bwabv6PupzeavybzEoArBAkwq5fnzwf8OFnRtpHwnviFWuwJPFxtyH+aVp36TmIqK3aYYgtTJ3J0m2ysxxSzQg==}
     hasBin: true
+
+  twitter-api-v2@1.29.0:
+    resolution: {integrity: sha512-v473q5bwme4N+DWSg6qY+JCvfg1nSJRWwui3HUALafxfqCvVkKiYmS/5x/pVeJwTmyeBxexMbzHwnzrH4h6oYQ==}
 
   type-check@0.4.0:
     resolution: {integrity: sha512-XleUoc9uwGXqjWwXaUTZAmzMcFZ5858QA2vvx1Ur5xIcixXIP+8LnFDgRplU30us6teqdlskFfu+ae4K79Ooew==}
@@ -6949,6 +7116,8 @@ snapshots:
       '@turbo/linux-arm64': 2.9.18
       '@turbo/windows-64': 2.9.18
       '@turbo/windows-arm64': 2.9.18
+
+  twitter-api-v2@1.29.0: {}
 
   type-check@0.4.0:
     dependencies:

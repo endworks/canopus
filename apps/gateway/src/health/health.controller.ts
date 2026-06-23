@@ -5,8 +5,10 @@ import {
   HealthCheckService,
   MicroserviceHealthIndicator,
 } from '@nestjs/terminus';
+import { ApiTags } from '@nestjs/swagger';
 import { SERVICE_TOKENS, TCP_PORT } from '@canopus/shared';
 
+@ApiTags('Health')
 @Controller('health')
 export class HealthController {
   constructor(

@@ -33,5 +33,4 @@ EXPOSE 3000/tcp
 # Liveness: accepts TCP connections (dependency-free; /health is for monitoring).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD node -e "require('net').connect(3000,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"
-# Run via npm so process.env.npm_package_* (Swagger title/version) is populated.
-CMD ["npm", "run", "start:prod"]
+CMD ["node", "dist/main.js"]

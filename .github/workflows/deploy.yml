@@ -156,7 +156,9 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.service }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+          # Caching is an optimization; a flaky GHA cache service (503s) must
+          # not fail the build/push/deploy.
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }},ignore-error=true
 
       - name: Sign the published Docker image
         if: ${{ github.event_name != 'pull_request' }}

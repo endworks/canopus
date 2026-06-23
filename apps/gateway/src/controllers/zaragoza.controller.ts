@@ -6,7 +6,8 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { BiziStation, Line, Station } from '../models/zaragoza.interface';
+import { ApiMapResponse } from '../swagger';
+import { BiziStation, BusLine, Station } from '../models/zaragoza.interface';
 import { ZaragozaService } from '../services/zaragoza.service';
 
 @ApiTags('Zaragoza')
@@ -16,11 +17,7 @@ export class ZaragozaController {
 
   @Get('bus/stations')
   @ApiOperation({ summary: 'Get bus stations' })
-  @ApiResponse({
-    status: 200,
-    description: 'Return bus stations',
-    type: [Station],
-  })
+  @ApiMapResponse(Station, 'Bus stations keyed by id')
   async zaragozaBusStations() {
     return this.zaragozaService.getBusStations();
   }
@@ -43,22 +40,14 @@ export class ZaragozaController {
 
   @Get('bus/lines')
   @ApiOperation({ summary: 'Get bus lines' })
-  @ApiResponse({
-    status: 200,
-    description: 'Return bus lines',
-    type: [Line],
-  })
+  @ApiMapResponse(BusLine, 'Bus lines keyed by id')
   async zaragozaBusLines() {
     return this.zaragozaService.getBusLines();
   }
 
   @Get('bus/lines/update')
   @ApiOperation({ summary: 'Update bus line data' })
-  @ApiResponse({
-    status: 200,
-    description: 'Return updated bus lines',
-    type: [Line],
-  })
+  @ApiMapResponse(BusLine, 'Updated bus lines keyed by id')
   async zaragozaBusLinesUpdate() {
     return this.zaragozaService.getBusLinesUpdate();
   }
@@ -66,22 +55,14 @@ export class ZaragozaController {
   @Get('bus/lines/:id')
   @ApiOperation({ summary: 'Get bus line by ID' })
   @ApiParam({ name: 'id', type: String })
-  @ApiResponse({
-    status: 200,
-    description: 'Return bus line',
-    type: Line,
-  })
+  @ApiResponse({ status: 200, description: 'Return bus line', type: BusLine })
   async zaragozaBusLine(@Param('id') id: string) {
     return this.zaragozaService.getBusLine(id);
   }
 
   @Get('tram/stations')
   @ApiOperation({ summary: 'Get tram stations' })
-  @ApiResponse({
-    status: 200,
-    description: 'Return tram stations',
-    type: [Station],
-  })
+  @ApiMapResponse(Station, 'Tram stations keyed by id')
   async zaragozaTramStations() {
     return this.zaragozaService.getTramStations();
   }
@@ -104,22 +85,14 @@ export class ZaragozaController {
 
   @Get('bizi/stations')
   @ApiOperation({ summary: 'Get bizi stations' })
-  @ApiResponse({
-    status: 200,
-    description: 'Return bizi stations',
-    type: [BiziStation],
-  })
+  @ApiMapResponse(BiziStation, 'Bizi stations keyed by id')
   async zaragozaBiziStations() {
     return this.zaragozaService.getBiziStations();
   }
 
   @Get('bizi/stations/update')
   @ApiOperation({ summary: 'Update bizi stations data' })
-  @ApiResponse({
-    status: 200,
-    description: 'Return updated bizi stations',
-    type: [BiziStation],
-  })
+  @ApiMapResponse(BiziStation, 'Updated bizi stations keyed by id')
   async zaragozaBiziStationsUpdate() {
     return this.zaragozaService.getBiziStationsUpdate();
   }

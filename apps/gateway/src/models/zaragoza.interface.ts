@@ -1,118 +1,41 @@
-import { ApiProperty } from '@nestjs/swagger';
-
 export class StationTime {
-  @ApiProperty()
   destination: string;
-
-  @ApiProperty()
   line: string;
-
-  @ApiProperty()
   time: string;
 }
 
+/** A bus or tram station (both services return the same shape). */
 export class Station {
-  @ApiProperty()
   id: string;
-
-  @ApiProperty()
   street: string;
-
-  @ApiProperty()
   lines: string[];
-
-  @ApiProperty({
-    type: [StationTime],
-  })
-  times: StationTime[];
-
-  @ApiProperty()
+  times?: StationTime[];
   coordinates: string[];
-
-  @ApiProperty()
   source?: string;
-
-  @ApiProperty()
   sourceUrl?: string;
-
-  @ApiProperty()
   lastUpdated?: string;
-
-  @ApiProperty()
   type?: string;
 }
 
-export class LineGeometry {
-  @ApiProperty()
-  link?: string;
-
-  @ApiProperty()
-  about?: string;
-
-  @ApiProperty()
-  title?: string;
-
-  @ApiProperty()
-  description?: string;
-
-  @ApiProperty()
-  geometry: {
-    type: string;
-    coordinates: string[];
-  };
-}
-
-export class Line {
-  @ApiProperty()
+export class BusLine {
   id: string;
-
-  @ApiProperty()
-  number: string;
-
-  @ApiProperty()
-  name?: string;
-
-  @ApiProperty()
+  name: string;
   color?: string;
-
-  @ApiProperty()
-  stations: LineGeometry[];
-
-  @ApiProperty()
+  stations: string[];
+  stationsReturn?: string[];
   hidden: boolean;
-
-  @ApiProperty()
   lastUpdated: string;
 }
 
 export class BiziStation {
-  @ApiProperty()
   id: string;
-
-  @ApiProperty()
   street: string;
-
-  @ApiProperty({ required: false })
   state?: string | null;
-
-  @ApiProperty({ required: false })
   bikes?: number | null;
-
-  @ApiProperty({ required: false })
   openDocks?: number | null;
-
-  @ApiProperty()
   coordinates: string[];
-
-  @ApiProperty()
   source?: string;
-
-  @ApiProperty()
   sourceUrl?: string;
-
-  @ApiProperty()
   lastUpdated?: string;
-
-  @ApiProperty()
   type?: string;
 }

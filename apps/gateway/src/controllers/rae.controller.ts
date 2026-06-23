@@ -1,7 +1,7 @@
 import { Controller, Get, Param } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { RAEService } from 'src/services/rae.service';
-import { TermSearchResults } from 'src/models/rae.interface';
+import { SearchResult } from 'src/models/rae.interface';
 
 @ApiTags('RAE definitions')
 @Controller('rae')
@@ -14,7 +14,7 @@ export class RAEController {
   @ApiResponse({
     status: 200,
     description: 'Return term search results',
-    type: TermSearchResults,
+    type: SearchResult,
   })
   async termSearch(@Param('term') term: string) {
     return this.raeService.search(term);

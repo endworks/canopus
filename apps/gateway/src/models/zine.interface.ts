@@ -1,166 +1,73 @@
-import { ApiProperty } from '@nestjs/swagger';
-
 export class Session {
-  @ApiProperty()
-  date: string;
-
-  @ApiProperty()
   time: string;
-
-  @ApiProperty()
-  room: string;
-
-  @ApiProperty()
+  screen?: string;
+  date?: string;
   type?: string;
-
-  @ApiProperty()
   url?: string;
 }
 
 export class Crew {
-  @ApiProperty()
   name: string;
-
-  @ApiProperty()
   picture?: string;
 }
 
 export class Actor extends Crew {
-  @ApiProperty()
   character?: string;
 }
 
-export class MovieBasic {
-  @ApiProperty()
+export class Cinema {
   id: string;
-
-  @ApiProperty()
   name: string;
+  address?: string;
+  location?: string;
+  website?: string;
+  source?: string;
+}
 
-  @ApiProperty()
-  specialEdition: string;
-
-  @ApiProperty({
-    type: [Session],
-  })
-  sessions: Session[];
-
-  @ApiProperty()
+export class MovieBasic {
+  id: string;
+  name: string;
+  specialEdition?: string;
+  sessions?: Session[];
   synopsis?: string;
-
-  @ApiProperty()
   duration?: number;
-
-  @ApiProperty()
   durationReadable?: string;
-
-  @ApiProperty({
-    type: Crew,
-  })
   director?: Crew;
-
-  @ApiProperty()
   genres?: string[];
-
-  @ApiProperty({
-    type: [Actor],
-  })
   actors?: Actor[];
-
-  @ApiProperty()
   poster?: string;
-
-  @ApiProperty()
   trailer?: string;
-
-  @ApiProperty()
   source?: string;
 }
 
 export class Movie extends MovieBasic {
-  @ApiProperty()
-  originalName?: string;
-
-  @ApiProperty({
-    type: [Crew],
-  })
-  writers?: Crew[];
-
-  @ApiProperty()
-  theMovieDbId?: string;
-
-  @ApiProperty()
+  originalName: string;
+  writers: Crew[];
+  theMovieDbId?: number;
   imDbId?: string;
-
-  @ApiProperty()
-  tagline?: string | null;
-
-  @ApiProperty()
-  budget?: number;
-
-  @ApiProperty()
-  year?: number;
-
-  @ApiProperty()
-  releaseDate?: string;
-
-  @ApiProperty()
-  originalLanguage?: string;
-
-  @ApiProperty()
-  popularity?: number;
-
-  @ApiProperty()
-  voteAverage?: number;
-
-  @ApiProperty()
-  voteCount?: number;
-}
-
-export class Cinema {
-  @ApiProperty()
-  id: string;
-
-  @ApiProperty()
-  name: string;
-
-  @ApiProperty()
-  address?: string;
-
-  @ApiProperty()
-  location?: string;
-
-  @ApiProperty()
-  website?: string;
-
-  @ApiProperty()
-  source?: string;
-}
-
-export class CinemaDetailsBasic extends Cinema {
-  @ApiProperty()
-  lastUpdated?: string;
-
-  @ApiProperty({
-    type: [MovieBasic],
-  })
-  movies: MovieBasic[];
+  tagline: string | null;
+  budget: number;
+  revenue: number;
+  year: number;
+  releaseDate: string;
+  originalLanguage: string;
+  popularity: number;
+  voteAverage: number;
+  voteCount: number;
 }
 
 export class CinemaDetails extends Cinema {
-  @ApiProperty()
-  lastUpdated?: string;
-
-  @ApiProperty({
-    type: [Movie],
-  })
+  lastUpdated: string;
   movies: Movie[];
 }
 
-export class CacheData {
-  @ApiProperty()
-  cacheSize: string;
+export class CinemaDetailsBasic extends Cinema {
+  lastUpdated: string;
+  movies: MovieBasic[];
+  sessions?: Record<string, Session[]>;
+}
 
-  @ApiProperty()
+export class CacheData {
+  cacheSize: string;
   caches: string[];
 }

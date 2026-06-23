@@ -186,6 +186,15 @@ jobs:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           MONGODB_URI: op://end.works/MongoDB ZgzPls/mongodb uri
 
+      - name: Load twitter secret
+        if: ${{ github.event_name != 'pull_request' && (github.ref_name == 'main' || github.ref_type == 'tag') && matrix.service == 'twitter-downloader' }}
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          TWITTER_CLIENT_TOKEN: op://end.works/Twitter/client token
+
       - name: Compute image ref and container name
         if: ${{ github.event_name != 'pull_request' && (github.ref_name == 'main' || github.ref_type == 'tag') }}
         run: |
@@ -201,8 +210,6 @@ jobs:
 
       - name: Deploy image to server
         if: ${{ github.event_name != 'pull_request' && (github.ref_name == 'main' || github.ref_type == 'tag') }}
-        env:
-          TWITTER_CLIENT_TOKEN: ${{ secrets.TWITTER_CLIENT_TOKEN }}
         uses: appleboy/ssh-action@master
         with:
           host: ${{ env.HOST }}

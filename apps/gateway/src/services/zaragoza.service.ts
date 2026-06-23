@@ -2,18 +2,19 @@ import { Inject, Injectable } from '@nestjs/common';
 import { ClientProxy } from '@nestjs/microservices';
 import { Response } from 'express';
 import { lastValueFrom } from 'rxjs';
+import { SERVICE_TOKENS, ZARAGOZA_PATTERNS } from '@canopus/shared';
 
 @Injectable()
 export class ZaragozaService {
-  @Inject('ZARAGOZA_SERVICE') private client: ClientProxy;
+  @Inject(SERVICE_TOKENS.zaragoza) private client: ClientProxy;
 
   public getBusStations(res: Response): Promise<string> {
-    return lastValueFrom(this.client.send<any, any>('bus/stations', {})).then(
-      (response) => {
-        if (response.statusCode) res.statusCode = response.statusCode;
-        return response;
-      },
-    );
+    return lastValueFrom(
+      this.client.send<any, any>(ZARAGOZA_PATTERNS.busStations, {}),
+    ).then((response) => {
+      if (response.statusCode) res.statusCode = response.statusCode;
+      return response;
+    });
   }
 
   public getBusStation(
@@ -22,7 +23,7 @@ export class ZaragozaService {
     source: 'api' | 'web' | 'backup',
   ): Promise<string> {
     return lastValueFrom(
-      this.client.send<any, any>('bus/station', { id, source }),
+      this.client.send<any, any>(ZARAGOZA_PATTERNS.busStation, { id, source }),
     ).then((response) => {
       if (response.statusCode) res.statusCode = response.statusCode;
       return response;
@@ -30,26 +31,26 @@ export class ZaragozaService {
   }
 
   public getBusLines(res: Response): Promise<string> {
-    return lastValueFrom(this.client.send<any, any>('bus/lines', {})).then(
-      (response) => {
-        if (response.statusCode) res.statusCode = response.statusCode;
-        return response;
-      },
-    );
+    return lastValueFrom(
+      this.client.send<any, any>(ZARAGOZA_PATTERNS.busLines, {}),
+    ).then((response) => {
+      if (response.statusCode) res.statusCode = response.statusCode;
+      return response;
+    });
   }
 
   public getBusLine(res: Response, id: string): Promise<string> {
-    return lastValueFrom(this.client.send<any, any>('bus/line', { id })).then(
-      (response) => {
-        if (response.statusCode) res.statusCode = response.statusCode;
-        return response;
-      },
-    );
+    return lastValueFrom(
+      this.client.send<any, any>(ZARAGOZA_PATTERNS.busLine, { id }),
+    ).then((response) => {
+      if (response.statusCode) res.statusCode = response.statusCode;
+      return response;
+    });
   }
 
   public getBusLinesUpdate(res: Response): Promise<string> {
     return lastValueFrom(
-      this.client.send<any, any>('bus/lines/update', {}),
+      this.client.send<any, any>(ZARAGOZA_PATTERNS.busLinesUpdate, {}),
     ).then((response) => {
       if (response.statusCode) res.statusCode = response.statusCode;
       return response;
@@ -57,12 +58,12 @@ export class ZaragozaService {
   }
 
   public getTramStations(res: Response): Promise<string> {
-    return lastValueFrom(this.client.send<any, any>('tram/stations', {})).then(
-      (response) => {
-        if (response.statusCode) res.statusCode = response.statusCode;
-        return response;
-      },
-    );
+    return lastValueFrom(
+      this.client.send<any, any>(ZARAGOZA_PATTERNS.tramStations, {}),
+    ).then((response) => {
+      if (response.statusCode) res.statusCode = response.statusCode;
+      return response;
+    });
   }
 
   public getTramStation(
@@ -71,7 +72,7 @@ export class ZaragozaService {
     source: 'api' | 'web' | 'backup',
   ): Promise<string> {
     return lastValueFrom(
-      this.client.send<any, any>('tram/station', { id, source }),
+      this.client.send<any, any>(ZARAGOZA_PATTERNS.tramStation, { id, source }),
     ).then((response) => {
       if (response.statusCode) res.statusCode = response.statusCode;
       return response;
@@ -79,17 +80,17 @@ export class ZaragozaService {
   }
 
   public getBiziStations(res: Response): Promise<string> {
-    return lastValueFrom(this.client.send<any, any>('bizi/stations', {})).then(
-      (response) => {
-        if (response.statusCode) res.statusCode = response.statusCode;
-        return response;
-      },
-    );
+    return lastValueFrom(
+      this.client.send<any, any>(ZARAGOZA_PATTERNS.biziStations, {}),
+    ).then((response) => {
+      if (response.statusCode) res.statusCode = response.statusCode;
+      return response;
+    });
   }
 
   public getBiziStation(res: Response, id: string): Promise<string> {
     return lastValueFrom(
-      this.client.send<any, any>('bizi/station', { id }),
+      this.client.send<any, any>(ZARAGOZA_PATTERNS.biziStation, { id }),
     ).then((response) => {
       if (response.statusCode) res.statusCode = response.statusCode;
       return response;
@@ -98,7 +99,7 @@ export class ZaragozaService {
 
   public getBiziStationsUpdate(res: Response): Promise<string> {
     return lastValueFrom(
-      this.client.send<any, any>('bizi/stations/update', {}),
+      this.client.send<any, any>(ZARAGOZA_PATTERNS.biziStationsUpdate, {}),
     ).then((response) => {
       if (response.statusCode) res.statusCode = response.statusCode;
       return response;

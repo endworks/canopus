@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ClientsModule, Transport } from '@nestjs/microservices';
+import { SERVICE_TOKENS, TCP_PORT } from '@canopus/shared';
 import { RAEController } from './controllers/rae.controller';
 import { TwitterDownloaderController } from './controllers/twitter-downloader.controller';
 import { ZaragozaController } from './controllers/zaragoza.controller';
@@ -17,40 +18,14 @@ import { ZineService } from './services/zine.service';
         ? `.env.${process.env.NODE_ENV}`
         : '.env',
     }),
-    ClientsModule.register([
-      {
-        name: 'ZARAGOZA_SERVICE',
+    // One TCP client per backend; host comes from `${TOKEN}_HOST`, port is shared.
+    ClientsModule.register(
+      Object.values(SERVICE_TOKENS).map((name) => ({
+        name,
         transport: Transport.TCP,
-        options: {
-          host: process.env.ZARAGOZA_SERVICE_HOST,
-          port: 3000,
-        },
-      },
-      {
-        name: 'ZINE_SERVICE',
-        transport: Transport.TCP,
-        options: {
-          host: process.env.ZINE_SERVICE_HOST,
-          port: 3000,
-        },
-      },
-      {
-        name: 'RAE_SERVICE',
-        transport: Transport.TCP,
-        options: {
-          host: process.env.RAE_SERVICE_HOST,
-          port: 3000,
-        },
-      },
-      {
-        name: 'TWITTER_DOWNLOADER_SERVICE',
-        transport: Transport.TCP,
-        options: {
-          host: process.env.TWITTER_DOWNLOADER_SERVICE_HOST,
-          port: 3000,
-        },
-      },
-    ]),
+        options: { host: process.env[`${name}_HOST`], port: TCP_PORT },
+      })),
+    ),
   ],
   controllers: [
     TwitterDownloaderController,

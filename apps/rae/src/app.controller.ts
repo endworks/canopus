@@ -1,5 +1,6 @@
 import { Controller, Logger } from '@nestjs/common';
 import { MessagePattern, Payload, Transport } from '@nestjs/microservices';
+import { RAE_PATTERNS } from '@canopus/shared';
 import { SearchPayload } from './app.interface';
 import { AppService } from './app.service';
 
@@ -8,7 +9,7 @@ export class AppController {
   private readonly logger = new Logger('AppController');
   constructor(private readonly appService: AppService) {}
 
-  @MessagePattern('search', Transport.TCP)
+  @MessagePattern(RAE_PATTERNS.search, Transport.TCP)
   async search(@Payload() data: SearchPayload) {
     return this.appService.search(data.term).catch((ex) => {
       this.logger.error(ex.message);

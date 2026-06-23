@@ -1,7 +1,7 @@
 import { Controller, Logger } from '@nestjs/common';
 import { MessagePattern, Payload, Transport } from '@nestjs/microservices';
 import { BusStationPayload } from 'src/models/bus.interface';
-import { IdPayload } from '@canopus/shared';
+import { IdPayload, ZARAGOZA_PATTERNS } from '@canopus/shared';
 import { BusService } from '../services/bus.service';
 
 @Controller()
@@ -10,7 +10,7 @@ export class BusController {
 
   constructor(private readonly busService: BusService) {}
 
-  @MessagePattern('bus/stations', Transport.TCP)
+  @MessagePattern(ZARAGOZA_PATTERNS.busStations, Transport.TCP)
   async busStations() {
     return this.busService.getStations().catch((ex) => {
       this.logger.error(ex.message);
@@ -18,7 +18,7 @@ export class BusController {
     });
   }
 
-  @MessagePattern('bus/station', Transport.TCP)
+  @MessagePattern(ZARAGOZA_PATTERNS.busStation, Transport.TCP)
   async busStation(@Payload() data: BusStationPayload) {
     if (!data.source) {
       return this.busService.getStation(data.id, 'api').catch(() => {
@@ -34,7 +34,7 @@ export class BusController {
     });
   }
 
-  @MessagePattern('bus/lines', Transport.TCP)
+  @MessagePattern(ZARAGOZA_PATTERNS.busLines, Transport.TCP)
   async busLines() {
     return this.busService.getLines().catch((ex) => {
       this.logger.error(ex.message);
@@ -42,7 +42,7 @@ export class BusController {
     });
   }
 
-  @MessagePattern('bus/line', Transport.TCP)
+  @MessagePattern(ZARAGOZA_PATTERNS.busLine, Transport.TCP)
   async busLine(@Payload() data: IdPayload) {
     return this.busService.getLine(data.id).catch((ex) => {
       this.logger.error(ex.message);
@@ -50,7 +50,7 @@ export class BusController {
     });
   }
 
-  @MessagePattern('bus/lines/update', Transport.TCP)
+  @MessagePattern(ZARAGOZA_PATTERNS.busLinesUpdate, Transport.TCP)
   async busUpdateLines() {
     return this.busService.getLinesUpdate().catch((ex) => {
       this.logger.error(ex.message);

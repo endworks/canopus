@@ -1,6 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ClientProxy } from '@nestjs/microservices';
-import { Response } from 'express';
 import { lastValueFrom } from 'rxjs';
 import { SERVICE_TOKENS, ZARAGOZA_PATTERNS } from '@canopus/shared';
 
@@ -8,101 +7,53 @@ import { SERVICE_TOKENS, ZARAGOZA_PATTERNS } from '@canopus/shared';
 export class ZaragozaService {
   @Inject(SERVICE_TOKENS.zaragoza) private client: ClientProxy;
 
-  public getBusStations(res: Response): Promise<string> {
-    return lastValueFrom(
-      this.client.send<any, any>(ZARAGOZA_PATTERNS.busStations, {}),
-    ).then((response) => {
-      if (response.statusCode) res.statusCode = response.statusCode;
-      return response;
-    });
+  getBusStations() {
+    return lastValueFrom(this.client.send(ZARAGOZA_PATTERNS.busStations, {}));
   }
 
-  public getBusStation(
-    res: Response,
-    id: string,
-    source: 'api' | 'web' | 'backup',
-  ): Promise<string> {
+  getBusStation(id: string, source: 'api' | 'web' | 'backup') {
     return lastValueFrom(
-      this.client.send<any, any>(ZARAGOZA_PATTERNS.busStation, { id, source }),
-    ).then((response) => {
-      if (response.statusCode) res.statusCode = response.statusCode;
-      return response;
-    });
+      this.client.send(ZARAGOZA_PATTERNS.busStation, { id, source }),
+    );
   }
 
-  public getBusLines(res: Response): Promise<string> {
-    return lastValueFrom(
-      this.client.send<any, any>(ZARAGOZA_PATTERNS.busLines, {}),
-    ).then((response) => {
-      if (response.statusCode) res.statusCode = response.statusCode;
-      return response;
-    });
+  getBusLines() {
+    return lastValueFrom(this.client.send(ZARAGOZA_PATTERNS.busLines, {}));
   }
 
-  public getBusLine(res: Response, id: string): Promise<string> {
-    return lastValueFrom(
-      this.client.send<any, any>(ZARAGOZA_PATTERNS.busLine, { id }),
-    ).then((response) => {
-      if (response.statusCode) res.statusCode = response.statusCode;
-      return response;
-    });
+  getBusLine(id: string) {
+    return lastValueFrom(this.client.send(ZARAGOZA_PATTERNS.busLine, { id }));
   }
 
-  public getBusLinesUpdate(res: Response): Promise<string> {
+  getBusLinesUpdate() {
     return lastValueFrom(
-      this.client.send<any, any>(ZARAGOZA_PATTERNS.busLinesUpdate, {}),
-    ).then((response) => {
-      if (response.statusCode) res.statusCode = response.statusCode;
-      return response;
-    });
+      this.client.send(ZARAGOZA_PATTERNS.busLinesUpdate, {}),
+    );
   }
 
-  public getTramStations(res: Response): Promise<string> {
-    return lastValueFrom(
-      this.client.send<any, any>(ZARAGOZA_PATTERNS.tramStations, {}),
-    ).then((response) => {
-      if (response.statusCode) res.statusCode = response.statusCode;
-      return response;
-    });
+  getTramStations() {
+    return lastValueFrom(this.client.send(ZARAGOZA_PATTERNS.tramStations, {}));
   }
 
-  public getTramStation(
-    res: Response,
-    id: string,
-    source: 'api' | 'web' | 'backup',
-  ): Promise<string> {
+  getTramStation(id: string, source: 'api' | 'web' | 'backup') {
     return lastValueFrom(
-      this.client.send<any, any>(ZARAGOZA_PATTERNS.tramStation, { id, source }),
-    ).then((response) => {
-      if (response.statusCode) res.statusCode = response.statusCode;
-      return response;
-    });
+      this.client.send(ZARAGOZA_PATTERNS.tramStation, { id, source }),
+    );
   }
 
-  public getBiziStations(res: Response): Promise<string> {
-    return lastValueFrom(
-      this.client.send<any, any>(ZARAGOZA_PATTERNS.biziStations, {}),
-    ).then((response) => {
-      if (response.statusCode) res.statusCode = response.statusCode;
-      return response;
-    });
+  getBiziStations() {
+    return lastValueFrom(this.client.send(ZARAGOZA_PATTERNS.biziStations, {}));
   }
 
-  public getBiziStation(res: Response, id: string): Promise<string> {
+  getBiziStation(id: string) {
     return lastValueFrom(
-      this.client.send<any, any>(ZARAGOZA_PATTERNS.biziStation, { id }),
-    ).then((response) => {
-      if (response.statusCode) res.statusCode = response.statusCode;
-      return response;
-    });
+      this.client.send(ZARAGOZA_PATTERNS.biziStation, { id }),
+    );
   }
 
-  public getBiziStationsUpdate(res: Response): Promise<string> {
+  getBiziStationsUpdate() {
     return lastValueFrom(
-      this.client.send<any, any>(ZARAGOZA_PATTERNS.biziStationsUpdate, {}),
-    ).then((response) => {
-      if (response.statusCode) res.statusCode = response.statusCode;
-      return response;
-    });
+      this.client.send(ZARAGOZA_PATTERNS.biziStationsUpdate, {}),
+    );
   }
 }

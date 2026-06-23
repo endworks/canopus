@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query, Res } from '@nestjs/common';
+import { Controller, Get, Param, Query } from '@nestjs/common';
 import {
   ApiOperation,
   ApiParam,
@@ -6,7 +6,6 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { Response } from 'express';
 import { BiziStation, Line, Station } from '../models/zaragoza.interface';
 import { ZaragozaService } from '../services/zaragoza.service';
 
@@ -22,8 +21,8 @@ export class ZaragozaController {
     description: 'Return bus stations',
     type: [Station],
   })
-  async zaragozaBusStations(@Res({ passthrough: true }) res: Response) {
-    return this.zaragozaService.getBusStations(res);
+  async zaragozaBusStations() {
+    return this.zaragozaService.getBusStations();
   }
 
   @Get('bus/stations/:id')
@@ -36,11 +35,10 @@ export class ZaragozaController {
     type: Station,
   })
   async zaragozaBusStation(
-    @Res({ passthrough: true }) res: Response,
     @Param('id') id: string,
     @Query('source') source: 'api' | 'web' | 'backup',
   ) {
-    return this.zaragozaService.getBusStation(res, id, source);
+    return this.zaragozaService.getBusStation(id, source);
   }
 
   @Get('bus/lines')
@@ -50,8 +48,8 @@ export class ZaragozaController {
     description: 'Return bus lines',
     type: [Line],
   })
-  async zaragozaBusLines(@Res({ passthrough: true }) res: Response) {
-    return this.zaragozaService.getBusLines(res);
+  async zaragozaBusLines() {
+    return this.zaragozaService.getBusLines();
   }
 
   @Get('bus/lines/update')
@@ -61,8 +59,8 @@ export class ZaragozaController {
     description: 'Return updated bus lines',
     type: [Line],
   })
-  async zaragozaBusLinesUpdate(@Res({ passthrough: true }) res: Response) {
-    return this.zaragozaService.getBusLinesUpdate(res);
+  async zaragozaBusLinesUpdate() {
+    return this.zaragozaService.getBusLinesUpdate();
   }
 
   @Get('bus/lines/:id')
@@ -73,11 +71,8 @@ export class ZaragozaController {
     description: 'Return bus line',
     type: Line,
   })
-  async zaragozaBusLine(
-    @Res({ passthrough: true }) res: Response,
-    @Param('id') id: string,
-  ) {
-    return this.zaragozaService.getBusLine(res, id);
+  async zaragozaBusLine(@Param('id') id: string) {
+    return this.zaragozaService.getBusLine(id);
   }
 
   @Get('tram/stations')
@@ -87,8 +82,8 @@ export class ZaragozaController {
     description: 'Return tram stations',
     type: [Station],
   })
-  async zaragozaTramStations(@Res({ passthrough: true }) res: Response) {
-    return this.zaragozaService.getTramStations(res);
+  async zaragozaTramStations() {
+    return this.zaragozaService.getTramStations();
   }
 
   @Get('tram/stations/:id')
@@ -101,11 +96,10 @@ export class ZaragozaController {
     type: Station,
   })
   async zaragozaTramStation(
-    @Res({ passthrough: true }) res: Response,
     @Param('id') id: string,
     @Query('source') source: 'api' | 'web' | 'backup',
   ) {
-    return this.zaragozaService.getTramStation(res, id, source);
+    return this.zaragozaService.getTramStation(id, source);
   }
 
   @Get('bizi/stations')
@@ -115,8 +109,8 @@ export class ZaragozaController {
     description: 'Return bizi stations',
     type: [BiziStation],
   })
-  async zaragozaBiziStations(@Res({ passthrough: true }) res: Response) {
-    return this.zaragozaService.getBiziStations(res);
+  async zaragozaBiziStations() {
+    return this.zaragozaService.getBiziStations();
   }
 
   @Get('bizi/stations/update')
@@ -126,8 +120,8 @@ export class ZaragozaController {
     description: 'Return updated bizi stations',
     type: [BiziStation],
   })
-  async zaragozaBiziStationsUpdate(@Res({ passthrough: true }) res: Response) {
-    return this.zaragozaService.getBiziStationsUpdate(res);
+  async zaragozaBiziStationsUpdate() {
+    return this.zaragozaService.getBiziStationsUpdate();
   }
 
   @Get('bizi/stations/:id')
@@ -138,10 +132,7 @@ export class ZaragozaController {
     description: 'Return bizi station',
     type: BiziStation,
   })
-  async zaragozaBiziStation(
-    @Res({ passthrough: true }) res: Response,
-    @Param('id') id: string,
-  ) {
-    return this.zaragozaService.getBiziStation(res, id);
+  async zaragozaBiziStation(@Param('id') id: string) {
+    return this.zaragozaService.getBiziStation(id);
   }
 }

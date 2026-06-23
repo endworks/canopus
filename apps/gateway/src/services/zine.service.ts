@@ -1,6 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ClientProxy } from '@nestjs/microservices';
-import { Response } from 'express';
 import { lastValueFrom } from 'rxjs';
 import { SERVICE_TOKENS, ZINE_PATTERNS } from '@canopus/shared';
 
@@ -8,57 +7,27 @@ import { SERVICE_TOKENS, ZINE_PATTERNS } from '@canopus/shared';
 export class ZineService {
   @Inject(SERVICE_TOKENS.zine) private client: ClientProxy;
 
-  public getCinemas(res: Response, location?: string): Promise<string> {
-    return lastValueFrom(
-      this.client.send<any, any>(ZINE_PATTERNS.cinemas, { location }),
-    ).then((response) => {
-      if (response.statusCode) res.statusCode = response.statusCode;
-      return response;
-    });
+  getCinemas(location?: string) {
+    return lastValueFrom(this.client.send(ZINE_PATTERNS.cinemas, { location }));
   }
 
-  public getCinema(res: Response, id: string): Promise<string> {
-    return lastValueFrom(
-      this.client.send<any, any>(ZINE_PATTERNS.cinema, { id }),
-    ).then((response) => {
-      if (response.statusCode) res.statusCode = response.statusCode;
-      return response;
-    });
+  getCinema(id: string) {
+    return lastValueFrom(this.client.send(ZINE_PATTERNS.cinema, { id }));
   }
 
-  public getCinemaBasic(res: Response, id: string): Promise<string> {
-    return lastValueFrom(
-      this.client.send<any, any>(ZINE_PATTERNS.cinemaBasic, { id }),
-    ).then((response) => {
-      if (response.statusCode) res.statusCode = response.statusCode;
-      return response;
-    });
+  getCinemaBasic(id: string) {
+    return lastValueFrom(this.client.send(ZINE_PATTERNS.cinemaBasic, { id }));
   }
 
-  public getMovies(res: Response): Promise<string> {
-    return lastValueFrom(
-      this.client.send<any, any>(ZINE_PATTERNS.movies, {}),
-    ).then((response) => {
-      if (response.statusCode) res.statusCode = response.statusCode;
-      return response;
-    });
+  getMovies() {
+    return lastValueFrom(this.client.send(ZINE_PATTERNS.movies, {}));
   }
 
-  public cached(res: Response): Promise<string> {
-    return lastValueFrom(
-      this.client.send<any, any>(ZINE_PATTERNS.cached, {}),
-    ).then((response) => {
-      if (response.statusCode) res.statusCode = response.statusCode;
-      return response;
-    });
+  cached() {
+    return lastValueFrom(this.client.send(ZINE_PATTERNS.cached, {}));
   }
 
-  public updateAll(res: Response): Promise<string> {
-    return lastValueFrom(
-      this.client.send<any, any>(ZINE_PATTERNS.updateAll, {}),
-    ).then((response) => {
-      if (response.statusCode) res.statusCode = response.statusCode;
-      return response;
-    });
+  updateAll() {
+    return lastValueFrom(this.client.send(ZINE_PATTERNS.updateAll, {}));
   }
 }

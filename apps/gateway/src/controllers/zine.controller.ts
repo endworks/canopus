@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query, Res } from '@nestjs/common';
+import { Controller, Get, Param, Query } from '@nestjs/common';
 import {
   ApiOperation,
   ApiParam,
@@ -6,7 +6,6 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { Response } from 'express';
 import {
   CacheData,
   Cinema,
@@ -33,11 +32,8 @@ export class ZineController {
     description: 'Return cinemas',
     type: [Cinema],
   })
-  async zineCinemas(
-    @Res({ passthrough: true }) res: Response,
-    @Query('location') location: string,
-  ) {
-    return this.zineService.getCinemas(res, location);
+  async zineCinemas(@Query('location') location: string) {
+    return this.zineService.getCinemas(location);
   }
 
   @Get('cinema/:id')
@@ -48,11 +44,8 @@ export class ZineController {
     description: 'Return cinema and movies by ID',
     type: CinemaDetails,
   })
-  async zineCinema(
-    @Res({ passthrough: true }) res: Response,
-    @Param('id') id: string,
-  ) {
-    return this.zineService.getCinema(res, id);
+  async zineCinema(@Param('id') id: string) {
+    return this.zineService.getCinema(id);
   }
 
   @Get('cinema/:id/basic')
@@ -65,11 +58,8 @@ export class ZineController {
     description: 'Return cinema and basic details about movies by ID',
     type: CinemaDetailsBasic,
   })
-  async zineCinemaBasic(
-    @Res({ passthrough: true }) res: Response,
-    @Param('id') id: string,
-  ) {
-    return this.zineService.getCinemaBasic(res, id);
+  async zineCinemaBasic(@Param('id') id: string) {
+    return this.zineService.getCinemaBasic(id);
   }
 
   @Get('movies')
@@ -79,8 +69,8 @@ export class ZineController {
     description: 'Return movies',
     type: [Movie],
   })
-  async zineMovies(@Res({ passthrough: true }) res: Response) {
-    return this.zineService.getMovies(res);
+  async zineMovies() {
+    return this.zineService.getMovies();
   }
 
   @Get('cached')
@@ -92,8 +82,8 @@ export class ZineController {
     description: 'Return status code',
     type: CacheData,
   })
-  async zineCached(@Res({ passthrough: true }) res: Response) {
-    return this.zineService.cached(res);
+  async zineCached() {
+    return this.zineService.cached();
   }
 
   @Get('updateAll')
@@ -105,7 +95,7 @@ export class ZineController {
     description: 'Return status code',
     type: CacheData,
   })
-  async zineUpdateAll(@Res({ passthrough: true }) res: Response) {
-    return this.zineService.updateAll(res);
+  async zineUpdateAll() {
+    return this.zineService.updateAll();
   }
 }

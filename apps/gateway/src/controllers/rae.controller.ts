@@ -1,6 +1,5 @@
-import { Controller, Get, Param, Res } from '@nestjs/common';
+import { Controller, Get, Param } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { Response } from 'express';
 import { RAEService } from 'src/services/rae.service';
 import { TermSearchResults } from 'src/models/rae.interface';
 
@@ -17,10 +16,7 @@ export class RAEController {
     description: 'Return term search results',
     type: TermSearchResults,
   })
-  async termSearch(
-    @Res({ passthrough: true }) res: Response,
-    @Param('term') term: string,
-  ) {
-    return this.raeService.search(res, term);
+  async termSearch(@Param('term') term: string) {
+    return this.raeService.search(term);
   }
 }

@@ -1,0 +1,25 @@
+{
+  "name": "@canopus/nest",
+  "version": "0.1.0",
+  "description": "Shared NestJS infrastructure (filters, interceptors) for Canopus services",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "prebuild": "rimraf dist",
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@canopus/shared": "workspace:*",
+    "@nestjs/common": "^11.1.27",
+    "@nestjs/microservices": "^11.1.27",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "rimraf": "^6.1.3",
+    "typescript": "^6.0.3"
+  }
+}

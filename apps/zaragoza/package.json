@@ -30,6 +30,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
+    "@canopus/nest": "workspace:*",
     "@canopus/shared": "workspace:*",
     "@nestjs/axios": "^4.0.1",
     "@nestjs/cache-manager": "^3.1.3",

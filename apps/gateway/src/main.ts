@@ -1,10 +1,12 @@
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { RpcResponseInterceptor } from '@canopus/nest';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.enableCors();
+  app.useGlobalInterceptors(new RpcResponseInterceptor());
   const config = new DocumentBuilder()
     .setTitle(process.env.npm_package_name)
     .setDescription(process.env.npm_package_description)

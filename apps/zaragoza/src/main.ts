@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { Transport } from '@nestjs/microservices';
 import { AppModule } from './app.module';
 import { TCP_PORT } from '@canopus/shared';
+import { RpcErrorFilter } from '@canopus/nest';
 
 async function bootstrap() {
   const app = await NestFactory.createMicroservice(AppModule, {
@@ -11,6 +12,7 @@ async function bootstrap() {
       port: TCP_PORT,
     },
   });
+  app.useGlobalFilters(new RpcErrorFilter());
   app.listen();
 }
 bootstrap();

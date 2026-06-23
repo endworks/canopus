@@ -4,6 +4,7 @@
  * pulling in framework-specific packages (e.g. @nestjs/swagger).
  */
 
+export * from './config';
 export * from './patterns';
 export * from './services';
 

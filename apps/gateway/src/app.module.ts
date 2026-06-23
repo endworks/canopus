@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ClientsModule, Transport } from '@nestjs/microservices';
-import { SERVICE_TOKENS, TCP_PORT } from '@canopus/shared';
+import { requireEnv, SERVICE_TOKENS, TCP_PORT } from '@canopus/shared';
 import { RAEController } from './controllers/rae.controller';
 import { TwitterDownloaderController } from './controllers/twitter-downloader.controller';
 import { ZaragozaController } from './controllers/zaragoza.controller';
@@ -14,9 +14,15 @@ import { ZineService } from './services/zine.service';
 @Module({
   imports: [
     ConfigModule.forRoot({
+      isGlobal: true,
       envFilePath: process.env.NODE_ENV
         ? `.env.${process.env.NODE_ENV}`
         : '.env',
+      validate: (config) =>
+        requireEnv(
+          config,
+          Object.values(SERVICE_TOKENS).map((token) => `${token}_HOST`),
+        ),
     }),
     // One TCP client per backend; host comes from `${TOKEN}_HOST`, port is shared.
     ClientsModule.register(

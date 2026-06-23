@@ -27,4 +27,7 @@ LABEL org.opencontainers.image.source=https://github.com/endworks/canopus
 WORKDIR /app
 COPY --from=installer /prod/ .
 EXPOSE 3000/tcp
+# Liveness: succeeds as soon as the service accepts TCP connections.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD node -e "require('net').connect(3000,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"
 CMD ["node", "dist/main.js"]

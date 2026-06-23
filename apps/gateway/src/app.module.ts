@@ -10,9 +10,11 @@ import { RAEService } from './services/rae.service';
 import { TwitterDownloaderService } from './services/twitter-downloader.service';
 import { ZaragozaService } from './services/zaragoza.service';
 import { ZineService } from './services/zine.service';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
+    HealthModule,
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: process.env.NODE_ENV

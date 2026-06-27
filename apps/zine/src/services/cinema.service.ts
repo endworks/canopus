@@ -299,7 +299,11 @@ export class CinemaService {
         // Movies that didn't match TheMovieDB fall through unenriched (basic
         // shape). Normalize every movie so consumers always get the array
         // fields (genres/writers/actors/sessions) and never crash on undefined.
-        movies = movies.map((movie) => this.normalizeMovie(movie));
+        const sessionsMap =
+          'sessions' in cinema ? cinema.sessions : undefined;
+        movies = movies.map((movie) =>
+          this.normalizeMovie(movie, sessionsMap),
+        );
 
         const movieIds = movies.map((movie) => movie.id);
 
@@ -321,9 +325,13 @@ export class CinemaService {
         // enriched array fields, so fill them in before returning a 200.
         const basicMovies =
           'movies' in cinema ? (cinema.movies as Movie[]) : [];
+        const sessionsMap =
+          'sessions' in cinema ? cinema.sessions : undefined;
         return {
           ...cinema,
-          movies: basicMovies.map((movie) => this.normalizeMovie(movie)),
+          movies: basicMovies.map((movie) =>
+            this.normalizeMovie(movie, sessionsMap),
+          ),
         } as CinemaDetails;
       }
     } else {
@@ -340,10 +348,15 @@ export class CinemaService {
   // Guarantee the array fields exist so API consumers (web/bot) can call
   // .map()/.length on them whether or not the movie was enriched. `?? []`
   // also converts the enriched path's `null` (empty writers/actors) to [].
-  private normalizeMovie(movie: Movie): Movie {
+  // Sessions fall back to the cinema-level sessions map (keyed by movie id)
+  // so showtimes are preserved even if the movie lost its inline sessions.
+  private normalizeMovie(
+    movie: Movie,
+    sessionsMap?: Record<string, Session[]>,
+  ): Movie {
     return {
       ...movie,
-      sessions: movie.sessions ?? [],
+      sessions: movie.sessions ?? sessionsMap?.[movie.id] ?? [],
       genres: movie.genres ?? [],
       writers: movie.writers ?? [],
       actors: movie.actors ?? [],

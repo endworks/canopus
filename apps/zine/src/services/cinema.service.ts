@@ -309,13 +309,10 @@ export class CinemaService {
         await this.cacheManager.set(`cinema/${id}`, resp);
         return resp;
       } catch (exception) {
-        throw new InternalServerErrorException(
-          {
-            statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-            message: exception.message,
-          },
-          exception.message,
+        this.logger.error(
+          `TheMovieDB enrichment failed for cinema '${id}', returning basic data: ${exception.message}`,
         );
+        return cinema as CinemaDetails;
       }
     } else {
       throw new NotFoundException(

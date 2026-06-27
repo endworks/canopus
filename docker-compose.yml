@@ -32,6 +32,7 @@ services:
       - 8878:3000
     environment:
       MONGODB_URI: ${MONGODB_URI:-}
+      THE_MOVIE_DB_API_KEY: ${THE_MOVIE_DB_API_KEY:-}
     networks:
       - canopus
     depends_on:

@@ -93,6 +93,7 @@ jobs:
 
   # Build, sign and deploy each affected service in parallel.
   deploy:
+    name: deploy ${{ matrix.service }}
     needs: detect
     if: ${{ needs.detect.outputs.any == 'true' }}
     runs-on: ubuntu-latest

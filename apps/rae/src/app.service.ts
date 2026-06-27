@@ -7,7 +7,7 @@ import {
   InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
-import { ErrorResponse, SearchResponse } from './app.interface';
+import { ErrorResponse, Meaning, SearchResponse } from './app.interface';
 import { Cache } from 'cache-manager';
 import { lastValueFrom } from 'rxjs';
 import * as cheerio from 'cheerio';
@@ -45,71 +45,59 @@ export class AppService {
         expressions: [],
       };
       const definitions = $('#resultados article').first();
-      const lines = definitions.find('p');
+      // Definitions and headers, in document order. The DLE markup nests the
+      // gloss line inside `li.j`/`li.j2` (senses), `li.m` (sub-senses) and
+      // `h3.k5`/`h3.k6` (complex-form/expression headers); `.n2` is etymology.
+      const lines = definitions.find('.n2, li.j, li.j2, li.m, h3.k5, h3.k6');
+
+      const extract = (line: typeof definitions): Meaning => {
+        const body = line.find('.c-definitions__item > div').first();
+        const number = body.find('.n_acep').first().text().trim();
+        // The grammar category (e.g. `f.`, `m.`) is always the first abbr.
+        const type = body.find('abbr').first().text().trim();
+        const country = body.find('abbr.c').first().text().trim() || null;
+        const gloss = body.clone();
+        gloss.find('.n_acep, .h').remove(); // drop number and usage examples
+        gloss.find('abbr.c').remove(); // drop country marker
+        gloss.find('abbr').first().remove(); // drop grammar category
+        const definition = gloss.text().replace(/\s+/g, ' ').trim();
+        return { number, type, country, definition };
+      };
+
       // Persists across iterations: a complex-form/expression header line sets
       // it, and the meaning lines that follow read it to route their meanings.
       let isComplexForm;
-      if (lines.length >= 0) {
-        lines.each((index) => {
-          const line = lines.eq(index);
-          if (line.hasClass('n2')) {
-            resp.etymology = line.text();
-          } else if (line.hasClass('k5')) {
-            resp.complexForms.push({ expression: line.text(), meanings: [] });
-            isComplexForm = true;
-          } else if (line.hasClass('k6')) {
-            resp.expressions.push({ expression: line.text(), meanings: [] });
-            isComplexForm = false;
-          } else if (line.hasClass('j') || line.hasClass('j2')) {
-            const number = line.find('.n_acep').first().text().trim();
-            const type = line.find('.d').first().text().trim();
-            let country;
-            try {
-              country = line.find('.c').first().text().trim();
-            } catch {
-              country = null;
-            }
-
-            const words = line.find('mark');
-            let definition = '';
-            words.each((index) => {
-              definition += words.eq(index).text() + ' ';
-            });
-            definition = definition.trim();
-            resp.meanings.push({ number, type, country, definition });
-          } else if (line.hasClass('m')) {
-            const number = line.find('.n_acep').first().text().trim();
-            const type = line.find('.d').first().text().trim();
-            let country;
-            try {
-              country = line.find('.c').first().text().trim();
-            } catch {
-              country = null;
-            }
-            const words = line.find('mark');
-            let definition = '';
-            words.each((index) => {
-              definition += words.eq(index).text() + ' ';
-            });
-            definition = definition.trim();
-            if (isComplexForm) {
-              resp.complexForms[resp.complexForms.length - 1].meanings.push({
-                number,
-                type,
-                country,
-                definition,
-              });
-            } else {
-              resp.expressions[resp.expressions.length - 1].meanings.push({
-                number,
-                type,
-                country,
-                definition,
-              });
-            }
+      lines.each((index) => {
+        const line = lines.eq(index);
+        if (line.hasClass('n2')) {
+          resp.etymology = line.text().replace(/\s+/g, ' ').trim();
+        } else if (line.hasClass('k5')) {
+          resp.complexForms.push({
+            expression: line.text().trim(),
+            meanings: [],
+          });
+          isComplexForm = true;
+        } else if (line.hasClass('k6')) {
+          resp.expressions.push({
+            expression: line.text().trim(),
+            meanings: [],
+          });
+          isComplexForm = false;
+        } else if (line.hasClass('j') || line.hasClass('j2')) {
+          resp.meanings.push(extract(line));
+        } else if (line.hasClass('m')) {
+          const meaning = extract(line);
+          if (isComplexForm) {
+            resp.complexForms[resp.complexForms.length - 1].meanings.push(
+              meaning,
+            );
+          } else {
+            resp.expressions[resp.expressions.length - 1].meanings.push(
+              meaning,
+            );
           }
-        });
-      }
+        }
+      });
       await this.cacheManager.set(`search/${term}`, resp);
       return resp;
     } catch (exception) {

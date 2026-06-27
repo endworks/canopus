@@ -27,7 +27,14 @@ export class AppService {
 
     try {
       const url = `https://dle.rae.es/srv/search?w=${term}`;
-      const response = await lastValueFrom(this.httpService.get(url));
+      const response = await lastValueFrom(
+        this.httpService.get(url, {
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
+          },
+        }),
+      );
       const html = response.data;
       const $ = cheerio.load(html);
       const resp: SearchResponse = {

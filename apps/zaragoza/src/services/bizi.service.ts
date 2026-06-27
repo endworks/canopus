@@ -255,7 +255,7 @@ export class BiziService {
       .findOneAndUpdate(
         { id: data.id },
         { $set: data },
-        { new: true, upsert: true },
+        { returnDocument: 'after', upsert: true },
       )
       .lean();
   }

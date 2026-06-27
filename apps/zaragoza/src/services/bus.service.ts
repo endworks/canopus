@@ -572,7 +572,7 @@ export class BusService {
       .findOneAndUpdate(
         { id: data.id },
         { $set: data },
-        { new: true, upsert: true },
+        { returnDocument: 'after', upsert: true },
       )
       .lean();
   }
@@ -582,7 +582,7 @@ export class BusService {
       .findOneAndUpdate(
         { id: data.id },
         { $set: data },
-        { new: true, upsert: true },
+        { returnDocument: 'after', upsert: true },
       )
       .lean();
   }

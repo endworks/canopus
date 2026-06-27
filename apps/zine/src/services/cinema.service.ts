@@ -296,6 +296,11 @@ export class CinemaService {
           }),
         );
 
+        // Movies that didn't match TheMovieDB fall through unenriched (basic
+        // shape). Normalize every movie so consumers always get the array
+        // fields (genres/writers/actors/sessions) and never crash on undefined.
+        movies = movies.map((movie) => this.normalizeMovie(movie));
+
         const movieIds = movies.map((movie) => movie.id);
 
         const resp = {
@@ -312,7 +317,14 @@ export class CinemaService {
         this.logger.error(
           `TheMovieDB enrichment failed for cinema '${id}', returning basic data: ${exception.message}`,
         );
-        return cinema as CinemaDetails;
+        // Same normalization as the success path: the basic movies lack the
+        // enriched array fields, so fill them in before returning a 200.
+        const basicMovies =
+          'movies' in cinema ? (cinema.movies as Movie[]) : [];
+        return {
+          ...cinema,
+          movies: basicMovies.map((movie) => this.normalizeMovie(movie)),
+        } as CinemaDetails;
       }
     } else {
       throw new NotFoundException(
@@ -323,6 +335,19 @@ export class CinemaService {
         `Resource with ID '${id}' was not found`,
       );
     }
+  }
+
+  // Guarantee the array fields exist so API consumers (web/bot) can call
+  // .map()/.length on them whether or not the movie was enriched. `?? []`
+  // also converts the enriched path's `null` (empty writers/actors) to [].
+  private normalizeMovie(movie: Movie): Movie {
+    return {
+      ...movie,
+      sessions: movie.sessions ?? [],
+      genres: movie.genres ?? [],
+      writers: movie.writers ?? [],
+      actors: movie.actors ?? [],
+    };
   }
 
   async cached(): Promise<CacheData | ErrorResponse> {

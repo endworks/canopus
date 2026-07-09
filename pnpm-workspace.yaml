@@ -9,6 +9,12 @@ overrides:
   # 3.x release (quadratic-complexity DoS in merge-key handling, <3.15.0).
   # load-nyc-config still relies on the 3.x API, so stay below 4.
   '@istanbuljs/load-nyc-config>js-yaml': '>=3.15.0 <4.0.0'
+  # Clear deprecated jest-internal transitives: bumping test-exclude to 8 and
+  # glob to the only non-deprecated line (13) drops glob@7, glob@10 and the
+  # memory-leaking inflight@1 in one move. glob 13's named exports match the
+  # v10 API @jest/reporters uses; test-exclude 8 is built against glob 13.
+  test-exclude: '>=8.0.0'
+  glob: '>=13.0.6'
 allowBuilds:
   '@scarf/scarf': false
   unrs-resolver: true

@@ -36,6 +36,7 @@ import {
   KmlForLine,
   normalizeLineId,
   pickCanonicalStreet,
+  restoreAccents,
 } from '../utils';
 
 const busApiURL =
@@ -380,7 +381,8 @@ export class BusService {
           const chosen =
             variants.find(
               (variant) =>
-                variant.street.replace(/\s+/g, ' ').trim() === street,
+                restoreAccents(variant.street).replace(/\s+/g, ' ').trim() ===
+                street,
             ) ?? variants[0];
           const lines = [
             ...new Set([

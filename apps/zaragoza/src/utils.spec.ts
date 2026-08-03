@@ -7,6 +7,7 @@ import {
   isRomanNumeral,
   normalizeLineId,
   pickCanonicalStreet,
+  restoreAccents,
 } from './utils';
 
 const destination = (text: string) => capitalizeEachWord(fixWords(text));
@@ -100,6 +101,44 @@ describe('normalizeLineId', () => {
     ['21', '21'],
   ])('%s -> %s', (input, expected) => {
     expect(normalizeLineId(input)).toBe(expected);
+  });
+});
+
+describe('restoreAccents', () => {
+  it.each([
+    ['Campus Rio Ebro', 'Campus Río Ebro'],
+    ['Tomas de Anzano (Colegio)', 'Tomás de Anzano (Colegio)'],
+    ['Diputados (Aljaferia)', 'Diputados (Aljafería)'],
+    [
+      'Autonomía de Aragón (Campo de futbol)',
+      'Autonomía de Aragón (Campo de fútbol)',
+    ],
+    [
+      'Av. de Montañana (Rotonda I.E.S Itaca)',
+      'Av. de Montañana (Rotonda I.E.S Ítaca)',
+    ],
+    [
+      'P. Reyes de Aragon n.º 18 / Ies V. del Pilar',
+      'P. Reyes de Aragón n.º 18 / Ies V. del Pilar',
+    ],
+  ])('fixes %s', (input, expected) => {
+    expect(restoreAccents(input)).toBe(expected);
+  });
+
+  it('preserves the casing of abbreviations', () => {
+    expect(restoreAccents('P. Mª Agustín nº 12 / C.M.E. Ramón y Cajal')).toBe(
+      'P. Mª Agustín nº 12 / C.M.E. Ramón y Cajal',
+    );
+  });
+
+  it('matches the case of the word it replaces', () => {
+    expect(restoreAccents('AV. DE ARAGON')).toBe('AV. DE ARAGÓN');
+    expect(restoreAccents('campus rio ebro')).toBe('campus río ebro');
+  });
+
+  it('is idempotent', () => {
+    const once = restoreAccents('Campus Rio Ebro / Aljaferia');
+    expect(restoreAccents(once)).toBe(once);
   });
 });
 

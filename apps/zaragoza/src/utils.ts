@@ -135,6 +135,7 @@ const wordReplacements: Record<string, string> = {
   aljaferia: 'aljafería',
   aragn: 'aragón',
   aragon: 'aragón',
+  betore: 'betoré',
   catalua: 'cataluña',
   cataluna: 'cataluña',
   constitucin: 'constitución',
@@ -145,10 +146,14 @@ const wordReplacements: Record<string, string> = {
   estacion: 'estación',
   estimacin: 'estimación',
   estimacion: 'estimación',
+  futbol: 'fútbol',
+  itaca: 'ítaca',
   jess: 'jesús',
   jesus: 'jesús',
+  joaquin: 'joaquín',
   jos: 'josé',
   jose: 'josé',
+  malibran: 'malibrán',
   minguijn: 'minguijón',
   minguijon: 'minguijón',
   montaana: 'montañana',
@@ -161,6 +166,9 @@ const wordReplacements: Record<string, string> = {
   pilon: 'pilón',
   prncipe: 'príncipe',
   principe: 'príncipe',
+  rio: 'río',
+  tio: 'tío',
+  tomas: 'tomás',
   tranva: 'tranvía',
   tranvia: 'tranvía',
   turstico: 'turístico',
@@ -173,6 +181,31 @@ const phraseReplacements: [RegExp, string][] = [
   [/\bcarlos\s+quinto\b/g, 'carlos V'],
 ];
 
+// \b would treat the accent in "josé" as a boundary and let "jos" match again
+// inside a word an earlier pass already fixed.
+const wholeWord = (word: string) =>
+  new RegExp(`(?<![\\p{L}\\p{N}])${word}(?![\\p{L}\\p{N}])`, 'giu');
+
+const matchCase = (original: string, replacement: string): string => {
+  if (original === original.toUpperCase()) return replacement.toUpperCase();
+  if (original[0] === original[0].toUpperCase()) {
+    return replacement.charAt(0).toUpperCase() + replacement.slice(1);
+  }
+  return replacement;
+};
+
+// Stop names carry abbreviations whose casing matters ("I.E.S", "Mª",
+// "C.M.E."), so only the accents are repaired and the rest is left alone.
+export const restoreAccents = (text: string): string => {
+  let fixed = stripBom(fixMojibake(text));
+  for (const [wrong, correct] of Object.entries(wordReplacements)) {
+    fixed = fixed.replace(wholeWord(wrong), (match) =>
+      matchCase(match, correct),
+    );
+  }
+  return fixed;
+};
+
 export const fixWords = (text: string): string => {
   let fixed = stripBom(fixMojibake(text)).trim().toLowerCase();
   fixed = fixed.replace(/�/g, '');
@@ -181,13 +214,7 @@ export const fixWords = (text: string): string => {
     fixed = fixed.replace(pattern, correct);
   }
   for (const [wrong, correct] of Object.entries(wordReplacements)) {
-    // \b would treat the accent in "josé" as a boundary and let "jos" match
-    // again inside a word this loop has already fixed.
-    const regex = new RegExp(
-      `(?<![\\p{L}\\p{N}])${wrong}(?![\\p{L}\\p{N}])`,
-      'giu',
-    );
-    fixed = fixed.replace(regex, correct);
+    fixed = fixed.replace(wholeWord(wrong), correct);
   }
   return fixed;
 };
@@ -280,7 +307,7 @@ export const pickCanonicalStreet = (names: string[]): string => {
   const variants = [
     ...new Set(
       names
-        .map((name) => stripBom(fixMojibake(name)).replace(/\s+/g, ' ').trim())
+        .map((name) => restoreAccents(name).replace(/\s+/g, ' ').trim())
         .filter(Boolean),
     ),
   ];

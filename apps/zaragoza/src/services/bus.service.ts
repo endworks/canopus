@@ -27,11 +27,15 @@ import {
   BusStationDocument,
 } from '../schemas/bus.schema';
 import {
+  canonicalLineNames,
   capitalize,
   capitalizeEachWord,
+  extraLineIds,
   fixWords,
   isInt,
   KmlForLine,
+  normalizeLineId,
+  pickCanonicalStreet,
 } from '../utils';
 
 const busApiURL =
@@ -85,16 +89,20 @@ export class BusService {
       `bus/stations/${id}/${source ?? 'api'}`,
     );
     if (cache) return cache;
-    const url =
-      source && source === 'web'
-        ? busWebURL + id
-        : `${busApiURL + id}.json?srsname=wgs84`;
+    const isWebSource = source === 'web';
+    const url = isWebSource
+      ? busWebURL + id
+      : `${busApiURL + id}.json?srsname=wgs84`;
 
     const backup = await this.getStationById(id);
 
     try {
       const response = await lastValueFrom(
-        this.httpService.get(url).pipe(timeout(10000)),
+        this.httpService
+          // pasobus serves iso-8859-1; axios would decode it as utf-8 and turn
+          // every accented character into U+FFFD.
+          .get(url, isWebSource ? { responseEncoding: 'latin1' } : undefined)
+          .pipe(timeout(10000)),
       );
 
       try {
@@ -142,7 +150,7 @@ export class BusService {
                 .map((item) => capitalizeEachWord(fixWords(item.trim())))
                 .join(' - ');
               const transport = {
-                line: capitalize(fixWords(destination.linea)),
+                line: normalizeLineId(destination.linea),
                 destination: destinationFixed,
                 time: null,
               };
@@ -166,7 +174,7 @@ export class BusService {
           rows.each((_, row) => {
             const cells = $(row).find('td.digital');
             if (cells.length >= 3) {
-              const line = capitalize(fixWords($(cells[0]).text().trim()));
+              const line = normalizeLineId($(cells[0]).text().trim());
               const destinationRaw = $(cells[1]).text().trim();
               const destination = destinationRaw
                 .split(' - ')
@@ -326,46 +334,98 @@ export class BusService {
 
   public async getLinesUpdate(): Promise<BusLinesResponse | ErrorResponse> {
     try {
-      const backup = await this.getAllLines();
-      const stationsBackup = await this.getAllStations();
+      const linesBackup = new Map(
+        (await this.getAllLines()).map((line) => [line.id, line]),
+      );
+      const stationsBackup = new Map(
+        (await this.getAllStations()).map((station) => [station.id, station]),
+      );
 
-      const webLines = await this.fetchZaragozaLinesFromWeb();
       const availableLines = await this.fetchZaragozaLines();
-      const linesToBeUpdated = availableLines.map((line) => line.value);
+      const linesToBeUpdated = [
+        ...availableLines.map((line) => line.value),
+        ...extraLineIds.filter(
+          (id) => !availableLines.some((line) => line.value === id),
+        ),
+      ];
+
+      const stationsByLine = new Map<string, StationBase[]>();
       await Promise.all(
         linesToBeUpdated.map(async (lineId) => {
-          const lineStations = await this.fetchZaragozaLineFromKml(lineId);
-          const stations = lineStations.map((station) => station.id);
-          const stationsToUpdate = {};
-          lineStations.forEach(async (station) => {
-            const lines = stationsBackup[station.id]?.lines ?? [lineId];
-            if (!lines.includes(lineId)) {
-              lines.push(lineId);
-            }
-            stationsToUpdate[station.id] = {
-              ...(stationsBackup[station.id] ?? { lines }),
-              id: station.id,
-              street: station.street,
-              coordinates: station.coordinates,
-              lines,
-              times: [],
-              source: 'backup',
-              sourceUrl: null,
-              lastUpdated: null,
-              type: 'bus',
-            };
-            await this.saveStation(stationsToUpdate[station.id]);
+          stationsByLine.set(
+            lineId,
+            await this.fetchZaragozaLineFromKml(lineId),
+          );
+        }),
+      );
+
+      // A stop is named slightly differently in every line's KML, so collect
+      // all of its variants before writing instead of letting whichever line
+      // finishes last decide the stored name.
+      const stationVariants = new Map<string, StationBase[]>();
+      stationsByLine.forEach((stations) =>
+        stations.forEach((station) =>
+          stationVariants.set(station.id, [
+            ...(stationVariants.get(station.id) ?? []),
+            station,
+          ]),
+        ),
+      );
+
+      await Promise.all(
+        [...stationVariants.entries()].map(async ([stationId, variants]) => {
+          const street = pickCanonicalStreet(
+            variants.map((variant) => variant.street),
+          );
+          const chosen =
+            variants.find(
+              (variant) =>
+                variant.street.replace(/\s+/g, ' ').trim() === street,
+            ) ?? variants[0];
+          const lines = [
+            ...new Set([
+              ...(stationsBackup.get(stationId)?.lines ?? []),
+              ...linesToBeUpdated.filter((lineId) =>
+                stationsByLine
+                  .get(lineId)
+                  .some((station) => station.id === stationId),
+              ),
+            ]),
+          ].sort();
+
+          await this.saveStation({
+            id: stationId,
+            street,
+            coordinates: chosen.coordinates,
+            lines,
+            times: [],
+            source: 'backup',
+            sourceUrl: null,
+            lastUpdated: null,
+            type: 'bus',
           });
+        }),
+      );
+
+      await Promise.all(
+        linesToBeUpdated.map(async (lineId) => {
+          const stations = stationsByLine
+            .get(lineId)
+            .map((station) => station.id);
+          // TUR's KML names its placemarks without a "poste N -" prefix, so it
+          // yields no stations and stays hidden.
           const hidden = !stations.length ? true : undefined;
           const line: BusLineResponse = {
             id: lineId,
-            name: capitalizeEachWord(
-              fixWords(
-                webLines.find((item) => item.value === lineId)?.label ??
-                  backup[lineId]?.name ??
-                  lineId,
+            name:
+              canonicalLineNames[lineId] ??
+              capitalizeEachWord(
+                fixWords(
+                  availableLines.find((item) => item.value === lineId)?.label ??
+                    linesBackup.get(lineId)?.name ??
+                    lineId,
+                ),
               ),
-            ),
             lastUpdated: new Date().toISOString(),
             stations,
             hidden,
@@ -420,53 +480,6 @@ export class BusService {
       });
 
       await this.cacheManager.set(`bus/lines/available`, lines);
-      return lines;
-    } catch (exception) {
-      if (exception instanceof TimeoutError) {
-        throw new InternalServerErrorException(
-          {
-            statusCode: HttpStatus.REQUEST_TIMEOUT,
-            message:
-              'Request timeout: The API request took too long to complete',
-          },
-          'Request timeout: The API request took too long to complete',
-        );
-      }
-      console.error('Failed to fetch or parse Zaragoza lines data:', exception);
-      throw new InternalServerErrorException(
-        {
-          statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-          message: exception.message,
-        },
-        exception.message,
-      );
-    }
-  }
-
-  async fetchZaragozaLinesFromWeb(): Promise<ValueLabel[]> {
-    try {
-      const cache: ValueLabel[] = await this.cacheManager.get(`bus/lines/web`);
-      if (cache) return cache;
-      const url = `https://zaragoza.avanzagrupo.com/lineas-y-horarios`;
-      const response = await lastValueFrom(
-        this.httpService.get(url).pipe(timeout(10000)),
-      );
-      const html = await response.data;
-
-      const lines: ValueLabel[] = [];
-
-      const $ = cheerio.load(html);
-      $('#linea-lineas-horarios option').each((_, el) => {
-        const value = $(el).attr('value') || '';
-        const text = $(el).text().trim();
-
-        if (value === 'lineDefault' || !text.includes('–')) return;
-
-        const label = text.split(' – ').slice(1).join(' - ');
-        lines.push({ value, label });
-      });
-
-      await this.cacheManager.set(`bus/lines/web`, lines);
       return lines;
     } catch (exception) {
       if (exception instanceof TimeoutError) {

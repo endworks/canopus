@@ -299,11 +299,8 @@ export class CinemaService {
         // Movies that didn't match TheMovieDB fall through unenriched (basic
         // shape). Normalize every movie so consumers always get the array
         // fields (genres/writers/actors/sessions) and never crash on undefined.
-        const sessionsMap =
-          'sessions' in cinema ? cinema.sessions : undefined;
-        movies = movies.map((movie) =>
-          this.normalizeMovie(movie, sessionsMap),
-        );
+        const sessionsMap = 'sessions' in cinema ? cinema.sessions : undefined;
+        movies = movies.map((movie) => this.normalizeMovie(movie, sessionsMap));
 
         const movieIds = movies.map((movie) => movie.id);
 
@@ -325,8 +322,7 @@ export class CinemaService {
         // enriched array fields, so fill them in before returning a 200.
         const basicMovies =
           'movies' in cinema ? (cinema.movies as Movie[]) : [];
-        const sessionsMap =
-          'sessions' in cinema ? cinema.sessions : undefined;
+        const sessionsMap = 'sessions' in cinema ? cinema.sessions : undefined;
         return {
           ...cinema,
           movies: basicMovies.map((movie) =>

@@ -61,6 +61,10 @@ export const capitalizeEachWord = (
   return null;
 };
 
+// Nothing here changes faster than the scrapers can re-read it, and an entry
+// that never expires is one the writer has to remember to invalidate by hand.
+export const cacheTTL = 1000 * 60 * 60 * 6;
+
 export const isInt = (number: number | string) => {
   if (typeof number == 'number') {
     return true;
@@ -182,9 +186,14 @@ const phraseReplacements: [RegExp, string][] = [
 ];
 
 // \b would treat the accent in "josé" as a boundary and let "jos" match again
-// inside a word an earlier pass already fixed.
-const wholeWord = (word: string) =>
-  new RegExp(`(?<![\\p{L}\\p{N}])${word}(?![\\p{L}\\p{N}])`, 'giu');
+// inside a word an earlier pass already fixed. Compiled once: these run over
+// every stop name of every line on an update.
+const wordPatterns: [RegExp, string][] = Object.entries(wordReplacements).map(
+  ([wrong, correct]) => [
+    new RegExp(`(?<![\\p{L}\\p{N}])${wrong}(?![\\p{L}\\p{N}])`, 'giu'),
+    correct,
+  ],
+);
 
 const matchCase = (original: string, replacement: string): string => {
   if (original === original.toUpperCase()) return replacement.toUpperCase();
@@ -198,13 +207,16 @@ const matchCase = (original: string, replacement: string): string => {
 // "C.M.E."), so only the accents are repaired and the rest is left alone.
 export const restoreAccents = (text: string): string => {
   let fixed = stripBom(fixMojibake(text));
-  for (const [wrong, correct] of Object.entries(wordReplacements)) {
-    fixed = fixed.replace(wholeWord(wrong), (match) =>
-      matchCase(match, correct),
-    );
+  for (const [pattern, correct] of wordPatterns) {
+    fixed = fixed.replace(pattern, (match) => matchCase(match, correct));
   }
   return fixed;
 };
+
+// The same stop name arrives with different spacing from each KML, so compare
+// and store it in one shape.
+export const normalizeStreet = (text: string): string =>
+  restoreAccents(text).replace(/\s+/g, ' ').trim();
 
 export const fixWords = (text: string): string => {
   let fixed = stripBom(fixMojibake(text)).trim().toLowerCase();
@@ -213,8 +225,8 @@ export const fixWords = (text: string): string => {
   for (const [pattern, correct] of phraseReplacements) {
     fixed = fixed.replace(pattern, correct);
   }
-  for (const [wrong, correct] of Object.entries(wordReplacements)) {
-    fixed = fixed.replace(wholeWord(wrong), correct);
+  for (const [pattern, correct] of wordPatterns) {
+    fixed = fixed.replace(pattern, correct);
   }
   return fixed;
 };
@@ -297,30 +309,11 @@ const lineGroup = (id: string): number => {
   return 1;
 };
 
-// "Ci10" has to sort after "Ci9", so compare digit runs as numbers rather than
-// as text.
-const naturalCompare = (a: string, b: string): number => {
-  const chunksOf = (text: string) => text.match(/\d+|\D+/g) ?? [];
-  const left = chunksOf(a);
-  const right = chunksOf(b);
-
-  for (let index = 0; index < Math.min(left.length, right.length); index++) {
-    const one = left[index];
-    const other = right[index];
-    if (/^\d/.test(one) && /^\d/.test(other)) {
-      if (Number(one) !== Number(other)) return Number(one) - Number(other);
-      continue;
-    }
-    const lowered = one.toLowerCase().localeCompare(other.toLowerCase(), 'es');
-    if (lowered) return lowered;
-    if (one !== other) return one < other ? -1 : 1;
-  }
-
-  return left.length - right.length;
-};
+// Numeric collation keeps "Ci10" after "Ci9" and "N2" after "N1".
+const lineCollator = new Intl.Collator('es', { numeric: true });
 
 export const compareLineIds = (a: string, b: string): number =>
-  lineGroup(a) - lineGroup(b) || naturalCompare(a, b);
+  lineGroup(a) - lineGroup(b) || lineCollator.compare(a, b);
 
 const accentedChars = /[áéíóúüñÁÉÍÓÚÜÑ]/g;
 
@@ -337,13 +330,7 @@ const shoutRatio = (text: string): number => {
 // Ebro" vs "Campus Río Ebro"). Pick one deterministically instead of letting
 // whichever KML finishes last win.
 export const pickCanonicalStreet = (names: string[]): string => {
-  const variants = [
-    ...new Set(
-      names
-        .map((name) => restoreAccents(name).replace(/\s+/g, ' ').trim())
-        .filter(Boolean),
-    ),
-  ];
+  const variants = [...new Set(names.map(normalizeStreet).filter(Boolean))];
 
   return (
     variants.sort((a, b) => {
@@ -363,35 +350,24 @@ export const pickCanonicalStreet = (names: string[]): string => {
 };
 
 // Route files are not linked anywhere, so they are addressed by convention:
-// <line>-1.kml for the outbound trip and <line>-2.kml for the return one, in
-// the folder they were uploaded to. Lines that run in a single direction have
-// no -2 file, and the caller treats a missing file as "no stops from here"
-// rather than as an error, so only the folder has to be pinned below.
-const kmlOverrides: Record<string, string[]> = {
-  Ci3: [
-    'https://zaragoza.avanzagrupo.com/wp-content/uploads/2025/03/Ci3-1.kml',
-    'https://zaragoza.avanzagrupo.com/wp-content/uploads/2025/03/Ci3-2.kml',
-  ],
-  Ci4: [
-    'https://zaragoza.avanzagrupo.com/wp-content/uploads/2025/03/Ci4-1.kml',
-    'https://zaragoza.avanzagrupo.com/wp-content/uploads/2025/03/Ci4-2.kml',
-  ],
-  EM1: [
-    'https://zaragoza.avanzagrupo.com/wp-content/uploads/2025/08/EM1-1.kml',
-    'https://zaragoza.avanzagrupo.com/wp-content/uploads/2025/08/EM1-2.kml',
-  ],
-  EM2: [
-    'https://zaragoza.avanzagrupo.com/wp-content/uploads/2025/08/EM2-1.kml',
-    'https://zaragoza.avanzagrupo.com/wp-content/uploads/2025/08/EM2-2.kml',
-  ],
-  TUR: [
-    'https://zaragoza.avanzagrupo.com/wp-content/uploads/2024/02/TUR-1.kml',
-    'https://zaragoza.avanzagrupo.com/wp-content/uploads/2024/02/TUR-2.kml',
-  ],
+// <line>-1.kml for the outbound trip and <line>-2.kml for the return one. Only
+// the WordPress upload folder varies, and a line that runs in one direction has
+// no -2 file — the caller treats a missing file as "no stops from here" rather
+// than as an error, so nothing but the folder has to be pinned.
+const defaultKmlFolder = '2019/12';
+
+const kmlFolders: Record<string, string> = {
+  Ci3: '2025/03',
+  Ci4: '2025/03',
+  EM1: '2025/08',
+  EM2: '2025/08',
+  TUR: '2024/02',
 };
 
-export const KmlForLine = (lineId: string): string[] =>
-  kmlOverrides[lineId] ?? [
-    `https://zaragoza.avanzagrupo.com/wp-content/uploads/2019/12/${lineId}-1.kml`,
-    `https://zaragoza.avanzagrupo.com/wp-content/uploads/2019/12/${lineId}-2.kml`,
-  ];
+export const KmlForLine = (lineId: string): string[] => {
+  const folder = kmlFolders[lineId] ?? defaultKmlFolder;
+  return [1, 2].map(
+    (direction) =>
+      `https://zaragoza.avanzagrupo.com/wp-content/uploads/${folder}/${lineId}-${direction}.kml`,
+  );
+};

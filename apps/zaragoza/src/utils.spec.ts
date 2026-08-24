@@ -1,8 +1,9 @@
 import {
   canonicalLineNames,
   capitalize,
-  compareLineIds,
   capitalizeEachWord,
+  compareLineIds,
+  extraLineIds,
   fixMojibake,
   fixWords,
   isRomanNumeral,
@@ -178,8 +179,11 @@ describe('pickCanonicalStreet', () => {
 });
 
 describe('canonicalLineNames', () => {
-  it('covers every line the updater ingests', () => {
-    expect(Object.keys(canonicalLineNames)).toHaveLength(47);
+  it('names the lines the updater adds on its own', () => {
+    // These are not in the dropdown, so a name has to come from here.
+    extraLineIds.forEach((id) =>
+      expect([id, canonicalLineNames[id]]).toEqual([id, expect.any(String)]),
+    );
   });
 
   it('has no name left unaccented', () => {

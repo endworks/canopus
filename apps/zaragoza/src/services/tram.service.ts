@@ -14,8 +14,8 @@ import { lastValueFrom, timeout, TimeoutError } from 'rxjs';
 import {
   TramStationResponse,
   TramStationsResponse,
-} from 'src/models/tram.interface';
-import { capitalizeEachWord, fixWords, isInt } from 'src/utils';
+} from '../models/tram.interface';
+import { capitalizeEachWord, fixWords, isInt } from '../utils';
 import { ErrorResponse } from '@canopus/shared';
 import { TramStation, TramStationDocument } from '../schemas/tram.schema';
 

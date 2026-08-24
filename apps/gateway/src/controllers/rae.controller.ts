@@ -6,9 +6,9 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { RAEService } from 'src/services/rae.service';
-import { SearchResult } from 'src/models/rae.interface';
-import { ErrorResponse } from 'src/models/error.interface';
+import { RAEService } from '../services/rae.service';
+import { SearchResult } from '../models/rae.interface';
+import { ErrorResponse } from '../models/error.interface';
 
 @ApiTags('RAE definitions')
 @ApiDefaultResponse({ description: 'Error response', type: ErrorResponse })

@@ -1,6 +1,6 @@
 import { Controller } from '@nestjs/common';
 import { MessagePattern, Payload, Transport } from '@nestjs/microservices';
-import { BiziStationPayload } from 'src/models/bizi.interface';
+import { BiziStationPayload } from '../models/bizi.interface';
 import { ZARAGOZA_PATTERNS } from '@canopus/shared';
 import { BiziService } from '../services/bizi.service';
 

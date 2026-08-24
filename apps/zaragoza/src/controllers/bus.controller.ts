@@ -1,6 +1,6 @@
 import { Controller } from '@nestjs/common';
 import { MessagePattern, Payload, Transport } from '@nestjs/microservices';
-import { BusStationPayload } from 'src/models/bus.interface';
+import { BusStationPayload } from '../models/bus.interface';
 import { IdPayload, ZARAGOZA_PATTERNS } from '@canopus/shared';
 import { BusService } from '../services/bus.service';
 

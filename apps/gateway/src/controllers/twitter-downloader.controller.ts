@@ -6,9 +6,9 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { TwitterDownloaderService } from 'src/services/twitter-downloader.service';
-import { TweetMediaResults } from 'src/models/twitter-downloader.interface';
-import { ErrorResponse } from 'src/models/error.interface';
+import { TwitterDownloaderService } from '../services/twitter-downloader.service';
+import { TweetMediaResults } from '../models/twitter-downloader.interface';
+import { ErrorResponse } from '../models/error.interface';
 
 @ApiTags('Twitter downloader')
 @ApiDefaultResponse({ description: 'Error response', type: ErrorResponse })

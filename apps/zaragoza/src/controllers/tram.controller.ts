@@ -1,6 +1,6 @@
 import { Controller } from '@nestjs/common';
 import { MessagePattern, Payload, Transport } from '@nestjs/microservices';
-import { TramStationPayload } from 'src/models/tram.interface';
+import { TramStationPayload } from '../models/tram.interface';
 import { ZARAGOZA_PATTERNS } from '@canopus/shared';
 import { TramService } from '../services/tram.service';
 

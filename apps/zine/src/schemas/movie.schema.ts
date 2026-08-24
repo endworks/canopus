@@ -27,7 +27,7 @@ export class Session {
   time: string;
 
   @Prop()
-  room?: string;
+  screen?: string;
 
   @Prop()
   date?: string;
@@ -64,10 +64,10 @@ export class Movie extends Document {
   @Prop({ type: CrewSchema })
   director?: Crew;
 
-  @Prop({ type: [String] })
+  @Prop({ type: [String], default: [] })
   genres?: string[];
 
-  @Prop({ type: [ActorSchema] })
+  @Prop({ type: [ActorSchema], default: [] })
   actors?: Actor[];
 
   @Prop()

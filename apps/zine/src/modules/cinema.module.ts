@@ -1,11 +1,11 @@
 import { HttpModule } from '@nestjs/axios';
-import { CacheModule } from '@nestjs/cache-manager';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { Movie, MovieSchema } from 'src/schemas/movie.schema';
 import { CinemaController } from '../controllers/cinema.controller';
 import { Cinema, CinemaSchema } from '../schemas/cinema.schema';
+import { Movie, MovieSchema } from '../schemas/movie.schema';
 import { CinemaService } from '../services/cinema.service';
+import { ReservaEntradasService } from '../services/reserva-entradas.service';
 import { TheMovieDBService } from '../services/themoviedb.service';
 
 @Module({
@@ -15,10 +15,9 @@ import { TheMovieDBService } from '../services/themoviedb.service';
       { name: Movie.name, schema: MovieSchema },
     ]),
     HttpModule,
-    CacheModule.register(),
   ],
   controllers: [CinemaController],
-  providers: [CinemaService, TheMovieDBService],
+  providers: [CinemaService, ReservaEntradasService, TheMovieDBService],
   exports: [CinemaService],
 })
 export class CinemaModule {}

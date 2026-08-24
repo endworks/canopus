@@ -1,7 +1,6 @@
 import { HttpService } from '@nestjs/axios';
-import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache, CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Inject, Injectable } from '@nestjs/common';
-import { Cache } from 'cache-manager';
 import { lastValueFrom } from 'rxjs';
 import {
   TheMovieDBConfiguration,
@@ -10,6 +9,7 @@ import {
   TheMovieDBSearch,
   TheMovieDBVideos,
 } from '../models/themoviedb.interface';
+import { generateSlug } from '../utils';
 
 const API_URL = 'https://api.themoviedb.org/3';
 
@@ -20,76 +20,67 @@ export class TheMovieDBService {
     private httpService: HttpService,
   ) {}
 
-  public async configuration(): Promise<TheMovieDBConfiguration> {
-    const url = `${API_URL}/configuration?api_key=${process.env.THE_MOVIE_DB_API_KEY}`;
-    const cache: TheMovieDBConfiguration = await this.cacheManager.get(
-      `themoviedb/configuration`,
-    );
-    if (cache) return cache;
-    const response = await lastValueFrom(this.httpService.get(url));
-    const resp = response.data;
-    await this.cacheManager.set(`themoviedb/configuration`, resp);
-    return response.data;
+  /**
+   * Cached GET against TheMovieDB. `wrap` also coalesces concurrent misses on
+   * the same key, so the per-movie fan-out in CinemaService issues one request
+   * per unique resource rather than one per caller.
+   */
+  private fetch<T>(
+    key: string,
+    path: string,
+    params: Record<string, string> = {},
+  ): Promise<T> {
+    const query = new URLSearchParams({
+      api_key: process.env.THE_MOVIE_DB_API_KEY,
+      ...params,
+    });
+    return this.cacheManager.wrap(key, async () => {
+      const { data } = await lastValueFrom(
+        this.httpService.get<T>(`${API_URL}${path}?${query}`),
+      );
+      return data;
+    });
   }
 
-  public async search(
+  public configuration(): Promise<TheMovieDBConfiguration> {
+    return this.fetch('themoviedb/configuration', '/configuration');
+  }
+
+  public search(
     query: string,
     lang = 'en-US',
     year = new Date().getFullYear(),
   ): Promise<TheMovieDBSearch> {
-    const url = `${API_URL}/search/movie?api_key=${process.env.THE_MOVIE_DB_API_KEY}&language=${lang}&query=${query}&page=1&include_adult=true&year=${year}`;
-    const cache: TheMovieDBSearch = await this.cacheManager.get(
-      `themoviedb/search/${query.replace(/\s/g, '-')}`,
+    return this.fetch(
+      `themoviedb/search/${generateSlug(query)}/${lang}/${year}`,
+      '/search/movie',
+      {
+        language: lang,
+        query,
+        page: '1',
+        include_adult: 'true',
+        year: String(year),
+      },
     );
-    if (cache) return cache;
-    const response = await lastValueFrom(this.httpService.get(url));
-    const resp = response.data;
-    await this.cacheManager.set(
-      `themoviedb/search/${query.replace(/\s/g, '-')}`,
-      resp,
-    );
-    return response.data;
   }
 
-  public async movie(id: number, lang = 'en-US'): Promise<TheMovieDBMovie> {
-    const url = `https://api.themoviedb.org/3/movie/${id}?api_key=${process.env.THE_MOVIE_DB_API_KEY}&language=${lang}`;
-    const cache: TheMovieDBMovie = await this.cacheManager.get(
-      `themoviedb/movie/${id}`,
-    );
-    if (cache) return cache;
-    const response = await lastValueFrom(this.httpService.get(url));
-    const resp = response.data;
-    await this.cacheManager.set(`themoviedb/movie/${id}`, resp);
-    return response.data;
+  public movie(id: number, lang = 'en-US'): Promise<TheMovieDBMovie> {
+    return this.fetch(`themoviedb/movie/${id}`, `/movie/${id}`, {
+      language: lang,
+    });
   }
 
-  public async movieCredits(
-    id: number,
-    lang = 'en-US',
-  ): Promise<TheMovieDBCredits> {
-    const url = `https://api.themoviedb.org/3/movie/${id}/credits?api_key=${process.env.THE_MOVIE_DB_API_KEY}&language=${lang}`;
-    const cache: TheMovieDBCredits = await this.cacheManager.get(
+  public movieCredits(id: number, lang = 'en-US'): Promise<TheMovieDBCredits> {
+    return this.fetch(
       `themoviedb/movie/${id}/credits`,
+      `/movie/${id}/credits`,
+      { language: lang },
     );
-    if (cache) return cache;
-    const response = await lastValueFrom(this.httpService.get(url));
-    const resp = response.data;
-    await this.cacheManager.set(`themoviedb/movie/${id}/credits`, resp);
-    return response.data;
   }
 
-  public async movieVideos(
-    id: number,
-    lang = 'en-US',
-  ): Promise<TheMovieDBVideos> {
-    const url = `https://api.themoviedb.org/3/movie/${id}/videos?api_key=${process.env.THE_MOVIE_DB_API_KEY}&language=${lang}`;
-    const cache: TheMovieDBVideos = await this.cacheManager.get(
-      `themoviedb/movie/${id}/videos`,
-    );
-    if (cache) return cache;
-    const response = await lastValueFrom(this.httpService.get(url));
-    const resp = response.data;
-    await this.cacheManager.set(`themoviedb/movie/${id}/videos`, resp);
-    return response.data;
+  public movieVideos(id: number, lang = 'en-US'): Promise<TheMovieDBVideos> {
+    return this.fetch(`themoviedb/movie/${id}/videos`, `/movie/${id}/videos`, {
+      language: lang,
+    });
   }
 }

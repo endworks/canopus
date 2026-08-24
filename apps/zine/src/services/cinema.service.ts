@@ -1,351 +1,208 @@
-import { HttpService } from '@nestjs/axios';
 import { Cache, CACHE_MANAGER } from '@nestjs/cache-manager';
-import {
-  HttpStatus,
-  Inject,
-  Injectable,
-  InternalServerErrorException,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import * as cheerio from 'cheerio';
-import { Model } from 'mongoose';
-import { lastValueFrom } from 'rxjs';
+import { AnyBulkWriteOperation, Model } from 'mongoose';
+import { cinemas as cinemaSeed } from '../data/cinemas';
 import {
   CacheData,
   Cinema,
   CinemaDetails,
   CinemaDetailsBasic,
+  Crew,
   Movie,
-  MovieBasic,
   Session,
 } from '../models/cinema.interface';
-import { ErrorResponse } from '@canopus/shared';
 import {
+  TheMovieDBConfiguration,
+  TheMovieDBCredits,
   TheMovieDBMovie,
   TheMovieDBSearchResult,
 } from '../models/themoviedb.interface';
 import { Cinema as CinemaSchema } from '../schemas/cinema.schema';
 import { Movie as MovieSchema } from '../schemas/movie.schema';
-import {
-  cacheMaxSize,
-  generateSlug,
-  minutesToString,
-  sanitizeTitle,
-} from '../utils';
+import { minutesToString, sanitizeTitle } from '../utils';
+import { ReservaEntradasService } from './reserva-entradas.service';
 import { TheMovieDBService } from './themoviedb.service';
+
+const LANG = 'es-ES';
+
+/** TheMovieDB runtimes wobble against cinema listings; accept within ±20 min. */
+const DURATION_TOLERANCE_MIN = 20;
+
+/** Detail lookups are one HTTP call each, so cap the ambiguous-match probe. */
+const MAX_CANDIDATE_LOOKUPS = 5;
+
+const durationMatches = (duration: number, runtime: number): boolean =>
+  runtime > 0 && Math.abs(duration - runtime) <= DURATION_TOLERANCE_MIN;
+
+/** Mongo bookkeeping fields never belong in an RPC response. */
+const stripMongoFields = <T>({ _id, __v, ...rest }: T & Record<string, any>) =>
+  rest;
+
+/**
+ * Pick the best TheMovieDB results for a scraped title: exact match, then the
+ * scraped title containing a result, then a result containing the scraped
+ * title. A single search result is taken as-is.
+ */
+const selectCandidates = (
+  title: string,
+  results: TheMovieDBSearchResult[],
+): TheMovieDBSearchResult[] => {
+  if (results.length === 1) return results;
+  const sanitized = results.map((result) => ({
+    result,
+    title: sanitizeTitle(result.title),
+  }));
+  const tiers = [
+    (candidate: string) => candidate === title,
+    (candidate: string) => title.includes(candidate),
+    (candidate: string) => candidate.includes(title),
+  ];
+  for (const tier of tiers) {
+    const matches = sanitized
+      .filter((entry) => tier(entry.title))
+      .map((entry) => entry.result);
+    if (matches.length > 0) return matches;
+  }
+  return [];
+};
 
 @Injectable()
 export class CinemaService {
-  private readonly logger = new Logger('CinemaService');
+  private readonly logger = new Logger(CinemaService.name);
 
   constructor(
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
     @InjectModel(CinemaSchema.name) private cinemaModel: Model<CinemaSchema>,
     @InjectModel(MovieSchema.name) private movieModel: Model<MovieSchema>,
-    private httpService: HttpService,
+    private scraper: ReservaEntradasService,
     private theMovieDb: TheMovieDBService,
   ) {}
 
-  public async getCinemas(
-    location?: string,
-  ): Promise<Cinema[] | ErrorResponse> {
-    const cache: Cinema[] = await this.cacheManager.get(
-      location ? `cinema/${location}` : 'cinema',
+  public getCinemas(location?: string): Promise<Cinema[]> {
+    const key = location ? `cinema/${location}` : 'cinema';
+    return this.cacheManager.wrap(key, async () => {
+      const locations = location?.toLowerCase().split(',');
+      const cinemas = await this.cinemaModel.find().sort({ id: 1 }).lean();
+      return cinemas
+        .filter(
+          (cinema) =>
+            !locations || locations.includes(cinema.location?.toLowerCase()),
+        )
+        .map(stripMongoFields) as Cinema[];
+    });
+  }
+
+  /** Showtimes only: one scrape of reservaentradas, no TheMovieDB enrichment. */
+  public async getCinemaBasic(id: string): Promise<CinemaDetailsBasic> {
+    const cached: CinemaDetailsBasic = await this.cacheManager.get(
+      `cinema/${id}/basic`,
     );
-    if (cache) return cache;
-    const cinemas = await this.getAllCinemas();
-    const locations = location
-      ? location.includes(',')
-        ? location.split(',').map((item) => item.toLowerCase())
-        : [location.toLowerCase()]
-      : undefined;
-    const resp: Cinema[] = cinemas
-      .filter((cinema) =>
-        locations ? locations.includes(cinema.location.toLowerCase()) : true,
-      )
-      .map((cinema) => {
-        const { _id, __v, ...cinemaDetails } = cinema;
-        return cinemaDetails;
-      });
-    await this.cacheManager.set(
-      location ? `cinema/${location}` : 'cinema',
-      resp,
+    if (cached) return cached;
+
+    const cinema = await this.cinemaModel.findOne({ id }).lean();
+    if (!cinema) {
+      throw new NotFoundException(`Resource with ID '${id}' was not found`);
+    }
+
+    const movies = await this.scraper.getMovies(cinema.source);
+    const sessions = Object.fromEntries(
+      movies.map((movie) => [movie.id, movie.sessions ?? []]),
     );
+    const resp: CinemaDetailsBasic = {
+      ...(stripMongoFields(cinema) as Cinema),
+      id,
+      lastUpdated: new Date().toISOString(),
+      movies,
+      sessions,
+    };
+
+    await this.saveCinema({
+      ...resp,
+      movies: movies.map((movie) => movie.id),
+    });
+    await this.cacheManager.set(`cinema/${id}/basic`, resp);
     return resp;
   }
 
-  public async getCinemaBasic(
-    id: string,
-  ): Promise<CinemaDetailsBasic | ErrorResponse> {
-    const cinema = await this.getCinemaById(id);
-    if (cinema) {
-      const cache: CinemaDetailsBasic = await this.cacheManager.get(
-        `cinema/${id}/basic`,
-      );
-      if (cache) return cache;
-      try {
-        const movies = await this.getMoviesReservaEntradas(id);
-        const movieIds = movies.map((movie) => movie.id);
-        const sessions = {};
-        movies.forEach((movie) => {
-          sessions[movie.id] = movie.sessions;
-        });
+  /** Showtimes plus TheMovieDB metadata for every film on the billboard. */
+  public async getCinema(id: string): Promise<CinemaDetails> {
+    const cached: CinemaDetails = await this.cacheManager.get(`cinema/${id}`);
+    if (cached) return cached;
 
-        const { _id, __v, ...cinemaDetails } = cinema;
-
-        const resp = {
-          id,
-          ...cinemaDetails,
-          lastUpdated: new Date().toISOString(),
-          movies,
-          sessions,
-        };
-
-        await this.saveCinema({ ...resp, movies: movieIds, sessions });
-        await this.cacheManager.set(`cinema/${id}/basic`, resp);
-        return resp;
-      } catch (exception) {
-        throw new InternalServerErrorException(
-          {
-            statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-            message: exception.message,
-          },
-          exception.message,
-        );
-      }
-    } else {
-      throw new NotFoundException(
-        {
-          statusCode: HttpStatus.NOT_FOUND,
-          message: `Resource with ID '${id}' was not found`,
-        },
-        `Resource with ID '${id}' was not found`,
-      );
-    }
-  }
-
-  public async getCinema(id: string): Promise<CinemaDetails | ErrorResponse> {
     const cinema = await this.getCinemaBasic(id);
-    if (cinema) {
-      const cache: CinemaDetails = await this.cacheManager.get(`cinema/${id}`);
-      if (cache) return cache;
-      try {
-        let movies = 'movies' in cinema ? (cinema.movies as Movie[]) : [];
-        const config = await this.theMovieDb.configuration();
-        movies = await Promise.all(
-          movies.map(async (movie): Promise<Movie> => {
-            const search = await this.theMovieDb.search(
-              sanitizeTitle(movie.name),
-              'es-ES',
-              new Date().getFullYear(),
-            );
-            if (!search.results || search.results.length === 0) {
-              this.logger.error(
-                `'${sanitizeTitle(movie.name)}' not found on TheMovieDatabase`,
-              );
-              return movie;
-            }
+    const scraped = cinema.movies as Movie[];
 
-            let matches: TheMovieDBSearchResult[] = search.results.filter(
-              (result) =>
-                sanitizeTitle(movie.name) === sanitizeTitle(result.title),
-            );
-
-            if (matches.length === 0) {
-              matches = search.results.filter((result) =>
-                sanitizeTitle(movie.name).includes(sanitizeTitle(result.title)),
-              );
-            }
-
-            if (matches.length === 0) {
-              matches = search.results.filter((result) =>
-                sanitizeTitle(result.title).includes(sanitizeTitle(movie.name)),
-              );
-            }
-
-            if (search.results.length === 1) {
-              matches = search.results;
-            }
-
-            let movieDB: TheMovieDBMovie;
-
-            if (matches.length === 1) {
-              movieDB = await this.theMovieDb.movie(matches[0].id, 'es-ES');
-            } else if (matches.length === 0) {
-              this.logger.error(`'${movie.name}' got no results`);
-              return movie;
-            } else {
-              await Promise.all(
-                matches.map(async (match) => {
-                  await this.theMovieDb
-                    .movie(match.id, 'es-ES')
-                    .then((result) => {
-                      if (
-                        result.runtime > 0 &&
-                        movie.duration + 20 > result.runtime &&
-                        movie.duration - 20 < result.runtime
-                      ) {
-                        this.logger.log(
-                          `Should match '${movie.name}' duration: ${movie.duration} ≈ ${result.runtime}`,
-                        );
-                        movieDB = result;
-                      }
-                    });
-                }),
-              );
-            }
-
-            if (!movieDB) {
-              this.logger.error(`'${movie.name}' not matched with any result`);
-              return movie;
-            }
-
-            if (
-              movieDB.runtime > 0 &&
-              (movie.duration + 20 < movieDB.runtime ||
-                movie.duration - 20 > movieDB.runtime)
-            ) {
-              this.logger.error(
-                `'${movie.name}' and '${movieDB.title}' duration doesn't match: ${movie.duration} != ${movieDB.runtime}`,
-              );
-              return movie;
-            }
-
-            const movieDBCredits = await this.theMovieDb.movieCredits(
-              movieDB.id,
-              'es-ES',
-            );
-
-            const movieDBVideos = await this.theMovieDb.movieVideos(
-              movieDB.id,
-              'es-ES',
-            );
-
-            const trailer = movieDBVideos.results.map(
-              (video) => `http://www.youtube.com/watch?v=${video.key}`,
-            )[0];
-
-            const director = movieDBCredits.crew
-              .map((crew) => {
-                if (crew.job === 'Director')
-                  return {
-                    name: crew.name,
-                    picture: crew.profile_path
-                      ? `${config.images.secure_base_url}w185${crew.profile_path}`
-                      : null,
-                  };
-              })
-              .filter((item) => item)[0];
-
-            const writers = movieDBCredits.crew
-              .map((crew) => {
-                if (crew.job === 'Screenplay' || crew.job === 'Writer')
-                  return {
-                    name: crew.name,
-                    picture: crew.profile_path
-                      ? `${config.images.secure_base_url}w185${crew.profile_path}`
-                      : null,
-                  };
-              })
-              .filter((item) => item);
-
-            const actors = movieDBCredits.cast
-              .map((cast) => {
-                if (cast.known_for_department === 'Acting')
-                  return {
-                    name: cast.name,
-                    character: cast.character,
-                    picture: cast.profile_path
-                      ? `${config.images.secure_base_url}w185${cast.profile_path}`
-                      : null,
-                  };
-              })
-              .filter((item) => item);
-
-            return {
-              ...movie,
-              theMovieDbId: movieDB.id,
-              imDbId: movieDB.imdb_id,
-              name: movieDB.title,
-              originalName: movieDB.original_title,
-              duration: movieDB.runtime || movie.duration,
-              durationReadable: minutesToString(
-                movieDB.runtime || movie.duration,
-              ),
-              tagline: movieDB.tagline,
-              poster: movieDB.poster_path
-                ? `${config.images.secure_base_url}w342${movieDB.poster_path}`
-                : movie.poster,
-              synopsis: movieDB.overview,
-              trailer: trailer || movie.trailer || null,
-              director: director || null,
-              writers: writers.length > 0 ? writers : null,
-              actors: actors.length > 0 ? actors : null,
-              genres: movieDB.genres.map((genre) => genre.name),
-              budget: movieDB.budget,
-              revenue: movieDB.revenue,
-              year: parseInt(movieDB.release_date.slice(0, 4)),
-              releaseDate: movieDB.release_date,
-              originalLanguage: movieDB.original_language,
-              popularity: movieDB.popularity,
-              voteAverage: movieDB.vote_average,
-              voteCount: movieDB.vote_count,
-            };
-          }),
-        );
-
-        // Movies that didn't match TheMovieDB fall through unenriched (basic
-        // shape). Normalize every movie so consumers always get the array
-        // fields (genres/writers/actors/sessions) and never crash on undefined.
-        const sessionsMap = 'sessions' in cinema ? cinema.sessions : undefined;
-        movies = movies.map((movie) => this.normalizeMovie(movie, sessionsMap));
-
-        const movieIds = movies.map((movie) => movie.id);
-
-        const resp = {
-          ...cinema,
-          movies,
-        };
-        for (const movie of movies) {
-          await this.saveMovie(movie);
-        }
-        this.saveCinema({ ...resp, movies: movieIds });
-        await this.cacheManager.set(`cinema/${id}`, resp);
-        return resp;
-      } catch (exception) {
-        this.logger.error(
-          `TheMovieDB enrichment failed for cinema '${id}', returning basic data: ${exception.message}`,
-        );
-        // Same normalization as the success path: the basic movies lack the
-        // enriched array fields, so fill them in before returning a 200.
-        const basicMovies =
-          'movies' in cinema ? (cinema.movies as Movie[]) : [];
-        const sessionsMap = 'sessions' in cinema ? cinema.sessions : undefined;
-        return {
-          ...cinema,
-          movies: basicMovies.map((movie) =>
-            this.normalizeMovie(movie, sessionsMap),
-          ),
-        } as CinemaDetails;
-      }
-    } else {
-      throw new NotFoundException(
-        {
-          statusCode: HttpStatus.NOT_FOUND,
-          message: `Resource with ID '${id}' was not found`,
-        },
-        `Resource with ID '${id}' was not found`,
+    let movies: Movie[];
+    try {
+      const config = await this.theMovieDb.configuration();
+      movies = await Promise.all(
+        scraped.map((movie) => this.enrichMovie(movie, config)),
       );
+    } catch (exception) {
+      // Enrichment is best-effort: fall back to the scraped billboard rather
+      // than failing a request that already has showtimes to return.
+      this.logger.error(
+        `TheMovieDB enrichment failed for cinema '${id}', returning basic data: ${exception.message}`,
+      );
+      return this.toCinemaDetails(cinema, scraped);
     }
+
+    const resp = this.toCinemaDetails(cinema, movies);
+    await this.saveMovies(resp.movies);
+    await this.saveCinema({
+      ...resp,
+      movies: resp.movies.map((movie) => movie.id),
+    });
+    await this.cacheManager.set(`cinema/${id}`, resp);
+    return resp;
   }
 
-  // Guarantee the array fields exist so API consumers (web/bot) can call
-  // .map()/.length on them whether or not the movie was enriched. `?? []`
-  // also converts the enriched path's `null` (empty writers/actors) to [].
-  // Sessions fall back to the cinema-level sessions map (keyed by movie id)
-  // so showtimes are preserved even if the movie lost its inline sessions.
+  public getMovies(): Promise<Movie[]> {
+    return this.cacheManager.wrap('movies', async () => {
+      const movies = await this.movieModel.find().sort({ id: 1 }).lean();
+      return movies.map(stripMongoFields) as Movie[];
+    });
+  }
+
+  public async cached(): Promise<CacheData> {
+    const caches = await this.listCacheKeys();
+    return { cacheSize: `${caches.length}`, caches };
+  }
+
+  /** Warms every Zaragoza cinema from scratch. */
+  public async updateAll(): Promise<CacheData> {
+    await this.cacheManager.clear();
+    await this.saveCinemas(await this.scraper.getCinemas());
+    const cinemas = await this.getCinemas('zaragoza');
+    await Promise.all(
+      cinemas.map((cinema) =>
+        this.getCinema(cinema.id).catch((exception) => {
+          this.logger.error(
+            `failed to get movies from '${cinema.id}' with exception: '${exception.message}'`,
+          );
+        }),
+      ),
+    );
+    return this.cached();
+  }
+
+  private toCinemaDetails(
+    cinema: CinemaDetailsBasic,
+    movies: Movie[],
+  ): CinemaDetails {
+    return {
+      ...cinema,
+      movies: movies.map((movie) =>
+        this.normalizeMovie(movie, cinema.sessions),
+      ),
+    };
+  }
+
+  // Movies that didn't match TheMovieDB fall through unenriched (basic shape).
+  // Normalize every movie so consumers always get the array fields and never
+  // crash on undefined. Sessions fall back to the cinema-level map (keyed by
+  // movie id) so showtimes survive even if the movie lost its inline copy.
   private normalizeMovie(
     movie: Movie,
     sessionsMap?: Record<string, Session[]>,
@@ -359,288 +216,184 @@ export class CinemaService {
     };
   }
 
-  async cached(): Promise<CacheData | ErrorResponse> {
-    try {
-      const allKeys = await Promise.all(
-        this.cacheManager.stores.map(async (store: any) => {
-          if (store?.keys) {
-            try {
-              return await store.keys('*');
-            } catch (err) {
-              console.error('Error in store.keys():', err);
-              return [];
-            }
-          }
-          return [];
-        }),
-      );
-      const caches = allKeys.flat().sort();
-      return {
-        cacheSize: `${caches.length}/${cacheMaxSize}`,
-        caches,
-      };
-    } catch (exception) {
-      throw new InternalServerErrorException(
-        {
-          statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-          message: exception.message,
-        },
-        exception.message,
-      );
-    }
-  }
-
-  async updateAll(): Promise<CacheData | ErrorResponse> {
-    try {
-      await this.cacheManager.clear();
-      await this.getCinemasReservaEntradas();
-      const cinemas = await this.getCinemas('zaragoza');
-      if ('statusCode' in cinemas) return;
-      await Promise.all(
-        cinemas.map(async (cinema) => {
-          await this.getCinema(cinema.id).catch((exceptionCinema) => {
-            this.logger.error(
-              `failed to get movies from '${cinema.id}' with exception: '${exceptionCinema.message}'`,
-            );
-          });
-        }),
-      );
-      const allKeys = await Promise.all(
-        this.cacheManager.stores.map(async (store: any) => {
-          if (store?.keys) {
-            try {
-              return await store.keys('*');
-            } catch (err) {
-              console.error('Error in store.keys():', err);
-              return [];
-            }
-          }
-          return [];
-        }),
-      );
-      const caches = allKeys.flat().sort();
-      return {
-        cacheSize: `${caches.length}/${cacheMaxSize}`,
-        caches,
-      };
-    } catch (exception) {
-      throw new InternalServerErrorException(
-        {
-          statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-          message: exception.message,
-        },
-        exception.message,
-      );
-    }
-  }
-
-  async getCinemasReservaEntradas(): Promise<Cinema[]> {
-    const cache: Cinema[] = await this.cacheManager.get(
-      'cinema/reservaEntradas',
+  /** Overlay a scraped movie with TheMovieDB metadata, or return it unchanged. */
+  private async enrichMovie(
+    movie: Movie,
+    config: TheMovieDBConfiguration,
+  ): Promise<Movie> {
+    const title = sanitizeTitle(movie.name);
+    const search = await this.theMovieDb.search(
+      title,
+      LANG,
+      new Date().getFullYear(),
     );
-    if (cache) return cache;
-    const url = 'https://www.reservaentradas.com/cines';
-    const { data: html } = await lastValueFrom(this.httpService.get(url));
-    const $ = cheerio.load(html);
+    if (!search.results?.length) {
+      this.logger.error(`'${title}' not found on TheMovieDatabase`);
+      return movie;
+    }
 
-    const result: Cinema[] = [];
+    const candidates = selectCandidates(title, search.results);
+    if (candidates.length === 0) {
+      this.logger.error(`'${movie.name}' got no results`);
+      return movie;
+    }
 
-    $('li.provincia').each((_, el) => {
-      const city = $(el).clone().children().remove().end().text().trim();
-      const cinemas: Cinema[] = [];
-      $(el)
-        .find('ul.list-cinemas li a')
-        .each((_, a) => {
-          let name = $(a).text().trim();
-          if (!name.includes('Cine Y')) {
-            name = name.replace(/^\s*Cines?\s+/i, '');
-          }
-          name = name.replace(/\s+/g, ' ').trim();
-          const source = $(a).attr('href') || '';
-          const id = source.split('/')[5].replace(/^cines?/i, '') || '';
-          const location =
-            source.split('/')[4] ||
-            city.toLocaleLowerCase().replace(/\s+/g, '-');
+    const movieDB = await this.resolveCandidate(movie, candidates);
+    if (!movieDB) {
+      this.logger.error(`'${movie.name}' not matched with any result`);
+      return movie;
+    }
 
-          const cinema = {
-            id,
-            name,
-            location,
-            city,
-            source,
-          };
-          cinemas.push(cinema);
-        });
+    if (
+      movieDB.runtime > 0 &&
+      !durationMatches(movie.duration, movieDB.runtime)
+    ) {
+      this.logger.error(
+        `'${movie.name}' and '${movieDB.title}' duration doesn't match: ${movie.duration} != ${movieDB.runtime}`,
+      );
+      return movie;
+    }
 
-      result.push(...cinemas);
+    // Credits and videos are independent — one round trip instead of two.
+    const [credits, videos] = await Promise.all([
+      this.theMovieDb.movieCredits(movieDB.id, LANG),
+      this.theMovieDb.movieVideos(movieDB.id, LANG),
+    ]);
+    const duration = movieDB.runtime || movie.duration;
+    const { director, writers, actors } = this.parseCredits(credits, config);
+
+    return {
+      ...movie,
+      theMovieDbId: movieDB.id,
+      imDbId: movieDB.imdb_id,
+      name: movieDB.title,
+      originalName: movieDB.original_title,
+      duration,
+      durationReadable: minutesToString(duration),
+      tagline: movieDB.tagline,
+      poster: movieDB.poster_path
+        ? `${config.images.secure_base_url}w342${movieDB.poster_path}`
+        : movie.poster,
+      synopsis: movieDB.overview,
+      trailer: videos.results[0]
+        ? `http://www.youtube.com/watch?v=${videos.results[0].key}`
+        : movie.trailer || null,
+      director: director || null,
+      writers,
+      actors,
+      genres: movieDB.genres.map((genre) => genre.name),
+      budget: movieDB.budget,
+      revenue: movieDB.revenue,
+      year: parseInt(movieDB.release_date.slice(0, 4)),
+      releaseDate: movieDB.release_date,
+      originalLanguage: movieDB.original_language,
+      popularity: movieDB.popularity,
+      voteAverage: movieDB.vote_average,
+      voteCount: movieDB.vote_count,
+    };
+  }
+
+  /**
+   * Disambiguate several title matches by runtime. Candidates are probed in
+   * TheMovieDB's own popularity order and the first runtime match wins, so the
+   * result doesn't depend on which request resolves first.
+   */
+  private async resolveCandidate(
+    movie: Movie,
+    candidates: TheMovieDBSearchResult[],
+  ): Promise<TheMovieDBMovie | null> {
+    if (candidates.length === 1) {
+      return this.theMovieDb.movie(candidates[0].id, LANG);
+    }
+    const details = await Promise.all(
+      candidates
+        .slice(0, MAX_CANDIDATE_LOOKUPS)
+        .map((candidate) => this.theMovieDb.movie(candidate.id, LANG)),
+    );
+    const match = details.find((detail) =>
+      durationMatches(movie.duration, detail.runtime),
+    );
+    if (match) {
+      this.logger.log(
+        `Should match '${movie.name}' duration: ${movie.duration} ≈ ${match.runtime}`,
+      );
+    }
+    return match ?? null;
+  }
+
+  private parseCredits(
+    credits: TheMovieDBCredits,
+    config: TheMovieDBConfiguration,
+  ) {
+    const picture = (path?: string) =>
+      path ? `${config.images.secure_base_url}w185${path}` : null;
+    const toCrew = (person: { name: string; profile_path?: string }): Crew => ({
+      name: person.name,
+      picture: picture(person.profile_path),
     });
-    await Promise.all(
-      result.map(async (cinema) => {
-        await this.saveCinema(cinema);
+
+    return {
+      director: credits.crew
+        .filter((crew) => crew.job === 'Director')
+        .map(toCrew)[0],
+      writers: credits.crew
+        .filter((crew) => crew.job === 'Screenplay' || crew.job === 'Writer')
+        .map(toCrew),
+      actors: credits.cast
+        .filter((cast) => cast.known_for_department === 'Acting')
+        .map((cast) => ({ ...toCrew(cast), character: cast.character })),
+    };
+  }
+
+  private async listCacheKeys(): Promise<string[]> {
+    const keys = await Promise.all(
+      this.cacheManager.stores.map(async (store: any) => {
+        if (!store?.keys) return [];
+        try {
+          return await store.keys('*');
+        } catch (exception) {
+          this.logger.error(`failed to list cache keys: ${exception.message}`);
+          return [];
+        }
       }),
     );
-    await this.cacheManager.set('cinema/reservaEntradas', result);
-    return result;
+    return keys.flat().sort();
   }
 
-  async getMoviesReservaEntradas(id: string): Promise<MovieBasic[]> {
-    const cinema = await this.getCinemaById(id);
-    const response = await lastValueFrom(this.httpService.get(cinema.source));
-    const $ = cheerio.load(response.data);
-    return (await Promise.all(
-      $('.movie.row')
-        .map(async (_, value) => {
-          const source = $(value).find('a').attr('href');
-          const filmResponse = await lastValueFrom(
-            this.httpService.get(source),
-          );
-          const $film = cheerio.load(filmResponse.data);
-          let name = $film('h2 strong').first().text();
-          const nameLower = name.toLowerCase();
-          let specialEdition = null;
-          if (nameLower.includes('cine club lys')) {
-            specialEdition = 'Cine Club Lys';
-            name = name.replace(/CINE CLUB LYS :/, '');
-          } else if (nameLower.includes('proyecto viridiana')) {
-            specialEdition = 'Proyecto Viridiana';
-            name = name.replace(/PROYECTO VIRIDIANA: /, '');
-          } else if (nameLower.includes('club rosebud')) {
-            specialEdition = 'Club Rosebud';
-            name = name.replace(/ - CLUB ROSEBUD/, '');
-          } else if (nameLower.includes('4k')) {
-            specialEdition = '4K';
-            name = name.replace(/4K/, '');
-          } else if (/(\d+ aniversario)/gim.test(name)) {
-            specialEdition = /(\d+ aniversario)/gim.exec(name)[0];
-            name = name.replace(/\(\d+ aniversario\)/gim, '');
-          }
-          name = name.replace(/\(\s*\d{4}\s*\)/g, '');
-          const id = generateSlug(name);
-          const sessions: Session[] = [];
-          const poster = $film('.media-object').attr('src').split('?')[0];
-          const trailer = $film('#trailer iframe').attr('src');
-          const synopsis = $film('#sinopsis_info span')
-            .text()
-            .replace(/\n/, '')
-            .trim();
-          const duration = parseInt(
-            $film('.member-descriptionX > p > strong').text().split(' ')[0],
-          );
-          const durationReadable = minutesToString(duration);
-
-          const currentYear = new Date().getFullYear();
-          const dates = [];
-          $film('ul.nav-tabs li a').each((_, el) => {
-            const text = $(el).text().trim();
-
-            const match = text.match(/(\d{1,2})\s*\/\s*(\d{1,2})/);
-            if (match) {
-              const day = parseInt(match[1], 10);
-              const month = parseInt(match[2], 10);
-
-              const isoDate = new Date(currentYear, month - 1, day)
-                .toISOString()
-                .split('T')[0];
-
-              dates.push(isoDate);
-            }
-          });
-          dates.forEach((date, index) => {
-            $film(`#${index + 1} > div`).each((_, formatBlock) => {
-              const type = $film(formatBlock)
-                .find('p')
-                .first()
-                .text()
-                .trim()
-                .replace(/\(|\)/g, '')
-                .trim();
-
-              $film(formatBlock)
-                .find('.session-container')
-                .each((_, session) => {
-                  const time = $film(session).find('a.sesion').text().trim();
-                  const url = $film(session).find('a.sesion').attr('href');
-
-                  const popover = $film(session).attr('popover-content') || '';
-                  const screenMatch = popover.match(/Sala:\s*<b>(\d+)<\/b>/i);
-                  const screen = screenMatch ? screenMatch[1] : null;
-
-                  sessions.push({ time, url, screen, date, type });
-                });
-            });
-          });
-
-          sessions.sort((a, b) => {
-            const da = new Date(`${a.date}T${a.time}:00`);
-            const db = new Date(`${b.date}T${b.time}:00`);
-
-            return da.getTime() - db.getTime();
-          });
-
-          const movie: MovieBasic = {
-            id,
-            name,
-            specialEdition,
-            synopsis,
-            duration,
-            durationReadable,
-            sessions,
-            poster,
-            trailer,
-            source,
-          };
-          return movie;
-        })
-        .toArray(),
-    )) as any;
+  private saveCinema(data: Partial<CinemaSchema>) {
+    return this.cinemaModel.updateOne(
+      { id: data.id },
+      { $set: data },
+      { upsert: true },
+    );
   }
 
-  public async getMovies(): Promise<Movie[] | ErrorResponse> {
-    const cache: Movie[] = await this.cacheManager.get('movies');
-    if (cache) return cache;
-    const movies = await this.getAllMovies();
-
-    const resp: Movie[] = movies.map((movie) => {
-      const { _id, __v, ...movieDetails } = movie;
-      return movieDetails;
-    });
-    await this.cacheManager.set('movies', resp);
-    return resp;
+  /**
+   * The scraper returns every cinema in the country; `cinemas.ts` supplies the
+   * address/website the listings don't carry. One round trip, not one per row.
+   */
+  private saveCinemas(cinemas: Cinema[]) {
+    const operations = cinemas.map((cinema) => {
+      const { address, website } = cinemaSeed[cinema.id] ?? {};
+      return {
+        updateOne: {
+          filter: { id: cinema.id },
+          update: { $set: { ...cinema, address, website } },
+          upsert: true,
+        },
+      };
+    }) as AnyBulkWriteOperation<CinemaSchema>[];
+    return operations.length ? this.cinemaModel.bulkWrite(operations) : null;
   }
 
-  async getAllCinemas() {
-    return this.cinemaModel.find().sort({ id: 1 }).lean().exec();
-  }
-
-  async getAllMovies() {
-    return this.movieModel.find().sort({ id: 1 }).lean().exec();
-  }
-
-  async getCinemaById(id: string) {
-    return this.cinemaModel.findOne({ id }).lean();
-  }
-
-  async getMovieById(id: string) {
-    return this.movieModel.findOne({ id }).lean();
-  }
-
-  async saveCinema(data: Partial<CinemaSchema>) {
-    return this.cinemaModel
-      .findOneAndUpdate(
-        { id: data.id },
-        { $set: data },
-        { returnDocument: 'after', upsert: true },
-      )
-      .lean();
-  }
-
-  async saveMovie(data: Partial<MovieSchema>) {
-    return this.movieModel
-      .findOneAndUpdate(
-        { id: data.id },
-        { $set: data },
-        { returnDocument: 'after', upsert: true },
-      )
-      .lean();
+  private saveMovies(movies: Movie[]) {
+    const operations = movies.map((movie) => ({
+      updateOne: {
+        filter: { id: movie.id },
+        update: { $set: movie },
+        upsert: true,
+      },
+    })) as AnyBulkWriteOperation<MovieSchema>[];
+    return operations.length ? this.movieModel.bulkWrite(operations) : null;
   }
 }

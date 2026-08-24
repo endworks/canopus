@@ -1,26 +1,25 @@
 export const minutesToString = (min: number): string => {
-  const hour = Math.floor(min / 60);
+  const hours = Math.floor(min / 60);
   const minutes = min % 60;
-  return `${hour}h${minutes > 0 ? ` ${minutes}m` : ''}`;
+  return `${hours}h${minutes > 0 ? ` ${minutes}m` : ''}`;
 };
 
-export const sanitizeTitle = (title: string): string => {
-  return title
+/**
+ * Lowercase and strip accents/punctuation so scraped titles can be compared
+ * against TheMovieDB results. NFD decomposition covers every diacritic, not
+ * just the handful the Spanish listings happen to use.
+ */
+export const sanitizeTitle = (title: string): string =>
+  title
     .toLowerCase()
-    .replace(/[:,.]/gm, '')
-    .replace(/á/gm, 'a')
-    .replace(/ā/gm, 'a')
-    .replace(/é/gm, 'e')
-    .replace(/í/gm, 'i')
-    .replace(/ó/gm, 'o')
-    .replace(/ú/gm, 'u')
-    .replace(/ñ/gm, 'n')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/[:,.]/g, '')
+    .replace(/\s+/g, ' ')
     .trim();
-};
 
-export const generateSlug = (title: string): string => {
-  return sanitizeTitle(title).replace(/\s/gm, '-');
-};
+export const generateSlug = (title: string): string =>
+  sanitizeTitle(title).replace(/\s/g, '-');
 
-export const cacheTTL = 60 * 60 * 6;
-export const cacheMaxSize = 256;
+/** cache-manager v7 TTLs are milliseconds. Six hours. */
+export const cacheTTL = 1000 * 60 * 60 * 6;

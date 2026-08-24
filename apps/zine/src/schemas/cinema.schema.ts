@@ -15,9 +15,6 @@ export class Cinema extends Document {
   @Prop()
   address?: string;
 
-  @Prop({ type: [String], default: [] })
-  coordinates: string[];
-
   @Prop()
   location?: string;
 
@@ -27,8 +24,8 @@ export class Cinema extends Document {
   @Prop()
   source?: string;
 
-  @Prop({ required: true })
-  lastUpdated: string;
+  @Prop()
+  lastUpdated?: string;
 
   @Prop({ type: [String], default: [] })
   movies: string[];

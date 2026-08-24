@@ -1,0 +1,181 @@
+import { HttpService } from '@nestjs/axios';
+import { Injectable } from '@nestjs/common';
+import * as cheerio from 'cheerio';
+import { lastValueFrom, timeout } from 'rxjs';
+import { Cinema, MovieBasic, Session } from '../models/cinema.interface';
+import { generateSlug, minutesToString } from '../utils';
+
+const CINEMAS_URL = 'https://www.reservaentradas.com/cines';
+const REQUEST_TIMEOUT_MS = 10000;
+
+/**
+ * Venue programmes that prefix the film title on reservaentradas. One pattern
+ * per entry does both the detection and the stripping, so the two can't drift
+ * and adding a programme is a one-line data edit.
+ */
+const SPECIAL_EDITIONS: { label: string; pattern: RegExp }[] = [
+  { label: 'Cine Club Lys', pattern: /\s*CINE CLUB LYS\s*:?\s*/i },
+  { label: 'Proyecto Viridiana', pattern: /\s*PROYECTO VIRIDIANA\s*:?\s*/i },
+  { label: 'Club Rosebud', pattern: /\s*-?\s*CLUB ROSEBUD\s*/i },
+  { label: '4K', pattern: /\s*4K\s*/i },
+];
+
+/** Anniversary re-releases carry the edition in the title itself. */
+const ANNIVERSARY = /\(?\s*(\d+ aniversario)\s*\)?/i;
+
+/** Venues whose real name starts with "Cine …" and must keep the prefix. */
+const KEEP_CINE_PREFIX = /^Cine Y/i;
+
+/**
+ * Scrapes reservaentradas.com. Kept separate from CinemaService so the part
+ * that breaks when someone else edits their markup has no cache, database or
+ * enrichment concerns mixed into it.
+ */
+@Injectable()
+export class ReservaEntradasService {
+  constructor(private httpService: HttpService) {}
+
+  private async load(url: string): Promise<cheerio.CheerioAPI> {
+    const { data } = await lastValueFrom(
+      this.httpService.get(url).pipe(timeout(REQUEST_TIMEOUT_MS)),
+    );
+    return cheerio.load(data);
+  }
+
+  /** Every cinema listed, across all provinces. */
+  public async getCinemas(): Promise<Cinema[]> {
+    const $ = await this.load(CINEMAS_URL);
+    const cinemas: Cinema[] = [];
+
+    $('li.provincia').each((_, el) => {
+      const city = $(el).clone().children().remove().end().text().trim();
+      $(el)
+        .find('ul.list-cinemas li a')
+        .each((_, a) => {
+          let name = $(a).text().trim();
+          if (!KEEP_CINE_PREFIX.test(name)) {
+            name = name.replace(/^\s*Cines?\s+/i, '');
+          }
+          const source = $(a).attr('href') || '';
+          const segments = source.split('/');
+          cinemas.push({
+            id: (segments[5] || '').replace(/^cines?/i, ''),
+            name: name.replace(/\s+/g, ' ').trim(),
+            location: segments[4] || city.toLowerCase().replace(/\s+/g, '-'),
+            source,
+          });
+        });
+    });
+
+    return cinemas;
+  }
+
+  /** Every film currently showing at one cinema, with its sessions. */
+  public async getMovies(cinemaUrl: string): Promise<MovieBasic[]> {
+    const $ = await this.load(cinemaUrl);
+    const sources = $('.movie.row')
+      .map((_, el) => $(el).find('a').attr('href'))
+      .toArray()
+      .filter(Boolean);
+    return Promise.all(sources.map((source) => this.getMovie(source)));
+  }
+
+  private async getMovie(source: string): Promise<MovieBasic> {
+    const $ = await this.load(source);
+    const { name, specialEdition } = this.parseTitle(
+      $('h2 strong').first().text(),
+    );
+    const duration = parseInt(
+      $('.member-descriptionX > p > strong').text().split(' ')[0],
+    );
+
+    return {
+      id: generateSlug(name),
+      name,
+      specialEdition,
+      synopsis: $('#sinopsis_info span').text().replace(/\n/, '').trim(),
+      duration,
+      durationReadable: minutesToString(duration),
+      sessions: this.parseSessions($),
+      poster: $('.media-object').attr('src')?.split('?')[0],
+      trailer: $('#trailer iframe').attr('src'),
+      source,
+    };
+  }
+
+  private parseTitle(raw: string): { name: string; specialEdition?: string } {
+    for (const { label, pattern } of SPECIAL_EDITIONS) {
+      if (pattern.test(raw)) {
+        return {
+          name: this.cleanName(raw.replace(pattern, ' ')),
+          specialEdition: label,
+        };
+      }
+    }
+    const anniversary = ANNIVERSARY.exec(raw);
+    if (anniversary) {
+      return {
+        name: this.cleanName(raw.replace(ANNIVERSARY, ' ')),
+        specialEdition: anniversary[1],
+      };
+    }
+    return { name: this.cleanName(raw), specialEdition: null };
+  }
+
+  /** Drop the release year the listings append, e.g. "Alien (1979)". */
+  private cleanName(name: string): string {
+    return name
+      .replace(/\(\s*\d{4}\s*\)/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private parseSessions($: cheerio.CheerioAPI): Session[] {
+    const year = new Date().getFullYear();
+    const dates: string[] = [];
+
+    $('ul.nav-tabs li a').each((_, el) => {
+      const match = $(el)
+        .text()
+        .trim()
+        .match(/(\d{1,2})\s*\/\s*(\d{1,2})/);
+      if (!match) return;
+      const day = parseInt(match[1], 10);
+      const month = parseInt(match[2], 10);
+      dates.push(new Date(year, month - 1, day).toISOString().split('T')[0]);
+    });
+
+    const sessions: Session[] = [];
+    dates.forEach((date, index) => {
+      $(`#${index + 1} > div`).each((_, formatBlock) => {
+        const type = $(formatBlock)
+          .find('p')
+          .first()
+          .text()
+          .replace(/\(|\)/g, '')
+          .trim();
+
+        $(formatBlock)
+          .find('.session-container')
+          .each((_, session) => {
+            const link = $(session).find('a.sesion');
+            const popover = $(session).attr('popover-content') || '';
+            const screen = popover.match(/Sala:\s*<b>(\d+)<\/b>/i);
+            sessions.push({
+              time: link.text().trim(),
+              url: link.attr('href'),
+              screen: screen ? screen[1] : null,
+              date,
+              type,
+            });
+          });
+      });
+    });
+
+    return sessions.sort(
+      (a, b) =>
+        new Date(`${a.date}T${a.time}:00`).getTime() -
+        new Date(`${b.date}T${b.time}:00`).getTime(),
+    );
+  }
+}

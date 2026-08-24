@@ -23,6 +23,9 @@ export class Actor extends Crew {
 export const ActorSchema = SchemaFactory.createForClass(Actor);
 @Schema({ _id: false })
 export class Session {
+  @Prop()
+  id?: string;
+
   @Prop({ required: true })
   time: string;
 
@@ -37,6 +40,9 @@ export class Session {
 
   @Prop()
   url?: string;
+
+  @Prop()
+  numbered?: boolean;
 }
 
 export const SessionSchema = SchemaFactory.createForClass(Session);
@@ -51,6 +57,15 @@ export class Movie extends Document {
 
   @Prop()
   specialEdition?: string;
+
+  @Prop()
+  ageRating?: string;
+
+  @Prop()
+  minimumAge?: number;
+
+  @Prop()
+  sourceId?: string;
 
   @Prop()
   synopsis?: string;

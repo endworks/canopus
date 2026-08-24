@@ -23,6 +23,12 @@ export interface MovieBasic {
   name: string;
   specialEdition?: string;
   sessions?: Session[];
+  /** Spanish age classification as printed, e.g. "No recomendado para menores de 12 años." */
+  ageRating?: string;
+  /** Same classification as a number; 0 means suitable for all audiences. */
+  minimumAge?: number;
+  /** Numeric id reservaentradas uses for this film at this cinema. */
+  sourceId?: string;
   synopsis?: string;
   duration?: number;
   durationReadable?: string;
@@ -56,6 +62,10 @@ export interface Session {
   date?: string;
   type?: string;
   url?: string;
+  /** Numeric id reservaentradas uses for this showing. */
+  id?: string;
+  /** Whether seats are assigned rather than free seating. */
+  numbered?: boolean;
 }
 
 export interface Crew {

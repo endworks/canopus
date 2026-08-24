@@ -1,5 +1,11 @@
 export class Session {
   /**
+   * Identifier reservaentradas uses for this showing.
+   * @example '150616'
+   */
+  id?: string;
+
+  /**
    * Showtime.
    * @example '20:30'
    */
@@ -28,6 +34,12 @@ export class Session {
    * @example 'https://entradas.cinesa.es/...'
    */
   url?: string;
+
+  /**
+   * Whether seats are assigned rather than free seating.
+   * @example true
+   */
+  numbered?: boolean;
 }
 
 export class Crew {
@@ -111,6 +123,24 @@ export class MovieBasic {
 
   /** Showtimes for this movie. */
   sessions?: Session[];
+
+  /**
+   * Spanish age classification, as printed on the listing.
+   * @example 'No recomendado para menores de 12 años.'
+   */
+  ageRating?: string;
+
+  /**
+   * The same classification as a number. 0 means suitable for all audiences.
+   * @example 12
+   */
+  minimumAge?: number;
+
+  /**
+   * Identifier reservaentradas uses for this film at this cinema.
+   * @example '2215'
+   */
+  sourceId?: string;
 
   /**
    * Synopsis.

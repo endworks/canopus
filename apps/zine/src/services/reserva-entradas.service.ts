@@ -1,5 +1,5 @@
 import { HttpService } from '@nestjs/axios';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import * as cheerio from 'cheerio';
 import { lastValueFrom, timeout } from 'rxjs';
 import { Cinema, MovieBasic, Session } from '../models/cinema.interface';
@@ -7,6 +7,9 @@ import { generateSlug, minutesToString } from '../utils';
 
 const CINEMAS_URL = 'https://www.reservaentradas.com/cines';
 const REQUEST_TIMEOUT_MS = 10000;
+
+/** reservaentradas is a small PHP site — don't open a socket per film. */
+const MAX_CONCURRENT_FETCHES = 4;
 
 /**
  * Venue programmes that prefix the film title on reservaentradas. One pattern
@@ -26,6 +29,74 @@ const ANNIVERSARY = /\(?\s*(\d+ aniversario)\s*\)?/i;
 /** Venues whose real name starts with "Cine …" and must keep the prefix. */
 const KEEP_CINE_PREFIX = /^Cine Y/i;
 
+/** Trailing numeric segment of a film or session URL — a stable per-site id. */
+const SOURCE_ID = /\/(\d+)\/?(?:\?|$)/;
+
+const SPANISH_RATING = /menores de (\d+)/i;
+const ALL_AGES = /apto para todos/i;
+
+/** `Sala: <b>2</b>`, `Formato: <span …>(VOSE)</span>`, `Numerada: <b> Sí </b>` */
+const POPOVER = {
+  screen: /Sala:\s*(?:<[^>]+>)*\s*([^<]+)/i,
+  format: /Formato:\s*(?:<[^>]+>)*\s*([^<]+)/i,
+  numbered: /Numerada:\s*(?:<[^>]+>)*\s*([^<]+)/i,
+};
+
+/** Spanish age classification, as a minimum age. "Apto para todos" is 0. */
+const parseMinimumAge = (label: string): number | undefined => {
+  if (ALL_AGES.test(label)) return 0;
+  const match = SPANISH_RATING.exec(label);
+  return match ? parseInt(match[1], 10) : undefined;
+};
+
+/**
+ * Listings give day and month only. Pick the year that puts the date nearest
+ * today, so a January session listed in December lands next year instead of
+ * eleven months in the past. Built in UTC: containers run UTC, and a local
+ * midnight would round to the previous day at any positive offset.
+ */
+const resolveDate = (day: number, month: number, now = Date.now()): string => {
+  const year = new Date(now).getUTCFullYear();
+  return [year - 1, year, year + 1]
+    .map((candidate) => new Date(Date.UTC(candidate, month - 1, day)))
+    .reduce((best, date) =>
+      Math.abs(date.getTime() - now) < Math.abs(best.getTime() - now)
+        ? date
+        : best,
+    )
+    .toISOString()
+    .slice(0, 10);
+};
+
+const sourceId = (url?: string): string | undefined =>
+  SOURCE_ID.exec(url ?? '')?.[1];
+
+/** Run an async map with a ceiling on how many run at once. */
+const mapWithLimit = async <T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> => {
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (cursor < items.length) {
+        const index = cursor++;
+        results[index] = await fn(items[index]);
+      }
+    }),
+  );
+  return results;
+};
+
+/** One film as the cinema listing describes it, before its page is fetched. */
+interface BillboardEntry {
+  source: string;
+  /** Single Spanish genre; the listing is the only page that carries it. */
+  genre?: string;
+}
+
 /**
  * Scrapes reservaentradas.com. Kept separate from CinemaService so the part
  * that breaks when someone else edits their markup has no cache, database or
@@ -33,6 +104,8 @@ const KEEP_CINE_PREFIX = /^Cine Y/i;
  */
 @Injectable()
 export class ReservaEntradasService {
+  private readonly logger = new Logger(ReservaEntradasService.name);
+
   constructor(private httpService: HttpService) {}
 
   private async load(url: string): Promise<cheerio.CheerioAPI> {
@@ -72,15 +145,39 @@ export class ReservaEntradasService {
 
   /** Every film currently showing at one cinema, with its sessions. */
   public async getMovies(cinemaUrl: string): Promise<MovieBasic[]> {
-    const $ = await this.load(cinemaUrl);
-    const sources = $('.movie.row')
-      .map((_, el) => $(el).find('a').attr('href'))
-      .toArray()
-      .filter(Boolean);
-    return Promise.all(sources.map((source) => this.getMovie(source)));
+    const entries = this.parseBillboard(await this.load(cinemaUrl));
+    return mapWithLimit(entries, MAX_CONCURRENT_FETCHES, (entry) =>
+      this.getMovie(entry),
+    );
   }
 
-  private async getMovie(source: string): Promise<MovieBasic> {
+  /**
+   * The listing carries the genre and links to each film. Sessions are not
+   * usable from here: the listing shows only the next few, while the film page
+   * has the full run across every date.
+   */
+  private parseBillboard($: cheerio.CheerioAPI): BillboardEntry[] {
+    const entries: BillboardEntry[] = [];
+    $('.movie.row').each((_, el) => {
+      const source = $(el).find('a').attr('href');
+      if (!source) return;
+      entries.push({
+        source,
+        genre:
+          $(el)
+            .find('.event-description-short')
+            .text()
+            .trim()
+            .replace(/\.$/, '') || undefined,
+      });
+    });
+    return entries;
+  }
+
+  private async getMovie({
+    source,
+    genre,
+  }: BillboardEntry): Promise<MovieBasic> {
     const $ = await this.load(source);
     const { name, specialEdition } = this.parseTitle(
       $('h2 strong').first().text(),
@@ -88,6 +185,7 @@ export class ReservaEntradasService {
     const duration = parseInt(
       $('.member-descriptionX > p > strong').text().split(' ')[0],
     );
+    const ageRating = $('.calification-box').text().replace(/\s+/g, ' ').trim();
 
     return {
       id: generateSlug(name),
@@ -96,9 +194,13 @@ export class ReservaEntradasService {
       synopsis: $('#sinopsis_info span').text().replace(/\n/, '').trim(),
       duration,
       durationReadable: minutesToString(duration),
+      genres: genre ? [genre] : undefined,
+      ageRating: ageRating || undefined,
+      minimumAge: parseMinimumAge(ageRating),
       sessions: this.parseSessions($),
       poster: $('.media-object').attr('src')?.split('?')[0],
       trailer: $('#trailer iframe').attr('src'),
+      sourceId: sourceId(source),
       source,
     };
   }
@@ -130,52 +232,51 @@ export class ReservaEntradasService {
       .trim();
   }
 
+  /**
+   * Each date tab holds one pane of sessions. Screen, format and numbered
+   * seating come from the per-session popover rather than the pane's format
+   * heading, which only describes the first group on the pane.
+   */
   private parseSessions($: cheerio.CheerioAPI): Session[] {
-    const year = new Date().getFullYear();
     const dates: string[] = [];
-
     $('ul.nav-tabs li a').each((_, el) => {
       const match = $(el)
         .text()
-        .trim()
         .match(/(\d{1,2})\s*\/\s*(\d{1,2})/);
-      if (!match) return;
-      const day = parseInt(match[1], 10);
-      const month = parseInt(match[2], 10);
-      dates.push(new Date(year, month - 1, day).toISOString().split('T')[0]);
+      dates.push(
+        match
+          ? resolveDate(parseInt(match[1], 10), parseInt(match[2], 10))
+          : null,
+      );
     });
 
     const sessions: Session[] = [];
     dates.forEach((date, index) => {
-      $(`#${index + 1} > div`).each((_, formatBlock) => {
-        const type = $(formatBlock)
-          .find('p')
-          .first()
-          .text()
-          .replace(/\(|\)/g, '')
-          .trim();
+      if (!date) return;
+      $(`#${index + 1} .session-container`).each((_, el) => {
+        const popover = $(el).attr('popover-content') || '';
+        const link = $(el).find('a.sesion');
+        const field = (pattern: RegExp) => pattern.exec(popover)?.[1].trim();
+        const format =
+          field(POPOVER.format) || $(el).find('.label-cinema').text().trim();
+        const numbered = field(POPOVER.numbered);
 
-        $(formatBlock)
-          .find('.session-container')
-          .each((_, session) => {
-            const link = $(session).find('a.sesion');
-            const popover = $(session).attr('popover-content') || '';
-            const screen = popover.match(/Sala:\s*<b>(\d+)<\/b>/i);
-            sessions.push({
-              time: link.text().trim(),
-              url: link.attr('href'),
-              screen: screen ? screen[1] : null,
-              date,
-              type,
-            });
-          });
+        sessions.push({
+          id: sourceId(link.attr('href')),
+          time: link.text().trim(),
+          url: link.attr('href'),
+          screen: field(POPOVER.screen) || null,
+          date,
+          type: format.replace(/[()]/g, '').trim() || null,
+          numbered: numbered ? /^s[ií]$/i.test(numbered) : undefined,
+        });
       });
     });
 
     return sessions.sort(
       (a, b) =>
-        new Date(`${a.date}T${a.time}:00`).getTime() -
-        new Date(`${b.date}T${b.time}:00`).getTime(),
+        new Date(`${a.date}T${a.time}:00Z`).getTime() -
+        new Date(`${b.date}T${b.time}:00Z`).getTime(),
     );
   }
 }

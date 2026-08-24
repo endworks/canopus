@@ -177,8 +177,8 @@ jobs:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           HOST: op://end.works/end.works/URL
           PORT: op://end.works/end.works/port
-          USERNAME: op://end.works/end.works/username
-          KEY: op://end.works/SSH Key/private key
+          USERNAME: op://end.works/LoveLust Deploy/username
+          KEY: op://end.works/LoveLust Deploy/private key
 
       - name: Load database secret
         if: ${{ github.event_name != 'pull_request' && (github.ref_name == 'main' || github.ref_type == 'tag') && matrix.db }}

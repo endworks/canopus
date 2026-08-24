@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Cinema, MovieBasic } from '../models/cinema.interface';
 import { ReservaEntradasService } from './reserva-entradas.service';
 import { SensaCineService } from './sensacine.service';
-import { sanitizeTitle, similarity } from '../utils';
+import { similarity, venueKey } from '../utils';
 
 /** A site we scrape billboards from. One implementation per site. */
 export interface CinemaSource {
@@ -14,15 +14,11 @@ export interface CinemaSource {
   getMovies(cinemaUrl: string): Promise<MovieBasic[]>;
 }
 
-/** Venue names carry a generic prefix that says nothing about which venue. */
-const venueKey = (cinema: Cinema): string =>
-  sanitizeTitle(cinema.name).replace(/^cines?\s+/, '');
-
 /** Two listings of the same venue, allowing for a trailing city or "sala". */
 const isSameVenue = (a: Cinema, b: Cinema): boolean => {
   if (a.location?.toLowerCase() !== b.location?.toLowerCase()) return false;
-  const left = venueKey(a);
-  const right = venueKey(b);
+  const left = venueKey(a.name);
+  const right = venueKey(b.name);
   return (
     left.includes(right) ||
     right.includes(left) ||

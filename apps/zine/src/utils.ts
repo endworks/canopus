@@ -21,6 +21,13 @@ export const sanitizeTitle = (title: string): string =>
 export const generateSlug = (title: string): string =>
   sanitizeTitle(title).replace(/\s/g, '-');
 
+/**
+ * A venue name without the generic 'Cine'/'Cines' prefix, which says nothing
+ * about which venue it is: it neither identifies a venue nor orders a list.
+ */
+export const venueKey = (name: string): string =>
+  sanitizeTitle(name).replace(/^cines?\s+/, '');
+
 /** cache-manager v7 TTLs are milliseconds. Six hours. */
 export const cacheTTL = 1000 * 60 * 60 * 6;
 

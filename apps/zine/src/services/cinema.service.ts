@@ -20,7 +20,7 @@ import {
 import { Cinema as CinemaSchema } from '../schemas/cinema.schema';
 import { Movie as MovieSchema } from '../schemas/movie.schema';
 import { Match, pickBest, searchQueries, shortlist } from '../movie-matcher';
-import { minutesToString } from '../utils';
+import { minutesToString, venueKey } from '../utils';
 import { CinemaSources } from './cinema-source';
 import { TheMovieDBService } from './themoviedb.service';
 
@@ -56,9 +56,13 @@ const compareText = (a?: string, b?: string): number => {
   return collator.compare(a, b);
 };
 
-/** The listing reads as an alphabetical index: city first, then venue name. */
+/**
+ * The listing reads as an alphabetical index: city first, then venue name.
+ * Names sort on their venue key, so 'Cines Palafox' files under P.
+ */
 const byCityThenName = (a: Cinema, b: Cinema): number =>
-  compareText(a.location, b.location) || compareText(a.name, b.name);
+  compareText(a.location, b.location) ||
+  compareText(venueKey(a.name), venueKey(b.name));
 
 @Injectable()
 export class CinemaService {

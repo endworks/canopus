@@ -9,6 +9,15 @@ on:
   pull_request:
     branches:
       - main
+  # Manual redeploy, for when the images are already built but the deploy step
+  # failed (a bad secret reference, an unreachable host).
+  workflow_dispatch:
+    inputs:
+      services:
+        description: 'Services to deploy: "all" or a comma-separated subset'
+        required: false
+        default: all
+        type: string
 
 env:
   REGISTRY: ghcr.io
@@ -26,6 +35,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Detect changed paths
+        if: ${{ github.event_name != 'workflow_dispatch' }}
         uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -70,9 +80,20 @@ jobs:
 
       - name: Build deploy matrix from affected services
         id: set-matrix
+        env:
+          # Via env, not inline interpolation, so the input can't break the script.
+          SERVICES: ${{ inputs.services }}
         run: |
-          if [ "${{ github.ref_type }}" = "tag" ]; then
-            CHANGED='["gateway","zaragoza","zine","rae","twitter-downloader"]'
+          ALL='["gateway","zaragoza","zine","rae","twitter-downloader"]'
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ -z "$SERVICES" ] || [ "$SERVICES" = "all" ]; then
+              CHANGED="$ALL"
+            else
+              CHANGED=$(printf '%s' "$SERVICES" | jq -Rc '
+                split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))')
+            fi
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
+            CHANGED="$ALL"
           else
             CHANGED='${{ steps.filter.outputs.changes }}'
           fi

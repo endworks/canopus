@@ -74,16 +74,27 @@ class FakeModel<T extends { id: string }> {
     return { lean: async () => (doc ? { ...doc } : null) };
   }
 
+  async updateMany(
+    filter: { hidden?: unknown },
+    update: { $unset: Record<string, unknown> },
+  ) {
+    const keys = Object.keys(update.$unset);
+    this.docs.forEach((doc) =>
+      keys.forEach((key) => {
+        if (filter.hidden && !(key in doc)) return;
+        delete doc[key];
+      }),
+    );
+    return { modifiedCount: this.docs.length };
+  }
+
   async bulkWrite(operations: AnyBulkWriteOperation[]) {
     operations.forEach((operation) => {
       const { filter, update } = (
         operation as {
           updateOne: {
             filter: { id: string };
-            update: {
-              $set: Record<string, unknown>;
-              $unset?: Record<string, unknown>;
-            };
+            update: { $set: Record<string, unknown> };
           };
         }
       ).updateOne;
@@ -91,7 +102,6 @@ class FakeModel<T extends { id: string }> {
         this.docs.find((item) => item.id === filter.id) ??
         this.docs[this.docs.push({ id: filter.id } as T) - 1];
       applyUpdate(doc, update.$set);
-      Object.keys(update.$unset ?? {}).forEach((key) => delete doc[key]);
     });
     return { modifiedCount: operations.length };
   }
@@ -193,25 +203,33 @@ describe('getLinesUpdate', () => {
     const resp = await service.getLinesUpdate();
 
     // The source still offers it; there is just nothing to draw.
-    expect(resp['TUR']).toMatchObject({ withdrawn: false, hidden: true });
+    expect(resp['TUR'].hidden).toBe(true);
+    expect(resp['21'].hidden).toBe(false);
   });
 
-  it('drops the flag the two of them replaced', async () => {
+  it('drops the flag the two of them replaced, even where no run rewrites', async () => {
     const { service, lineModel } = build({
       lines: [['21', 'BARRIO JESUS - OLIVER MIRALBUENO']],
       kmls: { [kmlUrl('21', 1)]: [['1', 'Av. de Navarra nº 71']] },
       storedLines: [
         { id: '21', name: 'Barrio Jesús', stations: [], hidden: true } as never,
+        // Already withdrawn, so it gets no write of its own.
+        {
+          id: '24',
+          name: 'Las Fuentes',
+          withdrawn: true,
+          hidden: true,
+        } as never,
       ],
     });
 
     await service.getLinesUpdate();
 
-    expect(lineModel.docs[0]).not.toHaveProperty('hidden');
+    lineModel.docs.forEach((line) => expect(line).not.toHaveProperty('hidden'));
   });
 
   it('hides a line the source stopped offering and drops it from its stops', async () => {
-    const { service, stationModel } = build({
+    const { service, stationModel, lineModel } = build({
       lines: [['21', 'BARRIO JESUS - OLIVER MIRALBUENO']],
       kmls: { [kmlUrl('21', 1)]: [['1', 'Av. de Navarra nº 71']] },
       storedLines: [
@@ -225,8 +243,13 @@ describe('getLinesUpdate', () => {
 
     const resp = await service.getLinesUpdate();
 
-    expect(resp['24']).toMatchObject({ withdrawn: true, hidden: true });
-    expect(resp['21']).toMatchObject({ withdrawn: false, hidden: false });
+    expect(resp['24'].hidden).toBe(true);
+    expect(resp['21'].hidden).toBe(false);
+    expect(lineModel.docs.find((line) => line.id === '24').withdrawn).toBe(
+      true,
+    );
+    // Bookkeeping: it says why a line is hidden, and stays off the wire.
+    expect(resp['24']).not.toHaveProperty('withdrawn');
     expect(stationModel.docs.find((s) => s.id === '1').lines).toEqual(['21']);
     // A stop no line reaches any more is still cleaned up.
     expect(stationModel.docs.find((s) => s.id === '7').lines).toEqual([]);
@@ -305,7 +328,7 @@ describe('getLinesUpdate', () => {
     expect(Object.keys(JSON.parse(JSON.stringify(resp)))).toEqual(expected);
   });
 
-  it('prefers a route file the site links over the one it guesses', async () => {
+  it('reads a route file the site links, on top of the ones it guesses', async () => {
     const linked =
       'https://zaragoza.avanzagrupo.com/wp-content/uploads/2026/01/21-1.kml';
     const { service, httpService } = build({
@@ -319,11 +342,13 @@ describe('getLinesUpdate', () => {
 
     const resp = await service.getLinesUpdate();
 
-    expect(resp['21'].stations).toEqual(['5']);
-    expect(httpService.get).not.toHaveBeenCalledWith(
-      kmlUrl('21', 1),
-      undefined,
+    // A page that links one direction must not cost us the other.
+    expect(resp['21'].stations).toEqual(['5', '1']);
+    const requested = (httpService.get as jest.Mock).mock.calls.map(
+      ([url]) => url,
     );
+    expect(requested).toContain(linked);
+    expect(requested).toContain(kmlUrl('21', 1));
   });
 
   it('leaves the stored lines alone when the dropdown reads empty', async () => {

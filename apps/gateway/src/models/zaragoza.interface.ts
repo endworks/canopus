@@ -111,12 +111,6 @@ export class BusLine {
   hidden: boolean;
 
   /**
-   * Whether the line has been withdrawn from the network.
-   * @example false
-   */
-  withdrawn?: boolean;
-
-  /**
    * ISO timestamp of the last update.
    * @example '2026-06-23T12:00:00.000Z'
    */

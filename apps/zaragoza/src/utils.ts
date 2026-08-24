@@ -377,14 +377,20 @@ export const KmlForLine = (lineId: string): string[] => {
 };
 
 // The site does not link its route files anywhere we know of, but if it ever
-// does, a published link beats a URL we guessed. Read from the lines page that
-// is fetched anyway, so this costs no extra request.
+// does, a published link is worth reading alongside the ones we guess. Read
+// from the lines page that is fetched anyway, so this costs no extra request.
+// Only links to the site itself count: the page is scanned whole, and whatever
+// this returns gets fetched and stored.
+const kmlHost = 'zaragoza.avanzagrupo.com';
+
 export const kmlLinksByLine = (html: string): Map<string, string[]> => {
   const links = new Map<string, string[]>();
   for (const [, url, lineId] of html.matchAll(
     /["'](https?:\/\/[^"']*?\/([A-Za-z0-9]+)-\d+\.kml)["']/g,
   )) {
-    links.set(lineId, [...(links.get(lineId) ?? []), url]);
+    if (new URL(url).host !== kmlHost) continue;
+    const id = normalizeLineId(lineId);
+    links.set(id, [...(links.get(id) ?? []), url]);
   }
   return links;
 };

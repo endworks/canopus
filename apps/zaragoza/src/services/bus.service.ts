@@ -13,7 +13,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Cache } from 'cache-manager';
 import * as cheerio from 'cheerio';
-import { AnyBulkWriteOperation, Model } from 'mongoose';
+import { Model } from 'mongoose';
 
 import {
   BusLineResponse,
@@ -50,7 +50,6 @@ const busWebURL =
   'https://zaragoza-pasobus.avanzagrupo.com/frm_esquemaparadatime.php?poste=';
 const busLinesURL = 'https://zaragoza.avanzagrupo.com/lineas-y-horarios/';
 
-const requestTimeout = 10000;
 // avanzagrupo.com is a WordPress site: asking it for ~90 route files at once is
 // how a working update starts looking like an outage.
 const maxConcurrentLines = 6;
@@ -64,6 +63,8 @@ type KmlDocument =
 
 // The stops of a line, or null when its route could not be read at all.
 type LineRoute = StationBase[] | null;
+
+type ActiveLines = Map<string, string | undefined>;
 
 // What one read of the lines page yields.
 interface PublishedLines {
@@ -91,14 +92,17 @@ const parseKmlStations = (xml: string): StationBase[] => {
     });
 };
 
+// `withdrawn` is how the two halves of `hidden` recover on their own terms; it
+// is bookkeeping, so it stays out of the response.
 const toLineResponse = ({
   _id,
+  withdrawn,
   ...line
 }: BusLine & { _id?: unknown }): BusLineResponse => ({
   ...line,
   // Out of listings either because the source withdrew the line or because
   // there is no route to draw for it.
-  hidden: !!line.withdrawn || !line.stations?.length,
+  hidden: !!withdrawn || !line.stations?.length,
 });
 
 const sameList = (a: string[], b: string[]) =>
@@ -111,22 +115,9 @@ const upsertById = <T extends { id: string }>(
   updateOne: { filter: { id }, update: { $set: data }, upsert: true },
 });
 
-// `hidden` was stored until it started carrying two different facts at once;
-// drop it from each line as it is rewritten.
-const lineUpdate = (id: string, data: Partial<BusLine>) =>
-  ({
-    updateOne: {
-      filter: { id },
-      update: { $set: data, $unset: { hidden: '' } },
-      upsert: true,
-    },
-  }) as AnyBulkWriteOperation<BusLineDocument>;
-
 @Injectable()
 export class BusService {
   private readonly logger = new Logger(BusService.name);
-  // Route files the lines page links, if it links any: filled in per run.
-  private publishedRouteFiles = new Map<string, string[]>();
 
   constructor(
     @Inject(CACHE_MANAGER)
@@ -378,17 +369,28 @@ export class BusService {
    * line the source stopped offering is hidden rather than deleted.
    */
   public async getLinesUpdate(): Promise<BusLinesResponse> {
-    const [storedLines, storedStations] = await Promise.all([
+    const [storedLines, storedStations, published] = await Promise.all([
       this.getAllLines(),
       this.getAllStations(),
+      this.fetchZaragozaLines(),
     ]);
     const linesBackup = new Map(storedLines.map((line) => [line.id, line]));
     const stationsBackup = new Map(
       storedStations.map((station) => [station.id, station]),
     );
 
-    const activeLines = await this.fetchActiveLines();
-    const routes = await this.fetchRoutes([...activeLines.keys()]);
+    // `hidden` was stored until it started carrying two facts at once. Clearing
+    // it here rather than per line write reaches the ones no run rewrites.
+    await this.busLineModel.updateMany(
+      { hidden: { $exists: true } },
+      { $unset: { hidden: '' } },
+    );
+
+    const activeLines = this.activeLines(published.lines);
+    const routes = await this.fetchRoutes(
+      [...activeLines.keys()],
+      published.routeFiles,
+    );
 
     const stationOps = this.stationUpdates(routes, stationsBackup, activeLines);
     const lineOps = this.lineUpdates(routes, linesBackup, activeLines);
@@ -408,9 +410,7 @@ export class BusService {
 
   // The lines the source currently offers, mapped to the label it published
   // for each (the extras are not listed, so they have none).
-  private async fetchActiveLines(): Promise<Map<string, string | undefined>> {
-    const { lines, routeFiles } = await this.fetchZaragozaLines();
-    this.publishedRouteFiles = routeFiles;
+  private activeLines(lines: ValueLabel[]): ActiveLines {
     if (!lines.length) {
       // Every stored line would look withdrawn if the dropdown stopped
       // parsing, so leave the database as it is instead.
@@ -422,11 +422,21 @@ export class BusService {
     ]);
   }
 
-  private async fetchRoutes(ids: string[]): Promise<Map<string, LineRoute>> {
-    const routes = new Map<string, LineRoute>();
-    await mapWithLimit(ids, maxConcurrentLines, async (lineId) => {
-      routes.set(lineId, await this.fetchLineStations(lineId));
-    });
+  private async fetchRoutes(
+    ids: string[],
+    routeFiles: Map<string, string[]>,
+  ): Promise<Map<string, LineRoute>> {
+    const routes = new Map(
+      await mapWithLimit(
+        ids,
+        maxConcurrentLines,
+        async (lineId) =>
+          [
+            lineId,
+            await this.fetchLineStations(lineId, routeFiles.get(lineId)),
+          ] as const,
+      ),
+    );
 
     const unreadable = ids.filter((lineId) => !routes.get(lineId));
     if (unreadable.length === ids.length) {
@@ -440,10 +450,15 @@ export class BusService {
     return routes;
   }
 
-  private async fetchLineStations(id: string): Promise<LineRoute> {
+  private async fetchLineStations(
+    id: string,
+    published: string[] = [],
+  ): Promise<LineRoute> {
     try {
-      // A link the site publishes beats a URL guessed from the convention.
-      const urls = this.publishedRouteFiles.get(id) ?? KmlForLine(id);
+      // Read both what the site links and what the convention predicts: a page
+      // that links one direction must not cost us the other, and a file that is
+      // not there costs nothing to ask for.
+      const urls = [...new Set([...published, ...KmlForLine(id)])];
       const documents = await Promise.all(
         urls.map((url) => this.fetchKmlDocument(url)),
       );
@@ -465,9 +480,7 @@ export class BusService {
 
   private async fetchKmlDocument(url: string): Promise<KmlDocument> {
     try {
-      const xml = await fetchWithTimeout<string>(this.httpService, url, {
-        timeoutMs: requestTimeout,
-      });
+      const xml = await fetchWithTimeout<string>(this.httpService, url);
       return { status: 'read', xml };
     } catch (exception) {
       if (exception.response?.status === HttpStatus.NOT_FOUND) {
@@ -481,7 +494,7 @@ export class BusService {
   private stationUpdates(
     routes: Map<string, LineRoute>,
     stationsBackup: Map<string, BusStation>,
-    activeLines: Map<string, string | undefined>,
+    activeLines: ActiveLines,
   ) {
     // One pass records both a stop's name variants and the lines that reach
     // it. A stop is named slightly differently in every line's KML, so all of
@@ -518,13 +531,12 @@ export class BusService {
           : [upsertById<BusStation>(stationId, { lines })];
       }
 
-      const street = pickCanonicalStreet(
-        entry.variants.map((variant) => variant.street),
+      const normalized = entry.variants.map((variant) =>
+        normalizeStreet(variant.street),
       );
+      const street = pickCanonicalStreet(normalized);
       const chosen =
-        entry.variants.find(
-          (variant) => normalizeStreet(variant.street) === street,
-        ) ?? entry.variants[0];
+        entry.variants[normalized.indexOf(street)] ?? entry.variants[0];
 
       const unchanged =
         backup?.street === street &&
@@ -551,7 +563,7 @@ export class BusService {
   private lineUpdates(
     routes: Map<string, LineRoute>,
     linesBackup: Map<string, BusLine>,
-    activeLines: Map<string, string | undefined>,
+    activeLines: ActiveLines,
   ) {
     const updates = [...activeLines].flatMap(([lineId, label]) => {
       const route = routes.get(lineId);
@@ -561,7 +573,7 @@ export class BusService {
         ? route.map((station) => station.id)
         : (linesBackup.get(lineId)?.stations ?? []);
       return [
-        lineUpdate(lineId, {
+        upsertById<BusLine>(lineId, {
           id: lineId,
           name:
             canonicalLineName(lineId) ??
@@ -593,7 +605,7 @@ export class BusService {
       ...updates,
       ...retired
         .filter((lineId) => !linesBackup.get(lineId).withdrawn)
-        .map((lineId) => lineUpdate(lineId, { withdrawn: true })),
+        .map((lineId) => upsertById<BusLine>(lineId, { withdrawn: true })),
     ];
   }
 
@@ -602,7 +614,6 @@ export class BusService {
       const html = await fetchWithTimeout<string>(
         this.httpService,
         busLinesURL,
-        { timeoutMs: requestTimeout },
       );
 
       const $ = cheerio.load(html);
@@ -670,25 +681,5 @@ export class BusService {
 
   async getLineById(id: string) {
     return this.busLineModel.findOne({ id }).lean();
-  }
-
-  async saveStation(data: Partial<BusStation>) {
-    return this.busStationModel
-      .findOneAndUpdate(
-        { id: data.id },
-        { $set: data },
-        { returnDocument: 'after', upsert: true },
-      )
-      .lean();
-  }
-
-  async saveLine(data: Partial<BusLine>) {
-    return this.busLineModel
-      .findOneAndUpdate(
-        { id: data.id },
-        { $set: data },
-        { returnDocument: 'after', upsert: true },
-      )
-      .lean();
   }
 }

@@ -220,17 +220,17 @@ export const fixWords = (text: string): string => {
 };
 
 // Lines whose KML exists but that avanzagrupo.com leaves out of the
-// lineas-y-horarios dropdown.
-export const extraLineIds = ['24', 'EM1', 'EM2'];
+// lineas-y-horarios dropdown. Anything else the dropdown stops offering is
+// treated as withdrawn from the network and hidden (line 24 was).
+export const extraLineIds = ['EM1', 'EM2'];
 
 // Names as published on https://zaragoza.avanzagrupo.com/lineas-y-horarios/,
-// with the accents the site omits restored. 24/EM1/EM2 come from their KML
+// with the accents the site omits restored. EM1/EM2 come from their KML
 // document titles.
 export const canonicalLineNames: Record<string, string> = {
   '21': 'Barrio Jesús - Oliver Miralbueno',
   '22': 'Las Fuentes - Bombarda',
   '23': 'Parque Venecia - Siglo XXI',
-  '24': 'Las Fuentes - Valdefierro',
   '25': 'La Cartuja - Puerta del Carmen',
   '28': 'Coso - Montañana/Peñaflor',
   '29': 'Camino de las Torres - San Gregorio',
@@ -289,6 +289,39 @@ export const normalizeLineId = (id: string): string => {
   return lineIdsByUppercase.get(trimmed.toUpperCase()) ?? capitalize(trimmed);
 };
 
+// Listings show the numbered lines first, the lettered ones (C, Ci, EM, TUR)
+// after them, and the night lines (N1-N7) last.
+const lineGroup = (id: string): number => {
+  if (/^\d+$/.test(id)) return 0;
+  if (/^N\d+$/i.test(id)) return 2;
+  return 1;
+};
+
+// "Ci10" has to sort after "Ci9", so compare digit runs as numbers rather than
+// as text.
+const naturalCompare = (a: string, b: string): number => {
+  const chunksOf = (text: string) => text.match(/\d+|\D+/g) ?? [];
+  const left = chunksOf(a);
+  const right = chunksOf(b);
+
+  for (let index = 0; index < Math.min(left.length, right.length); index++) {
+    const one = left[index];
+    const other = right[index];
+    if (/^\d/.test(one) && /^\d/.test(other)) {
+      if (Number(one) !== Number(other)) return Number(one) - Number(other);
+      continue;
+    }
+    const lowered = one.toLowerCase().localeCompare(other.toLowerCase(), 'es');
+    if (lowered) return lowered;
+    if (one !== other) return one < other ? -1 : 1;
+  }
+
+  return left.length - right.length;
+};
+
+export const compareLineIds = (a: string, b: string): number =>
+  lineGroup(a) - lineGroup(b) || naturalCompare(a, b);
+
 const accentedChars = /[áéíóúüñÁÉÍÓÚÜÑ]/g;
 
 const shoutRatio = (text: string): number => {
@@ -329,53 +362,36 @@ export const pickCanonicalStreet = (names: string[]): string => {
   );
 };
 
-export const KmlForLine = (lineId: string): string[] => {
-  const kml = {
-    Ci3: [
-      'https://zaragoza.avanzagrupo.com/wp-content/uploads/2025/03/Ci3-1.kml',
-    ],
-    Ci4: [
-      'https://zaragoza.avanzagrupo.com/wp-content/uploads/2025/03/Ci4-1.kml',
-    ],
-    EM1: [
-      'https://zaragoza.avanzagrupo.com/wp-content/uploads/2025/08/EM1-1.kml',
-      'https://zaragoza.avanzagrupo.com/wp-content/uploads/2025/08/EM1-2.kml',
-    ],
-    EM2: [
-      'https://zaragoza.avanzagrupo.com/wp-content/uploads/2025/08/EM2-1.kml',
-      'https://zaragoza.avanzagrupo.com/wp-content/uploads/2025/08/EM2-2.kml',
-    ],
-    TUR: [
-      'https://zaragoza.avanzagrupo.com/wp-content/uploads/2024/02/TUR-1.kml',
-      'https://zaragoza.avanzagrupo.com/wp-content/uploads/2024/02/TUR-2.kml',
-    ],
-  };
-  if (Object.keys(kml).includes(lineId)) {
-    return kml[lineId];
-  }
+// Route files are not linked anywhere, so they are addressed by convention:
+// <line>-1.kml for the outbound trip and <line>-2.kml for the return one, in
+// the folder they were uploaded to. Lines that run in a single direction have
+// no -2 file, and the caller treats a missing file as "no stops from here"
+// rather than as an error, so only the folder has to be pinned below.
+const kmlOverrides: Record<string, string[]> = {
+  Ci3: [
+    'https://zaragoza.avanzagrupo.com/wp-content/uploads/2025/03/Ci3-1.kml',
+    'https://zaragoza.avanzagrupo.com/wp-content/uploads/2025/03/Ci3-2.kml',
+  ],
+  Ci4: [
+    'https://zaragoza.avanzagrupo.com/wp-content/uploads/2025/03/Ci4-1.kml',
+    'https://zaragoza.avanzagrupo.com/wp-content/uploads/2025/03/Ci4-2.kml',
+  ],
+  EM1: [
+    'https://zaragoza.avanzagrupo.com/wp-content/uploads/2025/08/EM1-1.kml',
+    'https://zaragoza.avanzagrupo.com/wp-content/uploads/2025/08/EM1-2.kml',
+  ],
+  EM2: [
+    'https://zaragoza.avanzagrupo.com/wp-content/uploads/2025/08/EM2-1.kml',
+    'https://zaragoza.avanzagrupo.com/wp-content/uploads/2025/08/EM2-2.kml',
+  ],
+  TUR: [
+    'https://zaragoza.avanzagrupo.com/wp-content/uploads/2024/02/TUR-1.kml',
+    'https://zaragoza.avanzagrupo.com/wp-content/uploads/2024/02/TUR-2.kml',
+  ],
+};
 
-  const singleDestinationLines = [
-    '30',
-    '54',
-    '55',
-    '56',
-    '57',
-    '58',
-    '59',
-    'N1',
-    'N3',
-    'N4',
-    'N5',
-    'N7',
-  ];
-  if (singleDestinationLines.includes(lineId)) {
-    return [
-      `https://zaragoza.avanzagrupo.com/wp-content/uploads/2019/12/${lineId}-1.kml`,
-    ];
-  }
-
-  return [
+export const KmlForLine = (lineId: string): string[] =>
+  kmlOverrides[lineId] ?? [
     `https://zaragoza.avanzagrupo.com/wp-content/uploads/2019/12/${lineId}-1.kml`,
     `https://zaragoza.avanzagrupo.com/wp-content/uploads/2019/12/${lineId}-2.kml`,
   ];
-};

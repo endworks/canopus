@@ -1,11 +1,14 @@
 import { HttpService } from '@nestjs/axios';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import {
+  HttpException,
   HttpStatus,
   Inject,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Cache } from 'cache-manager';
@@ -30,6 +33,7 @@ import {
   canonicalLineNames,
   capitalize,
   capitalizeEachWord,
+  compareLineIds,
   extraLineIds,
   fixWords,
   isInt,
@@ -46,6 +50,8 @@ const busWebURL =
 
 @Injectable()
 export class BusService {
+  private readonly logger = new Logger(BusService.name);
+
   constructor(
     @Inject(CACHE_MANAGER)
     private cacheManager: Cache,
@@ -219,7 +225,7 @@ export class BusService {
             resp.lines.push(time.line);
           }
         });
-        resp.lines.sort();
+        resp.lines.sort(compareLineIds);
         resp.times.sort((a, b) => {
           const normalize = (time: string) => time.trim().toLowerCase();
           const getWeight = (time: string): number => {
@@ -283,12 +289,7 @@ export class BusService {
     try {
       const cache: BusLinesResponse = await this.cacheManager.get(`bus/lines`);
       if (cache) return cache;
-      const resp: BusLinesResponse = {};
-      const lines = await this.getAllLines();
-      lines.forEach((line) => {
-        const { _id, ...lineWithoutId } = line;
-        resp[line.id] = lineWithoutId;
-      });
+      const resp = this.toLinesResponse(await this.getAllLines());
       await this.cacheManager.set(`bus/lines`, resp);
       return resp;
     } catch (exception) {
@@ -323,6 +324,8 @@ export class BusService {
       await this.cacheManager.set(`bus/lines/${id}`, lineWithoutId);
       return lineWithoutId;
     } catch (exception) {
+      // An unknown line is a 404; only wrap what is not already an HTTP error.
+      if (exception instanceof HttpException) throw exception;
       throw new InternalServerErrorException(
         {
           statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
@@ -333,6 +336,10 @@ export class BusService {
     }
   }
 
+  // Rebuilds every line and every stop from the KML avanzagrupo publishes.
+  // Nothing here is allowed to fail the whole run: a line whose KML is missing
+  // keeps the stops already stored, and a line the source stopped offering is
+  // hidden rather than deleted, so it can come back with its data intact.
   public async getLinesUpdate(): Promise<BusLinesResponse | ErrorResponse> {
     try {
       const linesBackup = new Map(
@@ -342,23 +349,53 @@ export class BusService {
         (await this.getAllStations()).map((station) => [station.id, station]),
       );
 
-      const availableLines = await this.fetchZaragozaLines();
+      const availableLines = await this.fetchZaragozaLines(true);
+      if (!availableLines.length) {
+        // Every stored line would look withdrawn if the dropdown stopped
+        // parsing, so leave the database as it is instead.
+        throw new ServiceUnavailableException(
+          {
+            statusCode: HttpStatus.SERVICE_UNAVAILABLE,
+            message: 'Zaragoza published no bus lines to update from',
+          },
+          'Zaragoza published no bus lines to update from',
+        );
+      }
+
       const linesToBeUpdated = [
         ...availableLines.map((line) => line.value),
         ...extraLineIds.filter(
           (id) => !availableLines.some((line) => line.value === id),
         ),
       ];
+      const activeLines = new Set(linesToBeUpdated);
 
       const stationsByLine = new Map<string, StationBase[]>();
       await Promise.all(
         linesToBeUpdated.map(async (lineId) => {
-          stationsByLine.set(
-            lineId,
-            await this.fetchZaragozaLineFromKml(lineId),
-          );
+          stationsByLine.set(lineId, await this.fetchLineStations(lineId));
         }),
       );
+
+      const linesWithoutStations = linesToBeUpdated.filter(
+        (lineId) => !stationsByLine.get(lineId).length,
+      );
+      if (linesWithoutStations.length === linesToBeUpdated.length) {
+        throw new ServiceUnavailableException(
+          {
+            statusCode: HttpStatus.SERVICE_UNAVAILABLE,
+            message: 'No bus line route could be read from avanzagrupo.com',
+          },
+          'No bus line route could be read from avanzagrupo.com',
+        );
+      }
+      if (linesWithoutStations.length) {
+        this.logger.warn(
+          `No stops read for ${linesWithoutStations
+            .sort(compareLineIds)
+            .join(', ')}; keeping the stored ones`,
+        );
+      }
 
       // A stop is named slightly differently in every line's KML, so collect
       // all of its variants before writing instead of letting whichever line
@@ -373,8 +410,40 @@ export class BusService {
         ),
       );
 
+      // A stop missing from every KML this run may still be served, so it is
+      // only rewritten when one of the lines it lists no longer exists.
+      const stationIds = new Set([
+        ...stationVariants.keys(),
+        ...stationsBackup.keys(),
+      ]);
+
       await Promise.all(
-        [...stationVariants.entries()].map(async ([stationId, variants]) => {
+        [...stationIds].map(async (stationId) => {
+          const backup = stationsBackup.get(stationId);
+          const variants = stationVariants.get(stationId) ?? [];
+          const lines = [
+            ...new Set([
+              ...(backup?.lines ?? []),
+              ...linesToBeUpdated.filter((lineId) =>
+                stationsByLine
+                  .get(lineId)
+                  .some((station) => station.id === stationId),
+              ),
+            ]),
+          ]
+            .filter((lineId) => activeLines.has(lineId))
+            .sort(compareLineIds);
+
+          if (!variants.length) {
+            const stored = backup?.lines ?? [];
+            const unchanged =
+              stored.length === lines.length &&
+              stored.every((lineId, index) => lineId === lines[index]);
+            if (unchanged) return;
+            await this.saveStation({ id: stationId, lines });
+            return;
+          }
+
           const street = pickCanonicalStreet(
             variants.map((variant) => variant.street),
           );
@@ -384,16 +453,6 @@ export class BusService {
                 restoreAccents(variant.street).replace(/\s+/g, ' ').trim() ===
                 street,
             ) ?? variants[0];
-          const lines = [
-            ...new Set([
-              ...(stationsBackup.get(stationId)?.lines ?? []),
-              ...linesToBeUpdated.filter((lineId) =>
-                stationsByLine
-                  .get(lineId)
-                  .some((station) => station.id === stationId),
-              ),
-            ]),
-          ].sort();
 
           await this.saveStation({
             id: stationId,
@@ -411,12 +470,10 @@ export class BusService {
 
       await Promise.all(
         linesToBeUpdated.map(async (lineId) => {
-          const stations = stationsByLine
-            .get(lineId)
-            .map((station) => station.id);
-          // TUR's KML names its placemarks without a "poste N -" prefix, so it
-          // yields no stations and stays hidden.
-          const hidden = !stations.length ? true : undefined;
+          const fresh = stationsByLine.get(lineId);
+          const stations = fresh.length
+            ? fresh.map((station) => station.id)
+            : (linesBackup.get(lineId)?.stations ?? []);
           const line: BusLineResponse = {
             id: lineId,
             name:
@@ -430,22 +487,44 @@ export class BusService {
               ),
             lastUpdated: new Date().toISOString(),
             stations,
-            hidden,
+            // TUR's KML names its placemarks without a "poste N -" prefix, so
+            // it yields no stops and has no route to draw. Written on every
+            // run: an undefined `hidden` is dropped from the update, which
+            // would leave a line hidden forever once it failed once.
+            hidden: !stations.length,
           };
           await this.saveLine(line);
         }),
       );
 
-      const resp: BusLinesResponse = {};
-      const lines = await this.getAllLines();
-      lines.forEach((line) => {
-        const { _id, ...lineWithoutId } = line;
-        resp[line.id] = lineWithoutId;
-      });
+      const retiredLines = [...linesBackup.keys()].filter(
+        (lineId) => !activeLines.has(lineId),
+      );
+      await Promise.all(
+        retiredLines.map(async (lineId) => {
+          if (linesBackup.get(lineId).hidden) return;
+          await this.saveLine({ id: lineId, hidden: true });
+        }),
+      );
+      if (retiredLines.length) {
+        this.logger.log(
+          `Hid ${retiredLines
+            .sort(compareLineIds)
+            .join(', ')}; avanzagrupo.com no longer lists them`,
+        );
+      }
+
+      const resp = this.toLinesResponse(await this.getAllLines());
+      await Promise.all([
+        this.cacheManager.del('bus/stations'),
+        ...[...linesToBeUpdated, ...retiredLines].map((lineId) =>
+          this.cacheManager.del(`bus/lines/${lineId}`),
+        ),
+      ]);
       await this.cacheManager.set('bus/lines', resp);
       return resp;
     } catch (exception) {
-      console.log('exception', exception);
+      if (exception instanceof HttpException) throw exception;
       throw new InternalServerErrorException(
         {
           statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
@@ -456,11 +535,13 @@ export class BusService {
     }
   }
 
-  async fetchZaragozaLines(): Promise<ValueLabel[]> {
+  async fetchZaragozaLines(refresh = false): Promise<ValueLabel[]> {
     try {
-      const cache: ValueLabel[] =
-        await this.cacheManager.get(`bus/lines/available`);
-      if (cache) return cache;
+      if (!refresh) {
+        const cache: ValueLabel[] =
+          await this.cacheManager.get(`bus/lines/available`);
+        if (cache) return cache;
+      }
       const url = 'https://zaragoza.avanzagrupo.com/lineas-y-horarios/';
       const response = await lastValueFrom(
         this.httpService.get(url).pipe(timeout(10000)),
@@ -494,7 +575,9 @@ export class BusService {
           'Request timeout: The API request took too long to complete',
         );
       }
-      console.error('Failed to fetch or parse Zaragoza lines data:', exception);
+      this.logger.error(
+        `Failed to fetch or parse the Zaragoza line list: ${exception.message}`,
+      );
       throw new InternalServerErrorException(
         {
           statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
@@ -505,65 +588,87 @@ export class BusService {
     }
   }
 
-  async fetchZaragozaLineFromKml(id: string): Promise<StationBase[]> {
-    try {
+  async fetchZaragozaLineFromKml(
+    id: string,
+    refresh = false,
+  ): Promise<StationBase[]> {
+    if (!refresh) {
       const cache: StationBase[] = await this.cacheManager.get(
         `bus/lines/${id}/kml`,
       );
       if (cache) return cache;
-      const urls = KmlForLine(id);
-      const responses = await Promise.all(
-        urls.map((url) =>
-          lastValueFrom(this.httpService.get(url).pipe(timeout(10000))),
-        ),
-      );
-
-      const stations: StationBase[] = [];
-      responses.map((response) => {
-        const xml = response.data;
-        const $ = cheerio.load(xml, { xmlMode: true });
-
-        $('Placemark').each((_, el) => {
-          const name = $(el).find('name').text().trim();
-
-          const match = name.match(/poste\s*(\d+)\s*-\s*(.+)/i);
-          const stationId = match ? match[1] : '';
-          const street = match ? match[2].trim() : '';
-          const coordsText = $(el).find('coordinates').text().trim();
-          const [lonStr, latStr] = coordsText.split(',').map((s) => s.trim());
-
-          if (isInt(stationId)) {
-            stations.push({
-              id: stationId,
-              street,
-              coordinates: [lonStr, latStr],
-            });
-          }
-        });
-      });
-
-      await this.cacheManager.set(`bus/lines/${id}/kml`, stations);
-      return stations;
-    } catch (exception) {
-      if (exception instanceof TimeoutError) {
-        throw new InternalServerErrorException(
-          {
-            statusCode: HttpStatus.REQUEST_TIMEOUT,
-            message:
-              'Request timeout: The API request took too long to complete',
-          },
-          'Request timeout: The API request took too long to complete',
-        );
-      }
-      console.error('Failed to fetch or parse Zaragoza lines data:', exception);
-      throw new InternalServerErrorException(
-        {
-          statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-          message: exception.message,
-        },
-        exception.message,
-      );
     }
+    const documents = await Promise.all(
+      KmlForLine(id).map((url) => this.fetchKmlDocument(url)),
+    );
+
+    const stations: StationBase[] = [];
+    documents.forEach((xml) => {
+      if (!xml) return;
+      const $ = cheerio.load(xml, { xmlMode: true });
+
+      $('Placemark').each((_, el) => {
+        const name = $(el).find('name').text().trim();
+
+        const match = name.match(/poste\s*(\d+)\s*-\s*(.+)/i);
+        const stationId = match ? match[1] : '';
+        const street = match ? match[2].trim() : '';
+        const coordsText = $(el).find('coordinates').text().trim();
+        const [lonStr, latStr] = coordsText.split(',').map((s) => s.trim());
+
+        if (isInt(stationId)) {
+          stations.push({
+            id: stationId,
+            street,
+            coordinates: [lonStr, latStr],
+          });
+        }
+      });
+    });
+
+    await this.cacheManager.set(`bus/lines/${id}/kml`, stations);
+    return stations;
+  }
+
+  // Route files are guessed from the line id, and not every line publishes one
+  // per direction (nor keeps the same upload folder when a route is redrawn).
+  // A file that is not there is not an error; it just adds no stops.
+  private async fetchKmlDocument(url: string): Promise<string | null> {
+    try {
+      const response = await lastValueFrom(
+        this.httpService.get(url).pipe(timeout(10000)),
+      );
+      return response.data;
+    } catch (exception) {
+      if (exception.response?.status !== HttpStatus.NOT_FOUND) {
+        this.logger.warn(`Could not read ${url}: ${exception.message}`);
+      }
+      return null;
+    }
+  }
+
+  // One unreachable line must not abort the update of all the others.
+  private async fetchLineStations(id: string): Promise<StationBase[]> {
+    try {
+      return await this.fetchZaragozaLineFromKml(id, true);
+    } catch (exception) {
+      this.logger.warn(
+        `Could not read the route of line ${id}: ${exception.message}`,
+      );
+      return [];
+    }
+  }
+
+  // Numbered lines first, then the lettered ones, then the night lines.
+  private toLinesResponse(lines: BusLine[]): BusLinesResponse {
+    const resp: BusLinesResponse = {};
+    [...lines]
+      .sort((a, b) => compareLineIds(a.id, b.id))
+      .forEach((line) => {
+        const { _id, ...lineWithoutId } = line as BusLine & { _id?: unknown };
+        resp[line.id] = lineWithoutId as BusLineResponse;
+      });
+    return resp;
   }
 
   async getAllStations() {

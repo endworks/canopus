@@ -21,7 +21,7 @@ import { Cinema as CinemaSchema } from '../schemas/cinema.schema';
 import { Movie as MovieSchema } from '../schemas/movie.schema';
 import { Match, pickBest, searchQueries, shortlist } from '../movie-matcher';
 import { minutesToString } from '../utils';
-import { ReservaEntradasService } from './reserva-entradas.service';
+import { CinemaSources } from './cinema-source';
 import { TheMovieDBService } from './themoviedb.service';
 
 const LANG = 'es-ES';
@@ -54,7 +54,7 @@ export class CinemaService {
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
     @InjectModel(CinemaSchema.name) private cinemaModel: Model<CinemaSchema>,
     @InjectModel(MovieSchema.name) private movieModel: Model<MovieSchema>,
-    private scraper: ReservaEntradasService,
+    private sources: CinemaSources,
     private theMovieDb: TheMovieDBService,
   ) {}
 
@@ -84,7 +84,9 @@ export class CinemaService {
       throw new NotFoundException(`Resource with ID '${id}' was not found`);
     }
 
-    const movies = await this.scraper.getMovies(cinema.source);
+    const movies = await this.sources
+      .for(cinema.source)
+      .getMovies(cinema.source);
     const sessions = Object.fromEntries(
       movies.map((movie) => [movie.id, movie.sessions ?? []]),
     );
@@ -152,7 +154,19 @@ export class CinemaService {
   /** Warms every Zaragoza cinema from scratch. */
   public async updateAll(): Promise<CacheData> {
     await this.cacheManager.clear();
-    await this.saveCinemas(await this.scraper.getCinemas());
+    const catalogues = await Promise.all(
+      this.sources.all().map(async (source) => {
+        try {
+          return await source.getCinemas();
+        } catch (exception) {
+          this.logger.error(
+            `failed to list cinemas from '${source.host}': ${exception.message}`,
+          );
+          return [];
+        }
+      }),
+    );
+    await this.saveCinemas(this.sources.dedupe(catalogues.flat()));
     const cinemas = await this.getCinemas('zaragoza');
     await Promise.all(
       cinemas.map((cinema) =>
@@ -290,7 +304,13 @@ export class CinemaService {
    * restored runtime still matches instead of being thrown away.
    */
   private async findMatch(movie: Movie): Promise<Match | null> {
-    const queries = searchQueries(movie.name);
+    // SensaCine states the original title; it is often what TheMovieDB indexes.
+    const queries = [
+      ...new Set([
+        ...searchQueries(movie.name),
+        ...(movie.originalName ? searchQueries(movie.originalName) : []),
+      ]),
+    ];
 
     for (const query of queries) {
       const match = await this.bestOf(

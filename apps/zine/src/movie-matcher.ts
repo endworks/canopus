@@ -2,7 +2,7 @@ import {
   TheMovieDBMovie,
   TheMovieDBSearchResult,
 } from './models/themoviedb.interface';
-import { sanitizeTitle } from './utils';
+import { sanitizeTitle, similarity } from './utils';
 
 /**
  * Distributor and venue qualifiers the billboards append but TheMovieDB never
@@ -41,40 +41,14 @@ export const searchQueries = (name: string): string[] => {
   return head && head !== full ? [full, head] : [full];
 };
 
-const bigrams = (value: string): Map<string, number> => {
-  const counts = new Map<string, number>();
-  for (let i = 0; i < value.length - 1; i++) {
-    const gram = value.slice(i, i + 2);
-    counts.set(gram, (counts.get(gram) ?? 0) + 1);
-  }
-  return counts;
-};
-
-/**
- * Sørensen–Dice coefficient over character bigrams, 0..1. Unlike the exact and
- * substring tiers it replaces, it degrades smoothly: punctuation, articles and
- * word order cost a little, an unrelated title scores near zero.
- */
-export const titleSimilarity = (a: string, b: string): number => {
-  if (a === b) return 1;
-  if (a.length < 2 || b.length < 2) return 0;
-  const left = bigrams(a);
-  const right = bigrams(b);
-  let shared = 0;
-  for (const [gram, count] of left) {
-    shared += Math.min(count, right.get(gram) ?? 0);
-  }
-  return (2 * shared) / (a.length + b.length - 2);
-};
-
 /** Best of the localized and original titles — TheMovieDB localizes unevenly. */
 export const titleScore = (
   query: string,
   candidate: { title: string; original_title: string },
 ): number =>
   Math.max(
-    titleSimilarity(query, sanitizeTitle(candidate.title)),
-    titleSimilarity(query, sanitizeTitle(candidate.original_title)),
+    similarity(query, sanitizeTitle(candidate.title)),
+    similarity(query, sanitizeTitle(candidate.original_title)),
   );
 
 const durationScore = (duration: number, runtime: number): number => {

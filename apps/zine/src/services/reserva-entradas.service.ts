@@ -3,9 +3,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import * as cheerio from 'cheerio';
 import { lastValueFrom, timeout } from 'rxjs';
 import { Cinema, MovieBasic, Session } from '../models/cinema.interface';
-import { generateSlug, minutesToString } from '../utils';
+import { generateSlug, mapWithLimit, minutesToString } from '../utils';
+import { CinemaSource } from './cinema-source';
 
-const CINEMAS_URL = 'https://www.reservaentradas.com/cines';
+const HOST = 'reservaentradas.com';
+const CINEMAS_URL = `https://www.${HOST}/cines`;
 const REQUEST_TIMEOUT_MS = 10000;
 
 /** reservaentradas is a small PHP site — don't open a socket per film. */
@@ -71,25 +73,6 @@ const resolveDate = (day: number, month: number, now = Date.now()): string => {
 const sourceId = (url?: string): string | undefined =>
   SOURCE_ID.exec(url ?? '')?.[1];
 
-/** Run an async map with a ceiling on how many run at once. */
-const mapWithLimit = async <T, R>(
-  items: T[],
-  limit: number,
-  fn: (item: T) => Promise<R>,
-): Promise<R[]> => {
-  const results = new Array<R>(items.length);
-  let cursor = 0;
-  await Promise.all(
-    Array.from({ length: Math.min(limit, items.length) }, async () => {
-      while (cursor < items.length) {
-        const index = cursor++;
-        results[index] = await fn(items[index]);
-      }
-    }),
-  );
-  return results;
-};
-
 /** One film as the cinema listing describes it, before its page is fetched. */
 interface BillboardEntry {
   source: string;
@@ -103,7 +86,9 @@ interface BillboardEntry {
  * enrichment concerns mixed into it.
  */
 @Injectable()
-export class ReservaEntradasService {
+export class ReservaEntradasService implements CinemaSource {
+  public readonly host = HOST;
+
   private readonly logger = new Logger(ReservaEntradasService.name);
 
   constructor(private httpService: HttpService) {}

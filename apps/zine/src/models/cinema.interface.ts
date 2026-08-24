@@ -27,8 +27,12 @@ export interface MovieBasic {
   ageRating?: string;
   /** Same classification as a number; 0 means suitable for all audiences. */
   minimumAge?: number;
-  /** Numeric id reservaentradas uses for this film at this cinema. */
+  /** Numeric id the source site uses for this film at this cinema. */
   sourceId?: string;
+  /** Title in the original language, when the listing states it. */
+  originalName?: string;
+  /** Theatrical release date (YYYY-MM-DD), when the listing states it. */
+  releaseDate?: string;
   synopsis?: string;
   duration?: number;
   durationReadable?: string;

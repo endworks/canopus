@@ -5,7 +5,9 @@ import { CinemaController } from '../controllers/cinema.controller';
 import { Cinema, CinemaSchema } from '../schemas/cinema.schema';
 import { Movie, MovieSchema } from '../schemas/movie.schema';
 import { CinemaService } from '../services/cinema.service';
+import { CinemaSources } from '../services/cinema-source';
 import { ReservaEntradasService } from '../services/reserva-entradas.service';
+import { SensaCineService } from '../services/sensacine.service';
 import { TheMovieDBService } from '../services/themoviedb.service';
 
 @Module({
@@ -17,7 +19,13 @@ import { TheMovieDBService } from '../services/themoviedb.service';
     HttpModule,
   ],
   controllers: [CinemaController],
-  providers: [CinemaService, ReservaEntradasService, TheMovieDBService],
+  providers: [
+    CinemaService,
+    CinemaSources,
+    ReservaEntradasService,
+    SensaCineService,
+    TheMovieDBService,
+  ],
   exports: [CinemaService],
 })
 export class CinemaModule {}

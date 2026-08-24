@@ -1,6 +1,7 @@
 import { HttpService } from '@nestjs/axios';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import {
+  HttpException,
   HttpStatus,
   Inject,
   Injectable,
@@ -12,8 +13,8 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Cache } from 'cache-manager';
 import * as cheerio from 'cheerio';
-import { Model } from 'mongoose';
-import { lastValueFrom, timeout, TimeoutError } from 'rxjs';
+import { AnyBulkWriteOperation, Model } from 'mongoose';
+
 import {
   BusLineResponse,
   BusLinesResponse,
@@ -21,6 +22,7 @@ import {
   BusStationsResponse,
 } from '../models/bus.interface';
 import { ErrorResponse, mapWithLimit } from '@canopus/shared';
+import { fetchWithTimeout } from '@canopus/nest';
 import { StationBase, ValueLabel } from '../models/common.interface';
 import {
   BusLine,
@@ -29,12 +31,13 @@ import {
   BusStationDocument,
 } from '../schemas/bus.schema';
 import {
-  canonicalLineNames,
+  canonicalLineName,
   capitalize,
   capitalizeEachWord,
   compareLineIds,
   extraLineIds,
   fixWords,
+  kmlLinksByLine,
   KmlForLine,
   normalizeLineId,
   normalizeStreet,
@@ -62,6 +65,12 @@ type KmlDocument =
 // The stops of a line, or null when its route could not be read at all.
 type LineRoute = StationBase[] | null;
 
+// What one read of the lines page yields.
+interface PublishedLines {
+  lines: ValueLabel[];
+  routeFiles: Map<string, string[]>;
+}
+
 const parseKmlStations = (xml: string): StationBase[] => {
   const $ = cheerio.load(xml, { xmlMode: true });
   return $('Placemark')
@@ -82,6 +91,16 @@ const parseKmlStations = (xml: string): StationBase[] => {
     });
 };
 
+const toLineResponse = ({
+  _id,
+  ...line
+}: BusLine & { _id?: unknown }): BusLineResponse => ({
+  ...line,
+  // Out of listings either because the source withdrew the line or because
+  // there is no route to draw for it.
+  hidden: !!line.withdrawn || !line.stations?.length,
+});
+
 const sameList = (a: string[], b: string[]) =>
   a.length === b.length && a.every((item, index) => item === b[index]);
 
@@ -92,9 +111,22 @@ const upsertById = <T extends { id: string }>(
   updateOne: { filter: { id }, update: { $set: data }, upsert: true },
 });
 
+// `hidden` was stored until it started carrying two different facts at once;
+// drop it from each line as it is rewritten.
+const lineUpdate = (id: string, data: Partial<BusLine>) =>
+  ({
+    updateOne: {
+      filter: { id },
+      update: { $set: data, $unset: { hidden: '' } },
+      upsert: true,
+    },
+  }) as AnyBulkWriteOperation<BusLineDocument>;
+
 @Injectable()
 export class BusService {
   private readonly logger = new Logger(BusService.name);
+  // Route files the lines page links, if it links any: filled in per run.
+  private publishedRouteFiles = new Map<string, string[]>();
 
   constructor(
     @Inject(CACHE_MANAGER)
@@ -148,12 +180,12 @@ export class BusService {
     const backup = await this.getStationById(id);
 
     try {
-      const response = await lastValueFrom(
-        this.httpService
-          // pasobus serves iso-8859-1; axios would decode it as utf-8 and turn
-          // every accented character into U+FFFD.
-          .get(url, isWebSource ? { responseEncoding: 'latin1' } : undefined)
-          .pipe(timeout(10000)),
+      // pasobus serves iso-8859-1; axios would decode it as utf-8 and turn
+      // every accented character into U+FFFD.
+      const data = await fetchWithTimeout<any>(
+        this.httpService,
+        url,
+        isWebSource ? { responseEncoding: 'latin1' } : undefined,
       );
 
       try {
@@ -177,21 +209,15 @@ export class BusService {
         if (!source || source === 'api') {
           resp.source = 'api';
           resp.sourceUrl = url;
-          resp.lastUpdated = response.data.lastUpdated;
+          resp.lastUpdated = data.lastUpdated;
           if (!backup) {
             resp.street = capitalizeEachWord(
-              fixWords(
-                response.data.title
-                  .split(')')[1]
-                  .slice(1)
-                  .split('Lí')[0]
-                  .trim(),
-              ),
+              fixWords(data.title.split(')')[1].slice(1).split('Lí')[0].trim()),
             );
-            resp.coordinates = response.data.geometry.coordinates;
+            resp.coordinates = data.geometry.coordinates;
           }
           const times = [];
-          response.data.destinos.map((destination) => {
+          data.destinos.map((destination) => {
             ['primero', 'segundo'].map((element) => {
               const destinationRaw = destination.destino
                 .replace(/(^,)|(,$)/g, '')
@@ -219,7 +245,7 @@ export class BusService {
           });
           resp.times = [...times];
         } else if (source === 'web') {
-          const $ = cheerio.load(response.data);
+          const $ = cheerio.load(data);
           const rows = $('table').eq(1).find('tr');
 
           rows.each((_, row) => {
@@ -298,16 +324,7 @@ export class BusService {
         );
       }
     } catch (exception) {
-      if (exception instanceof TimeoutError) {
-        throw new InternalServerErrorException(
-          {
-            statusCode: HttpStatus.REQUEST_TIMEOUT,
-            message:
-              'Request timeout: The API request took too long to complete',
-          },
-          'Request timeout: The API request took too long to complete',
-        );
-      }
+      if (exception instanceof HttpException) throw exception;
       if (exception.response?.status === HttpStatus.NOT_FOUND) {
         throw new NotFoundException(
           {
@@ -348,8 +365,7 @@ export class BusService {
           `Resource with ID '${id}' was not found`,
         );
       }
-      const { _id, ...lineWithoutId } = line;
-      return lineWithoutId;
+      return toLineResponse(line);
     });
   }
 
@@ -393,15 +409,16 @@ export class BusService {
   // The lines the source currently offers, mapped to the label it published
   // for each (the extras are not listed, so they have none).
   private async fetchActiveLines(): Promise<Map<string, string | undefined>> {
-    const published = await this.fetchZaragozaLines();
-    if (!published.length) {
+    const { lines, routeFiles } = await this.fetchZaragozaLines();
+    this.publishedRouteFiles = routeFiles;
+    if (!lines.length) {
       // Every stored line would look withdrawn if the dropdown stopped
       // parsing, so leave the database as it is instead.
       this.unavailable('Zaragoza published no bus lines to update from');
     }
     return new Map([
       ...extraLineIds.map((id) => [id, undefined] as const),
-      ...published.map((line) => [line.value, line.label] as const),
+      ...lines.map((line) => [line.value, line.label] as const),
     ]);
   }
 
@@ -425,8 +442,10 @@ export class BusService {
 
   private async fetchLineStations(id: string): Promise<LineRoute> {
     try {
+      // A link the site publishes beats a URL guessed from the convention.
+      const urls = this.publishedRouteFiles.get(id) ?? KmlForLine(id);
       const documents = await Promise.all(
-        KmlForLine(id).map((url) => this.fetchKmlDocument(url)),
+        urls.map((url) => this.fetchKmlDocument(url)),
       );
       // Without every file the site is willing to serve, this line's stops
       // would look like they had been withdrawn.
@@ -446,10 +465,10 @@ export class BusService {
 
   private async fetchKmlDocument(url: string): Promise<KmlDocument> {
     try {
-      const response = await lastValueFrom(
-        this.httpService.get(url).pipe(timeout(requestTimeout)),
-      );
-      return { status: 'read', xml: response.data };
+      const xml = await fetchWithTimeout<string>(this.httpService, url, {
+        timeoutMs: requestTimeout,
+      });
+      return { status: 'read', xml };
     } catch (exception) {
       if (exception.response?.status === HttpStatus.NOT_FOUND) {
         return { status: 'missing' };
@@ -542,20 +561,19 @@ export class BusService {
         ? route.map((station) => station.id)
         : (linesBackup.get(lineId)?.stations ?? []);
       return [
-        upsertById<BusLine>(lineId, {
+        lineUpdate(lineId, {
           id: lineId,
           name:
-            canonicalLineNames[lineId] ??
+            canonicalLineName(lineId) ??
             capitalizeEachWord(
               fixWords(label ?? linesBackup.get(lineId)?.name ?? lineId),
             ),
           lastUpdated: new Date().toISOString(),
           stations,
-          // TUR's KML names its placemarks without a "poste N -" prefix, so it
-          // yields no stops and has no route to draw. Written on every run: an
-          // undefined `hidden` is dropped from the update, which would leave a
-          // line hidden forever once it failed once.
-          hidden: !stations.length,
+          // The source offers it, so whatever it was before, it is not
+          // withdrawn now. Whether it has a route to draw is derived from
+          // `stations` when the line is read back.
+          withdrawn: false,
         }),
       ];
     });
@@ -567,44 +585,40 @@ export class BusService {
     );
     if (retired.length) {
       this.logger.log(
-        `Hid ${this.lineList(retired)}; avanzagrupo.com no longer lists them`,
+        `Withdrew ${this.lineList(retired)}; avanzagrupo.com no longer lists them`,
       );
     }
 
     return [
       ...updates,
       ...retired
-        .filter((lineId) => !linesBackup.get(lineId).hidden)
-        .map((lineId) => upsertById<BusLine>(lineId, { hidden: true })),
+        .filter((lineId) => !linesBackup.get(lineId).withdrawn)
+        .map((lineId) => lineUpdate(lineId, { withdrawn: true })),
     ];
   }
 
-  async fetchZaragozaLines(): Promise<ValueLabel[]> {
+  async fetchZaragozaLines(): Promise<PublishedLines> {
     try {
-      const response = await lastValueFrom(
-        this.httpService.get(busLinesURL).pipe(timeout(requestTimeout)),
+      const html = await fetchWithTimeout<string>(
+        this.httpService,
+        busLinesURL,
+        { timeoutMs: requestTimeout },
       );
 
-      const $ = cheerio.load(response.data);
+      const $ = cheerio.load(html);
 
-      return $('select#linea-lineas-horarios option')
-        .toArray()
-        .map((el) => ({
-          value: $(el).attr('value'),
-          label: $(el).text().split(' – ').slice(1).join(' - ').trim(),
-        }))
-        .filter((line) => line.value && line.value !== 'lineDefault');
+      return {
+        lines: $('select#linea-lineas-horarios option')
+          .toArray()
+          .map((el) => ({
+            value: $(el).attr('value'),
+            label: $(el).text().split(' – ').slice(1).join(' - ').trim(),
+          }))
+          .filter((line) => line.value && line.value !== 'lineDefault'),
+        routeFiles: kmlLinksByLine(html),
+      };
     } catch (exception) {
-      if (exception instanceof TimeoutError) {
-        throw new InternalServerErrorException(
-          {
-            statusCode: HttpStatus.REQUEST_TIMEOUT,
-            message:
-              'Request timeout: The API request took too long to complete',
-          },
-          'Request timeout: The API request took too long to complete',
-        );
-      }
+      if (exception instanceof HttpException) throw exception;
       this.logger.error(
         `Failed to fetch or parse the Zaragoza line list: ${exception.message}`,
       );
@@ -628,15 +642,17 @@ export class BusService {
   private lineList = (ids: string[]) =>
     [...ids].sort(compareLineIds).join(', ');
 
-  // Numbered lines first, then the lettered ones, then the night lines.
+  /**
+   * Numbered lines first, then the lettered ones, then the night lines. Keys
+   * that look like integers are enumerated first and in ascending order
+   * whatever the insertion order — the same thing compareLineIds asks for, so
+   * the two agree and the order survives a JSON round trip.
+   */
   private toLinesResponse(lines: BusLine[]): BusLinesResponse {
     return Object.fromEntries(
       [...lines]
         .sort((a, b) => compareLineIds(a.id, b.id))
-        .map(({ _id, ...line }: BusLine & { _id?: unknown }) => [
-          line.id,
-          line,
-        ]),
+        .map((line) => [line.id, toLineResponse(line)]),
     );
   }
 

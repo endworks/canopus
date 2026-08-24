@@ -104,10 +104,17 @@ export class BusLine {
   stationsReturn?: string[];
 
   /**
-   * Whether the line is hidden from listings.
+   * Whether the line is hidden from listings: it was withdrawn, or there is
+   * no route to draw for it.
    * @example false
    */
   hidden: boolean;
+
+  /**
+   * Whether the line has been withdrawn from the network.
+   * @example false
+   */
+  withdrawn?: boolean;
 
   /**
    * ISO timestamp of the last update.

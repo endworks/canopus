@@ -27,7 +27,9 @@ export interface BusLineResponse {
   color?: string;
   stations: string[];
   stationsReturn?: string[];
+  /** Withdrawn, or with no route to draw. Derived, never stored. */
   hidden: boolean;
+  withdrawn?: boolean;
   lastUpdated: string;
 }
 

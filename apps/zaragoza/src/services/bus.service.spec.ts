@@ -12,8 +12,9 @@ import {
 import { BusService } from './bus.service';
 import { extraLineIds, KmlForLine } from '../utils';
 
-const dropdown = (lines: [string, string][]) =>
-  `<select id="linea-lineas-horarios">
+const dropdown = (lines: [string, string][], links: string[] = []) =>
+  `${links.map((url) => `<a href="${url}">kml</a>`).join('')}
+   <select id="linea-lineas-horarios">
      <option value="lineDefault">Elige una línea</option>
      ${lines
        .map(
@@ -79,16 +80,18 @@ class FakeModel<T extends { id: string }> {
         operation as {
           updateOne: {
             filter: { id: string };
-            update: { $set: Record<string, unknown> };
+            update: {
+              $set: Record<string, unknown>;
+              $unset?: Record<string, unknown>;
+            };
           };
         }
       ).updateOne;
-      const existing = this.docs.find((item) => item.id === filter.id);
-      if (existing) {
-        applyUpdate(existing, update.$set);
-        return;
-      }
-      this.docs.push(applyUpdate({ id: filter.id } as T, update.$set));
+      const doc =
+        this.docs.find((item) => item.id === filter.id) ??
+        this.docs[this.docs.push({ id: filter.id } as T) - 1];
+      applyUpdate(doc, update.$set);
+      Object.keys(update.$unset ?? {}).forEach((key) => delete doc[key]);
     });
     return { modifiedCount: operations.length };
   }
@@ -97,6 +100,8 @@ class FakeModel<T extends { id: string }> {
 const build = (options: {
   lines?: [string, string][];
   kmls?: Record<string, [string, string][]>;
+  // Route files the lines page links, rather than leaving to the convention.
+  links?: string[];
   // URLs the site answers with a server error: an outage, not a missing file.
   unreachable?: string[];
   storedLines?: Partial<BusLine>[];
@@ -110,7 +115,9 @@ const build = (options: {
   );
 
   const bodies = new Map<string, string>();
-  if (options.lines) bodies.set(linesUrl, dropdown(options.lines));
+  if (options.lines) {
+    bodies.set(linesUrl, dropdown(options.lines, options.links));
+  }
   Object.entries(options.kmls ?? {}).forEach(([url, stops]) =>
     bodies.set(url, kml(stops)),
   );
@@ -164,7 +171,7 @@ describe('getLinesUpdate', () => {
       lines: [['21', 'BARRIO JESUS - OLIVER MIRALBUENO']],
       kmls: { [kmlUrl('21', 1)]: [['1', 'Av. de Navarra nº 71']] },
       storedLines: [
-        { id: '21', name: 'Barrio Jesús', stations: [], hidden: true },
+        { id: '21', name: 'Barrio Jesús', stations: [], withdrawn: true },
       ],
     });
 
@@ -172,6 +179,35 @@ describe('getLinesUpdate', () => {
 
     expect(resp['21'].hidden).toBe(false);
     expect(resp['21'].stations).toEqual(['1']);
+  });
+
+  it('hides a line with no route without calling it withdrawn', async () => {
+    const { service } = build({
+      lines: [
+        ['21', 'BARRIO JESUS - OLIVER MIRALBUENO'],
+        ['TUR', 'TURISTICO DIURNO'],
+      ],
+      kmls: { [kmlUrl('21', 1)]: [['1', 'Av. de Navarra nº 71']] },
+    });
+
+    const resp = await service.getLinesUpdate();
+
+    // The source still offers it; there is just nothing to draw.
+    expect(resp['TUR']).toMatchObject({ withdrawn: false, hidden: true });
+  });
+
+  it('drops the flag the two of them replaced', async () => {
+    const { service, lineModel } = build({
+      lines: [['21', 'BARRIO JESUS - OLIVER MIRALBUENO']],
+      kmls: { [kmlUrl('21', 1)]: [['1', 'Av. de Navarra nº 71']] },
+      storedLines: [
+        { id: '21', name: 'Barrio Jesús', stations: [], hidden: true } as never,
+      ],
+    });
+
+    await service.getLinesUpdate();
+
+    expect(lineModel.docs[0]).not.toHaveProperty('hidden');
   });
 
   it('hides a line the source stopped offering and drops it from its stops', async () => {
@@ -189,8 +225,8 @@ describe('getLinesUpdate', () => {
 
     const resp = await service.getLinesUpdate();
 
-    expect(resp['24'].hidden).toBe(true);
-    expect(resp['21'].hidden).toBe(false);
+    expect(resp['24']).toMatchObject({ withdrawn: true, hidden: true });
+    expect(resp['21']).toMatchObject({ withdrawn: false, hidden: false });
     expect(stationModel.docs.find((s) => s.id === '1').lines).toEqual(['21']);
     // A stop no line reaches any more is still cleaned up.
     expect(stationModel.docs.find((s) => s.id === '7').lines).toEqual([]);
@@ -262,15 +298,32 @@ describe('getLinesUpdate', () => {
 
     const resp = await service.getLinesUpdate();
 
-    expect(Object.keys(resp)).toEqual([
-      '21',
-      'C1',
-      'Ci2',
-      'EM1',
-      'EM2',
-      'TUR',
-      'N1',
-    ]);
+    const expected = ['21', 'C1', 'Ci2', 'EM1', 'EM2', 'TUR', 'N1'];
+    expect(Object.keys(resp)).toEqual(expected);
+    // The order is the payload's only carrier of it, so it has to survive
+    // being serialised over RPC and back.
+    expect(Object.keys(JSON.parse(JSON.stringify(resp)))).toEqual(expected);
+  });
+
+  it('prefers a route file the site links over the one it guesses', async () => {
+    const linked =
+      'https://zaragoza.avanzagrupo.com/wp-content/uploads/2026/01/21-1.kml';
+    const { service, httpService } = build({
+      lines: [['21', 'BARRIO JESUS - OLIVER MIRALBUENO']],
+      links: [linked],
+      kmls: {
+        [linked]: [['5', 'Av. de Navarra nº 71']],
+        [kmlUrl('21', 1)]: [['1', 'Camino del Pilón nº 131']],
+      },
+    });
+
+    const resp = await service.getLinesUpdate();
+
+    expect(resp['21'].stations).toEqual(['5']);
+    expect(httpService.get).not.toHaveBeenCalledWith(
+      kmlUrl('21', 1),
+      undefined,
+    );
   });
 
   it('leaves the stored lines alone when the dropdown reads empty', async () => {

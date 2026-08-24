@@ -1,13 +1,5 @@
-export const capitalize = (text: string, setLowercase: boolean = true) => {
-  if (text) {
-    if (setLowercase) {
-      return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
-    } else {
-      return text.charAt(0).toUpperCase() + text.slice(1);
-    }
-  }
-  return null;
-};
+export const capitalize = (text: string) =>
+  text ? text.charAt(0).toUpperCase() + text.slice(1).toLowerCase() : null;
 
 export const isRomanNumeral = (word: string): boolean => {
   const upper = word.toUpperCase();
@@ -20,10 +12,7 @@ const alwaysLowercaseWords = ['y', 'a', 'de', 'en', 'del', 'la', 'los', 'las'];
 
 const segmentSeparator = /[-–/(,]$/;
 
-export const capitalizeEachWord = (
-  text: string,
-  setLowercase: boolean = true,
-) => {
+export const capitalizeEachWord = (text: string) => {
   if (text) {
     let atSegmentStart = true;
     return text
@@ -44,17 +33,17 @@ export const capitalizeEachWord = (
         if (word.includes('/')) {
           return word
             .split('/')
-            .map((splitWord) => capitalize(splitWord.trim(), setLowercase))
+            .map((splitWord) => capitalize(splitWord.trim()))
             .join('/');
         }
         if (word.includes('-')) {
           return word
             .split('-')
-            .map((splitWord) => capitalize(splitWord.trim(), setLowercase))
+            .map((splitWord) => capitalize(splitWord.trim()))
             .join('-');
         }
 
-        return capitalize(word, setLowercase);
+        return capitalize(word);
       })
       .join(' ');
   }
@@ -231,66 +220,90 @@ export const fixWords = (text: string): string => {
   return fixed;
 };
 
-// Lines whose KML exists but that avanzagrupo.com leaves out of the
-// lineas-y-horarios dropdown. Anything else the dropdown stops offering is
-// treated as withdrawn from the network and hidden (line 24 was).
-export const extraLineIds = ['EM1', 'EM2'];
+/**
+ * What we know about a line that the source does not tell us properly, in one
+ * place: the name as published on
+ * https://zaragoza.avanzagrupo.com/lineas-y-horarios/ with the accents the site
+ * omits restored, the upload folder when its route files are not in the default
+ * one, and whether the dropdown leaves the line out altogether.
+ */
+interface LineOverride {
+  name: string;
+  kmlFolder?: string;
+  unlisted?: boolean;
+}
 
-// Names as published on https://zaragoza.avanzagrupo.com/lineas-y-horarios/,
-// with the accents the site omits restored. EM1/EM2 come from their KML
-// document titles.
-export const canonicalLineNames: Record<string, string> = {
-  '21': 'Barrio Jesús - Oliver Miralbueno',
-  '22': 'Las Fuentes - Bombarda',
-  '23': 'Parque Venecia - Siglo XXI',
-  '25': 'La Cartuja - Puerta del Carmen',
-  '28': 'Coso - Montañana/Peñaflor',
-  '29': 'Camino de las Torres - San Gregorio',
-  '30': 'Las Fuentes - Plaza Aragón',
-  '31': 'Puerto Venecia - Aljafería',
-  '32': 'Santa Isabel - Bombarda',
-  '33': 'Pinares de Venecia - Delicias',
-  '34': 'Estación Delicias - Cementerio',
-  '35': 'Parque Goya - Seminario',
-  '36': 'Picarral - Valdefierro',
-  '38': 'Bajo Aragón - Valdefierro',
-  '39': 'Pinares de Venecia - Vadorrey',
-  '40': 'San José - Plaza Aragón',
-  '41': 'Puerta del Carmen - Rosales del Canal',
-  '42': 'La Paz - Actur Rey Fernando',
-  '43': 'Juslibol - Actur Rey Fernando',
-  '44': 'Estación Miraflores - Actur Rey Fernando',
-  '50': 'Vadorrey - San Gregorio',
-  '51': 'Pabellón Príncipe Felipe - Estación Delicias',
-  '52': 'Miralbueno - Puerta del Carmen',
-  '53': 'Plaza Emperador Carlos V - Miralbueno',
-  '54': 'Rosales del Canal - Tranvía',
-  '55': 'Montecanal - Tranvía',
-  '56': 'Valdespartera - Tranvía',
-  '57': 'Casablanca - Tranvía',
-  '58': 'Fuente de la Junquera - Tranvía',
-  '59': 'Arcosur - Tranvía',
-  '60': 'Avda. Estudiantes - Actur Rey Fernando',
-  C1: 'Plaza de las Canteras - Complejo Funerario',
-  C4: 'Plaza de las Canteras - Puerto Venecia',
-  Ci1: 'Circular 1',
-  Ci2: 'Circular 2',
-  Ci3: 'Circular 3',
-  Ci4: 'Circular 4',
-  EM1: 'Plaza Europa - Estadio Modular',
-  EM2: 'Paseo de la Ribera - Estadio Modular',
-  N1: 'Plaza Aragón - La Jota Vadorrey Santa Isabel',
-  N2: 'Pza. Aragón - La Almozara - Actur Rey F. - P. Goya - Arrabal',
-  N3: 'Paseo Pamplona - Delicias - Valdefierro - Miralbueno',
-  N4: 'Paseo Pamplona - Romareda - Rosales del Canal - Arcosur',
-  N5: 'Pza. Aragón - Las Fuentes S José La Paz Parque Venecia',
-  N6: 'Paseo Pamplona - Plaza Roma - Vía Hispanidad - La Cartuja',
-  N7: 'Plaza Aragón - Arrabal San Gregorio Peñaflor',
-  TUR: 'Turístico Diurno',
+const lineOverrides: Record<string, LineOverride> = {
+  '21': { name: 'Barrio Jesús - Oliver Miralbueno' },
+  '22': { name: 'Las Fuentes - Bombarda' },
+  '23': { name: 'Parque Venecia - Siglo XXI' },
+  '25': { name: 'La Cartuja - Puerta del Carmen' },
+  '28': { name: 'Coso - Montañana/Peñaflor' },
+  '29': { name: 'Camino de las Torres - San Gregorio' },
+  '30': { name: 'Las Fuentes - Plaza Aragón' },
+  '31': { name: 'Puerto Venecia - Aljafería' },
+  '32': { name: 'Santa Isabel - Bombarda' },
+  '33': { name: 'Pinares de Venecia - Delicias' },
+  '34': { name: 'Estación Delicias - Cementerio' },
+  '35': { name: 'Parque Goya - Seminario' },
+  '36': { name: 'Picarral - Valdefierro' },
+  '38': { name: 'Bajo Aragón - Valdefierro' },
+  '39': { name: 'Pinares de Venecia - Vadorrey' },
+  '40': { name: 'San José - Plaza Aragón' },
+  '41': { name: 'Puerta del Carmen - Rosales del Canal' },
+  '42': { name: 'La Paz - Actur Rey Fernando' },
+  '43': { name: 'Juslibol - Actur Rey Fernando' },
+  '44': { name: 'Estación Miraflores - Actur Rey Fernando' },
+  '50': { name: 'Vadorrey - San Gregorio' },
+  '51': { name: 'Pabellón Príncipe Felipe - Estación Delicias' },
+  '52': { name: 'Miralbueno - Puerta del Carmen' },
+  '53': { name: 'Plaza Emperador Carlos V - Miralbueno' },
+  '54': { name: 'Rosales del Canal - Tranvía' },
+  '55': { name: 'Montecanal - Tranvía' },
+  '56': { name: 'Valdespartera - Tranvía' },
+  '57': { name: 'Casablanca - Tranvía' },
+  '58': { name: 'Fuente de la Junquera - Tranvía' },
+  '59': { name: 'Arcosur - Tranvía' },
+  '60': { name: 'Avda. Estudiantes - Actur Rey Fernando' },
+  C1: { name: 'Plaza de las Canteras - Complejo Funerario' },
+  C4: { name: 'Plaza de las Canteras - Puerto Venecia' },
+  Ci1: { name: 'Circular 1' },
+  Ci2: { name: 'Circular 2' },
+  Ci3: { name: 'Circular 3', kmlFolder: '2025/03' },
+  Ci4: { name: 'Circular 4', kmlFolder: '2025/03' },
+  EM1: {
+    name: 'Plaza Europa - Estadio Modular',
+    kmlFolder: '2025/08',
+    unlisted: true,
+  },
+  EM2: {
+    name: 'Paseo de la Ribera - Estadio Modular',
+    kmlFolder: '2025/08',
+    unlisted: true,
+  },
+  N1: { name: 'Plaza Aragón - La Jota Vadorrey Santa Isabel' },
+  N2: { name: 'Pza. Aragón - La Almozara - Actur Rey F. - P. Goya - Arrabal' },
+  N3: { name: 'Paseo Pamplona - Delicias - Valdefierro - Miralbueno' },
+  N4: { name: 'Paseo Pamplona - Romareda - Rosales del Canal - Arcosur' },
+  N5: { name: 'Pza. Aragón - Las Fuentes S José La Paz Parque Venecia' },
+  N6: { name: 'Paseo Pamplona - Plaza Roma - Vía Hispanidad - La Cartuja' },
+  N7: { name: 'Plaza Aragón - Arrabal San Gregorio Peñaflor' },
+  TUR: { name: 'Turístico Diurno', kmlFolder: '2024/02' },
 };
 
+// Lines whose route files exist but that the dropdown leaves out. Anything else
+// it stops offering is treated as withdrawn from the network (line 24 was).
+export const extraLineIds = Object.entries(lineOverrides)
+  .filter(([, line]) => line.unlisted)
+  .map(([id]) => id);
+
+export const canonicalLineName = (id: string): string | undefined =>
+  lineOverrides[id]?.name;
+
+export const knownLineIds = Object.keys(lineOverrides);
+
 const lineIdsByUppercase = new Map(
-  Object.keys(canonicalLineNames).map((id) => [id.toUpperCase(), id]),
+  knownLineIds.map((id) => [id.toUpperCase(), id]),
 );
 
 // Arrival feeds report line ids in upper case ("CI3", "EM1"), which plain
@@ -349,25 +362,29 @@ export const pickCanonicalStreet = (names: string[]): string => {
   );
 };
 
-// Route files are not linked anywhere, so they are addressed by convention:
-// <line>-1.kml for the outbound trip and <line>-2.kml for the return one. Only
-// the WordPress upload folder varies, and a line that runs in one direction has
-// no -2 file — the caller treats a missing file as "no stops from here" rather
-// than as an error, so nothing but the folder has to be pinned.
+// Route files are addressed by convention: <line>-1.kml for the outbound trip
+// and <line>-2.kml for the return one, under the folder they were uploaded to.
+// A line that runs in one direction has no -2 file, and the caller treats a
+// missing file as "no stops from here" rather than as an error.
 const defaultKmlFolder = '2019/12';
 
-const kmlFolders: Record<string, string> = {
-  Ci3: '2025/03',
-  Ci4: '2025/03',
-  EM1: '2025/08',
-  EM2: '2025/08',
-  TUR: '2024/02',
-};
-
 export const KmlForLine = (lineId: string): string[] => {
-  const folder = kmlFolders[lineId] ?? defaultKmlFolder;
+  const folder = lineOverrides[lineId]?.kmlFolder ?? defaultKmlFolder;
   return [1, 2].map(
     (direction) =>
       `https://zaragoza.avanzagrupo.com/wp-content/uploads/${folder}/${lineId}-${direction}.kml`,
   );
+};
+
+// The site does not link its route files anywhere we know of, but if it ever
+// does, a published link beats a URL we guessed. Read from the lines page that
+// is fetched anyway, so this costs no extra request.
+export const kmlLinksByLine = (html: string): Map<string, string[]> => {
+  const links = new Map<string, string[]>();
+  for (const [, url, lineId] of html.matchAll(
+    /["'](https?:\/\/[^"']*?\/([A-Za-z0-9]+)-\d+\.kml)["']/g,
+  )) {
+    links.set(lineId, [...(links.get(lineId) ?? []), url]);
+  }
+  return links;
 };

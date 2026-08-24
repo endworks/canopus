@@ -1,10 +1,11 @@
 import {
-  canonicalLineNames,
+  canonicalLineName,
   capitalize,
   capitalizeEachWord,
   compareLineIds,
   extraLineIds,
   fixMojibake,
+  knownLineIds,
   fixWords,
   isRomanNumeral,
   normalizeLineId,
@@ -178,19 +179,19 @@ describe('pickCanonicalStreet', () => {
   });
 });
 
-describe('canonicalLineNames', () => {
+describe('lineOverrides', () => {
   it('names the lines the updater adds on its own', () => {
     // These are not in the dropdown, so a name has to come from here.
     extraLineIds.forEach((id) =>
-      expect([id, canonicalLineNames[id]]).toEqual([id, expect.any(String)]),
+      expect([id, canonicalLineName(id)]).toEqual([id, expect.any(String)]),
     );
   });
 
   it('has no name left unaccented', () => {
     const unaccented =
       /\b(jesus|aljaferia|estacion|jose|tranvia|turistico|aragon|espana|penaflor|pabellon|principe)\b/i;
-    Object.entries(canonicalLineNames).forEach(([id, name]) =>
-      expect([id, unaccented.test(name)]).toEqual([id, false]),
+    knownLineIds.forEach((id) =>
+      expect([id, unaccented.test(canonicalLineName(id))]).toEqual([id, false]),
     );
   });
 });
@@ -212,7 +213,7 @@ describe('compareLineIds', () => {
   });
 
   it('orders every real line id the way the listing shows them', () => {
-    const ids = Object.keys(canonicalLineNames);
+    const ids = knownLineIds;
     const sorted = [...ids].sort(compareLineIds);
 
     expect(sorted.slice(0, 3)).toEqual(['21', '22', '23']);
@@ -242,7 +243,7 @@ describe('compareLineIds', () => {
   });
 
   it('does not depend on the order it is given', () => {
-    const ids = Object.keys(canonicalLineNames);
+    const ids = knownLineIds;
     expect([...ids].reverse().sort(compareLineIds)).toEqual(
       [...ids].sort(compareLineIds),
     );

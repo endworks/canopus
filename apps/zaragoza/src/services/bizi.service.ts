@@ -1,6 +1,7 @@
 import { HttpService } from '@nestjs/axios';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import {
+  HttpException,
   HttpStatus,
   Inject,
   Injectable,
@@ -10,7 +11,6 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Cache } from 'cache-manager';
 import { Model } from 'mongoose';
-import { lastValueFrom, timeout, TimeoutError } from 'rxjs';
 import {
   BiziApiResponse,
   BiziStationApiResponse,
@@ -20,6 +20,7 @@ import {
   BiziStationsResponse,
 } from '../models/bizi.interface';
 import { ErrorResponse } from '@canopus/shared';
+import { fetchWithTimeout } from '@canopus/nest';
 import { BiziStation, BiziStationDocument } from '../schemas/bizi.schema';
 import { capitalizeEachWord, fixWords } from '../utils';
 
@@ -78,13 +79,10 @@ export class BiziService {
     if (cache) return cache;
 
     try {
-      const response = await lastValueFrom(
-        this.httpService
-          .get<BiziStationApiResponse>(`${biziStationApiURL}/${id}.json`)
-          .pipe(timeout(10000)),
+      const stationData = await fetchWithTimeout<BiziStationApiResponse>(
+        this.httpService,
+        `${biziStationApiURL}/${id}.json`,
       );
-
-      const stationData = response.data;
 
       const backup = await this.getStationById(id);
 
@@ -117,19 +115,7 @@ export class BiziService {
 
       return resp;
     } catch (exception) {
-      if (exception instanceof TimeoutError) {
-        throw new InternalServerErrorException(
-          {
-            statusCode: HttpStatus.REQUEST_TIMEOUT,
-            message:
-              'Request timeout: The API request took too long to complete',
-          },
-          'Request timeout: The API request took too long to complete',
-        );
-      }
-      if (exception instanceof NotFoundException) {
-        throw exception;
-      }
+      if (exception instanceof HttpException) throw exception;
       if (exception.response?.status === HttpStatus.NOT_FOUND) {
         throw new NotFoundException(
           {
@@ -159,16 +145,13 @@ export class BiziService {
       let hasMore = true;
 
       while (hasMore) {
-        const response = await lastValueFrom(
-          this.httpService
-            .get<BiziApiResponse>(
-              `${biziApiURL}?start=${start}&rows=${rows}&srsname=wgs84`,
-            )
-            .pipe(timeout(10000)),
+        const data = await fetchWithTimeout<BiziApiResponse>(
+          this.httpService,
+          `${biziApiURL}?start=${start}&rows=${rows}&srsname=wgs84`,
         );
 
         const stations = await Promise.all(
-          response.data.result.map(async (station) => {
+          data.result.map(async (station) => {
             const titleParts = station.title.split('-');
             const streetName =
               titleParts.length > 1
@@ -207,7 +190,7 @@ export class BiziService {
 
         allStations.push(...stations);
 
-        if (start + rows >= response.data.totalCount) {
+        if (start + rows >= data.totalCount) {
           hasMore = false;
         } else {
           start += rows;
@@ -222,16 +205,7 @@ export class BiziService {
       await this.cacheManager.set('bizi/stations', resp);
       return resp;
     } catch (exception) {
-      if (exception instanceof TimeoutError) {
-        throw new InternalServerErrorException(
-          {
-            statusCode: HttpStatus.REQUEST_TIMEOUT,
-            message:
-              'Request timeout: The API request took too long to complete',
-          },
-          'Request timeout: The API request took too long to complete',
-        );
-      }
+      if (exception instanceof HttpException) throw exception;
       throw new InternalServerErrorException(
         {
           statusCode: HttpStatus.INTERNAL_SERVER_ERROR,

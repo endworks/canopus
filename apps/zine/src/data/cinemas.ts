@@ -22,7 +22,7 @@ export const cinemas: CinemaData = {
     website: 'https://www.cinespalafox.com/cartelera-cine-cervantes.html',
     source: 'https://www.reservaentradas.com/cine/zaragoza/cervantes/',
   },
-  victoria: {
+  multicinesvictoria: {
     name: 'Multicines Victoria',
     address: 'Calle Santa Barbara, 27, 22400 Monzón',
     location: 'Huesca',

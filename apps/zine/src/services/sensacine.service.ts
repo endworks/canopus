@@ -21,14 +21,28 @@ const VENUE_ID = /\/cines\/cine\/(E\d+)\//i;
 /** City pages cover the urban venues, province pages cover everything else. */
 const REGION_LINK = /\/cines\/(?:ciudades|provincias)-\d+\//;
 
+/** A film mid-scrape, before its showtimes have all been collected. */
+type ScrapedMovie = MovieBasic & { sessions: Session[] };
+
+/** The film cards on a venue page, and the showtimes that belong to them. */
+const MOVIE_CARD = '.movie-card-theater';
+const SHOWTIME = '[data-showtime-time]';
+
 /**
- * `data-experiences` is a JSON array of tags. Only the localization ones say
- * anything a viewer cares about; the rest describe projection hardware.
+ * `data-experiences` is a JSON array of tags. The localization ones name the
+ * version, e.g. `Localization.Subtitle`; the rest name the format the venue
+ * sells, e.g. `Projection.3D` or `Screen.IMAX`, which is most of what
+ * distinguishes one screening of a film from the next at a big multiplex.
  */
 const VERSION_TAGS: { tag: string; label: string }[] = [
   { tag: 'Localization.Subtitle', label: 'VOSE' },
   { tag: 'Localization.Version.Original', label: 'VO' },
 ];
+
+const LOCALIZATION_TAG = 'Localization.';
+
+/** Tags every screening carries, so they say nothing about this one. */
+const GENERIC_FORMATS = new Set(['Digital', 'Standard']);
 
 const MONTHS = [
   'enero',
@@ -149,14 +163,44 @@ export class SensaCineService implements CinemaSource {
     return [...venues.values()];
   }
 
-  /** Every film showing at one venue over the two days the site publishes. */
+  /**
+   * Every film showing at one venue over the two days the site publishes.
+   *
+   * Showtimes are nested inside their film's card on some layouts and rendered
+   * as a block after it on others, so cards and showtimes are walked together
+   * in document order and each showtime is attached to the card it follows.
+   * Requiring containment silently returned films with no showtimes at all on
+   * the second layout.
+   */
   public async getMovies(cinemaUrl: string): Promise<MovieBasic[]> {
     const $ = await this.load(cinemaUrl);
-    const movies: MovieBasic[] = [];
-    $('.movie-card-theater').each((_, el) => {
-      const movie = this.parseMovie($, $(el), cinemaUrl);
-      if (movie) movies.push(movie);
+    const movies: ScrapedMovie[] = [];
+    let current: ScrapedMovie | null = null;
+
+    $(`${MOVIE_CARD}, ${SHOWTIME}`).each((_, el) => {
+      if ($(el).is(MOVIE_CARD)) {
+        current = this.parseMovie($, $(el), cinemaUrl);
+        if (current) movies.push(current);
+        return;
+      }
+      const session = this.parseSession($(el));
+      if (session && current) current.sessions.push(session);
     });
+
+    for (const movie of movies) {
+      movie.sessions.sort((a, b) =>
+        `${a.date}T${a.time}`.localeCompare(`${b.date}T${b.time}`),
+      );
+    }
+
+    // A venue with a billboard but no showtimes anywhere on the page means the
+    // markup moved, not that the cinema is shut. Say so: the alternative is an
+    // empty listing that looks exactly like a quiet Tuesday.
+    if (movies.length && !movies.some((movie) => movie.sessions.length)) {
+      this.logger.warn(
+        `sensacine: ${movies.length} films but no showtimes at '${cinemaUrl}'`,
+      );
+    }
     return movies;
   }
 
@@ -164,7 +208,7 @@ export class SensaCineService implements CinemaSource {
     $: cheerio.CheerioAPI,
     card: cheerio.Cheerio<any>,
     cinemaUrl: string,
-  ): MovieBasic | null {
+  ): ScrapedMovie | null {
     const name = card
       .find('.meta-title')
       .first()
@@ -208,39 +252,77 @@ export class SensaCineService implements CinemaSource {
         .map((actor) => ({ name: actor.trim() }))
         .filter((actor) => actor.name),
       poster: card.find('img').first().attr('src'),
-      sessions: this.parseSessions($, card),
+      sessions: [],
       sourceId: VENUE_ID.exec(cinemaUrl)?.[1],
       source: path ? this.absolute(path) : cinemaUrl,
     };
   }
 
   /**
-   * Every showtime carries its own ISO timestamp and format tags, so unlike a
-   * day/month tab list there is no date to reconstruct and no year to guess.
+   * One showtime. It carries its own ISO timestamp, so unlike a day/month tab
+   * list there is no date to reconstruct and no year to guess.
    */
-  private parseSessions(
-    $: cheerio.CheerioAPI,
-    card: cheerio.Cheerio<any>,
-  ): Session[] {
-    const sessions: Session[] = [];
-    card.find('[data-showtime-time]').each((_, el) => {
-      const stamp = $(el).attr('data-showtime-time');
-      if (!stamp) return;
-      const experiences: string[] = JSON.parse(
-        $(el).attr('data-experiences') || '[]',
-      );
-      const version = VERSION_TAGS.find(({ tag }) =>
-        experiences.some((experience) => experience.startsWith(tag)),
-      );
-      sessions.push({
-        id: $(el).attr('data-showtime-id'),
-        time: stamp.slice(11, 16),
-        date: stamp.slice(0, 10),
-        type: version?.label ?? null,
-      });
-    });
-    return sessions.sort((a, b) =>
-      `${a.date}T${a.time}`.localeCompare(`${b.date}T${b.time}`),
+  private parseSession(el: cheerio.Cheerio<any>): Session | null {
+    const stamp = el.attr('data-showtime-time');
+    if (!stamp) return null;
+    const href = this.bookingLink(el);
+    return {
+      id: el.attr('data-showtime-id'),
+      time: stamp.slice(11, 16),
+      date: stamp.slice(0, 10),
+      type: this.sessionType(el),
+      url: href ? this.absolute(href) : undefined,
+    };
+  }
+
+  /**
+   * The link that books this showtime. The site makes the time itself the
+   * anchor on some layouts and wraps it on others, so try the element, then
+   * what encloses it, then what it encloses.
+   */
+  private bookingLink(el: cheerio.Cheerio<any>): string | undefined {
+    const anchors = [
+      el.is('a[href]') ? el : null,
+      el.closest('a[href]').first(),
+      el.find('a[href]').first(),
+    ];
+    for (const anchor of anchors) {
+      const href = anchor?.attr('href');
+      if (href) return href;
+    }
+    return undefined;
+  }
+
+  /**
+   * What a viewer is choosing between: the version (VO/VOSE) and the format
+   * sold at the door (3D, IMAX, VIP). A tag is read as its last segment, so a
+   * format this scraper has never heard of still reaches the listing.
+   */
+  private sessionType(el: cheerio.Cheerio<any>): string | null {
+    const experiences = this.experiences(el);
+    const version = VERSION_TAGS.find(({ tag }) =>
+      experiences.some((experience) => experience.startsWith(tag)),
     );
+    const formats = experiences
+      .filter((experience) => !experience.startsWith(LOCALIZATION_TAG))
+      .map((experience) => experience.split('.').pop())
+      .filter((format) => format && !GENERIC_FORMATS.has(format));
+    const labels = [...new Set([version?.label, ...formats].filter(Boolean))];
+    return labels.join(', ') || null;
+  }
+
+  /** One unreadable attribute must not cost the venue its whole billboard. */
+  private experiences(el: cheerio.Cheerio<any>): string[] {
+    const raw = el.attr('data-experiences');
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed)
+        ? parsed.filter((tag): tag is string => typeof tag === 'string')
+        : [];
+    } catch {
+      this.logger.debug(`sensacine: unreadable data-experiences: '${raw}'`);
+      return [];
+    }
   }
 }

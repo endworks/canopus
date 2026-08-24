@@ -21,6 +21,34 @@ export const sanitizeTitle = (title: string): string =>
 export const generateSlug = (title: string): string =>
   sanitizeTitle(title).replace(/\s/g, '-');
 
+/**
+ * Words shared by half the listings in the country, wherever they sit in the
+ * name: 'Cines Palafox', 'Multicines Victoria', 'Yelmo Cines Puerto Venecia'.
+ */
+const GENERIC_VENUE_WORDS = new Set([
+  'cine',
+  'cines',
+  'cinema',
+  'cinemas',
+  'multicine',
+  'multicines',
+  'sala',
+  'salas',
+]);
+
+/**
+ * What actually names a venue, with the generic words dropped: they neither
+ * identify a venue nor order a list, so 'Multicines Victoria' files under V.
+ * Whole-word matching only, so chain names that merely start the same way
+ * ('Cinesa') keep every letter. A name that is nothing but generic words keeps
+ * them, since an empty key would match every other venue.
+ */
+export const venueKey = (name: string): string => {
+  const words = sanitizeTitle(name).split(' ');
+  const specific = words.filter((word) => !GENERIC_VENUE_WORDS.has(word));
+  return (specific.length ? specific : words).join(' ');
+};
+
 /** cache-manager v7 TTLs are milliseconds. Six hours. */
 export const cacheTTL = 1000 * 60 * 60 * 6;
 

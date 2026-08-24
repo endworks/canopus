@@ -1,6 +1,7 @@
 import { HttpModule } from '@nestjs/axios';
 import { CacheModule } from '@nestjs/cache-manager';
 import { Module } from '@nestjs/common';
+import { cacheTTL } from '../utils';
 import { MongooseModule } from '@nestjs/mongoose';
 import { BusController } from '../controllers/bus.controller';
 import {
@@ -18,7 +19,7 @@ import { BusService } from '../services/bus.service';
       { name: BusLine.name, schema: BusLineSchema },
     ]),
     HttpModule,
-    CacheModule.register(),
+    CacheModule.register({ ttl: cacheTTL }),
   ],
   controllers: [BusController],
   providers: [BusService],

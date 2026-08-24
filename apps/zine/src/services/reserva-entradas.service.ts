@@ -3,7 +3,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import * as cheerio from 'cheerio';
 import { lastValueFrom, timeout } from 'rxjs';
 import { Cinema, MovieBasic, Session } from '../models/cinema.interface';
-import { generateSlug, mapWithLimit, minutesToString } from '../utils';
+import { mapWithLimit } from '@canopus/shared';
+import { generateSlug, minutesToString } from '../utils';
 import { CinemaSource } from './cinema-source';
 
 const HOST = 'reservaentradas.com';

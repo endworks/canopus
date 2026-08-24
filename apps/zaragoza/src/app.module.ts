@@ -1,6 +1,7 @@
 import { HttpModule } from '@nestjs/axios';
 import { CacheModule } from '@nestjs/cache-manager';
 import { Module } from '@nestjs/common';
+import { cacheTTL } from './utils';
 import { ConfigModule } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { requireEnv } from '@canopus/shared';
@@ -17,7 +18,7 @@ import { TramModule } from './modules/tram.module';
       validate: (config) => requireEnv(config, ['MONGODB_URI']),
     }),
     HttpModule,
-    CacheModule.register(),
+    CacheModule.register({ ttl: cacheTTL }),
     MongooseModule.forRoot(process.env.MONGODB_URI, {
       dbName: 'zaragoza',
     }),

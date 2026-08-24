@@ -1,8 +1,11 @@
 import {
-  canonicalLineNames,
+  canonicalLineName,
   capitalize,
   capitalizeEachWord,
+  compareLineIds,
+  extraLineIds,
   fixMojibake,
+  knownLineIds,
   fixWords,
   isRomanNumeral,
   normalizeLineId,
@@ -176,16 +179,73 @@ describe('pickCanonicalStreet', () => {
   });
 });
 
-describe('canonicalLineNames', () => {
-  it('covers every line the updater ingests', () => {
-    expect(Object.keys(canonicalLineNames)).toHaveLength(48);
+describe('lineOverrides', () => {
+  it('names the lines the updater adds on its own', () => {
+    // These are not in the dropdown, so a name has to come from here.
+    extraLineIds.forEach((id) =>
+      expect([id, canonicalLineName(id)]).toEqual([id, expect.any(String)]),
+    );
   });
 
   it('has no name left unaccented', () => {
     const unaccented =
       /\b(jesus|aljaferia|estacion|jose|tranvia|turistico|aragon|espana|penaflor|pabellon|principe)\b/i;
-    Object.entries(canonicalLineNames).forEach(([id, name]) =>
-      expect([id, unaccented.test(name)]).toEqual([id, false]),
+    knownLineIds.forEach((id) =>
+      expect([id, unaccented.test(canonicalLineName(id))]).toEqual([id, false]),
+    );
+  });
+});
+
+describe('compareLineIds', () => {
+  it('numbers the numbered lines, then letters, then the night lines', () => {
+    const shuffled = ['N4', 'TUR', '51', 'Ci2', '9', 'C1', 'N10', '38', 'EM1'];
+    expect([...shuffled].sort(compareLineIds)).toEqual([
+      '9',
+      '38',
+      '51',
+      'C1',
+      'Ci2',
+      'EM1',
+      'TUR',
+      'N4',
+      'N10',
+    ]);
+  });
+
+  it('orders every real line id the way the listing shows them', () => {
+    const ids = knownLineIds;
+    const sorted = [...ids].sort(compareLineIds);
+
+    expect(sorted.slice(0, 3)).toEqual(['21', '22', '23']);
+    expect(sorted.filter((id) => /^\d+$/.test(id))).toEqual(
+      ids.filter((id) => /^\d+$/.test(id)),
+    );
+    expect(sorted.slice(-7)).toEqual([
+      'N1',
+      'N2',
+      'N3',
+      'N4',
+      'N5',
+      'N6',
+      'N7',
+    ]);
+    expect(sorted.slice(-16, -7)).toEqual([
+      'C1',
+      'C4',
+      'Ci1',
+      'Ci2',
+      'Ci3',
+      'Ci4',
+      'EM1',
+      'EM2',
+      'TUR',
+    ]);
+  });
+
+  it('does not depend on the order it is given', () => {
+    const ids = knownLineIds;
+    expect([...ids].reverse().sort(compareLineIds)).toEqual(
+      [...ids].sort(compareLineIds),
     );
   });
 });

@@ -3,7 +3,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import * as cheerio from 'cheerio';
 import { lastValueFrom, timeout } from 'rxjs';
 import { Cinema, MovieBasic, Session } from '../models/cinema.interface';
-import { generateSlug, mapWithLimit } from '../utils';
+import { mapWithLimit } from '@canopus/shared';
+import { generateSlug } from '../utils';
 import { CinemaSource } from './cinema-source';
 
 const HOST = 'sensacine.com';

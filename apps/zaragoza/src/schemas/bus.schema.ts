@@ -57,8 +57,14 @@ export class BusLine {
   @Prop({ type: [String], default: [] })
   stationsReturn?: string[];
 
-  @Prop({ required: true })
-  hidden: boolean;
+  /**
+   * The source stopped offering this line: it has been withdrawn from the
+   * network. Distinct from having no route to draw, which is derived from
+   * `stations` — one recovers when the dropdown lists the line again, the
+   * other the moment a route file parses.
+   */
+  @Prop({ default: false })
+  withdrawn: boolean;
 
   @Prop({ required: true })
   lastUpdated: string;

@@ -1,6 +1,7 @@
 import { HttpService } from '@nestjs/axios';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import {
+  HttpException,
   HttpStatus,
   Inject,
   Injectable,
@@ -10,13 +11,13 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Cache } from 'cache-manager';
 import Fuse = require('fuse.js');
 import { Model } from 'mongoose';
-import { lastValueFrom, timeout, TimeoutError } from 'rxjs';
 import {
   TramStationResponse,
   TramStationsResponse,
 } from '../models/tram.interface';
 import { capitalizeEachWord, fixWords, isInt } from '../utils';
 import { ErrorResponse } from '@canopus/shared';
+import { fetchWithTimeout } from '@canopus/nest';
 import { TramStation, TramStationDocument } from '../schemas/tram.schema';
 
 @Injectable()
@@ -115,18 +116,16 @@ export class TramService {
       const url =
         'https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/transporte-urbano/parada-tranvia/';
 
-      const responses = await Promise.all(
-        ['1', '2'].map((station) =>
-          lastValueFrom(
-            this.httpService
-              .get(url + `${id.slice(0, id.length - 1) + station}`)
-              .pipe(timeout(10000)),
+      const stations = await Promise.all(
+        ['1', '2'].map((platform) =>
+          fetchWithTimeout<any>(
+            this.httpService,
+            url + `${id.slice(0, id.length - 1) + platform}`,
           ),
         ),
       );
 
-      responses.forEach((response) => {
-        const station = response.data;
+      stations.forEach((station) => {
         resp.times.push(
           ...(station.destinos?.map((destino) => {
             return {
@@ -157,16 +156,7 @@ export class TramService {
       );
       return resp;
     } catch (exception) {
-      if (exception instanceof TimeoutError) {
-        throw new InternalServerErrorException(
-          {
-            statusCode: HttpStatus.REQUEST_TIMEOUT,
-            message:
-              'Request timeout: The API request took too long to complete',
-          },
-          'Request timeout: The API request took too long to complete',
-        );
-      }
+      if (exception instanceof HttpException) throw exception;
       throw new InternalServerErrorException(
         {
           statusCode: HttpStatus.INTERNAL_SERVER_ERROR,

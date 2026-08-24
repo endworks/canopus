@@ -15,57 +15,36 @@ import {
 import {
   TheMovieDBConfiguration,
   TheMovieDBCredits,
-  TheMovieDBMovie,
   TheMovieDBSearchResult,
 } from '../models/themoviedb.interface';
 import { Cinema as CinemaSchema } from '../schemas/cinema.schema';
 import { Movie as MovieSchema } from '../schemas/movie.schema';
-import { minutesToString, sanitizeTitle } from '../utils';
+import { Match, pickBest, searchQueries, shortlist } from '../movie-matcher';
+import { minutesToString } from '../utils';
 import { ReservaEntradasService } from './reserva-entradas.service';
 import { TheMovieDBService } from './themoviedb.service';
 
 const LANG = 'es-ES';
+const REGION = 'ES';
 
-/** TheMovieDB runtimes wobble against cinema listings; accept within ±20 min. */
-const DURATION_TOLERANCE_MIN = 20;
+/** Long runs and re-releases sit on a billboard for months. */
+const BILLBOARD_LOOKBACK_DAYS = 180;
 
-/** Detail lookups are one HTTP call each, so cap the ambiguous-match probe. */
-const MAX_CANDIDATE_LOOKUPS = 5;
+/** Previews and advance listings run slightly ahead of the release date. */
+const BILLBOARD_LOOKAHEAD_DAYS = 30;
 
-const durationMatches = (duration: number, runtime: number): boolean =>
-  runtime > 0 && Math.abs(duration - runtime) <= DURATION_TOLERANCE_MIN;
+/** 20 results a page — enough to cover a national billboard, not the archive. */
+const MAX_BILLBOARD_PAGES = 10;
+
+const isoDate = (offsetDays: number): string =>
+  new Date(Date.now() + offsetDays * 86_400_000).toISOString().slice(0, 10);
+
+const describe = (match: Match): string =>
+  `'${match.movie.title}' (${match.score.toFixed(2)}, ${match.movie.runtime} min)`;
 
 /** Mongo bookkeeping fields never belong in an RPC response. */
 const stripMongoFields = <T>({ _id, __v, ...rest }: T & Record<string, any>) =>
   rest;
-
-/**
- * Pick the best TheMovieDB results for a scraped title: exact match, then the
- * scraped title containing a result, then a result containing the scraped
- * title. A single search result is taken as-is.
- */
-const selectCandidates = (
-  title: string,
-  results: TheMovieDBSearchResult[],
-): TheMovieDBSearchResult[] => {
-  if (results.length === 1) return results;
-  const sanitized = results.map((result) => ({
-    result,
-    title: sanitizeTitle(result.title),
-  }));
-  const tiers = [
-    (candidate: string) => candidate === title,
-    (candidate: string) => title.includes(candidate),
-    (candidate: string) => candidate.includes(title),
-  ];
-  for (const tier of tiers) {
-    const matches = sanitized
-      .filter((entry) => tier(entry.title))
-      .map((entry) => entry.result);
-    if (matches.length > 0) return matches;
-  }
-  return [];
-};
 
 @Injectable()
 export class CinemaService {
@@ -221,38 +200,9 @@ export class CinemaService {
     movie: Movie,
     config: TheMovieDBConfiguration,
   ): Promise<Movie> {
-    const title = sanitizeTitle(movie.name);
-    const search = await this.theMovieDb.search(
-      title,
-      LANG,
-      new Date().getFullYear(),
-    );
-    if (!search.results?.length) {
-      this.logger.error(`'${title}' not found on TheMovieDatabase`);
-      return movie;
-    }
-
-    const candidates = selectCandidates(title, search.results);
-    if (candidates.length === 0) {
-      this.logger.error(`'${movie.name}' got no results`);
-      return movie;
-    }
-
-    const movieDB = await this.resolveCandidate(movie, candidates);
-    if (!movieDB) {
-      this.logger.error(`'${movie.name}' not matched with any result`);
-      return movie;
-    }
-
-    if (
-      movieDB.runtime > 0 &&
-      !durationMatches(movie.duration, movieDB.runtime)
-    ) {
-      this.logger.error(
-        `'${movie.name}' and '${movieDB.title}' duration doesn't match: ${movie.duration} != ${movieDB.runtime}`,
-      );
-      return movie;
-    }
+    const match = await this.findMatch(movie);
+    if (!match) return movie;
+    const movieDB = match.movie;
 
     // Credits and videos are independent — one round trip instead of two.
     const [credits, videos] = await Promise.all([
@@ -294,31 +244,115 @@ export class CinemaService {
   }
 
   /**
-   * Disambiguate several title matches by runtime. Candidates are probed in
-   * TheMovieDB's own popularity order and the first runtime match wins, so the
-   * result doesn't depend on which request resolves first.
+   * Every film with a Spanish theatrical release row in the billboard window.
+   * A few paged calls, cached and shared across every cinema and film, giving a
+   * small high-precision candidate set to match against locally instead of one
+   * text search per title.
    */
-  private async resolveCandidate(
+  private billboard(): Promise<TheMovieDBSearchResult[]> {
+    const from = isoDate(-BILLBOARD_LOOKBACK_DAYS);
+    const to = isoDate(BILLBOARD_LOOKAHEAD_DAYS);
+    return this.cacheManager.wrap(
+      `themoviedb/billboard/${REGION}/${from}/${to}`,
+      async () => {
+        const first = await this.theMovieDb.releasedIn(
+          REGION,
+          from,
+          to,
+          1,
+          LANG,
+        );
+        const pages = Math.min(first.total_pages ?? 1, MAX_BILLBOARD_PAGES);
+        const rest = await Promise.all(
+          Array.from({ length: Math.max(pages - 1, 0) }, (_, index) =>
+            this.theMovieDb.releasedIn(REGION, from, to, index + 2, LANG),
+          ),
+        );
+        const results = [first, ...rest].flatMap((page) => page.results ?? []);
+        this.logger.log(
+          `billboard: ${results.length} films released in ${REGION} between ${from} and ${to}`,
+        );
+        return results;
+      },
+    );
+  }
+
+  /**
+   * Find the TheMovieDB record for a scraped billboard entry.
+   *
+   * The Spanish release window is tried first: it is a small, high-precision
+   * set, so a hit there is almost certainly the right film. Text search is the
+   * fallback, because regional release rows are contributor-supplied and thin
+   * for art-house and small-distributor runs — exactly the long tail. Within
+   * each source, queries run from most to least specific.
+   *
+   * Title similarity decides; runtime only breaks ties, so a re-release with a
+   * restored runtime still matches instead of being thrown away.
+   */
+  private async findMatch(movie: Movie): Promise<Match | null> {
+    const queries = searchQueries(movie.name);
+
+    for (const query of queries) {
+      const match = await this.bestOf(
+        query,
+        movie,
+        shortlist(query, await this.spanishReleases()),
+      );
+      if (match) {
+        this.logger.debug(
+          `matched '${movie.name}' via billboard: ${describe(match)}`,
+        );
+        return match;
+      }
+    }
+
+    for (const query of queries) {
+      const { results } = await this.theMovieDb.search(query, LANG);
+      const match = await this.bestOf(
+        query,
+        movie,
+        shortlist(query, results ?? []),
+      );
+      if (match) {
+        this.logger.debug(
+          `matched '${movie.name}' via search: ${describe(match)}`,
+        );
+        return match;
+      }
+    }
+
+    // Expected for art-house programming and local premieres, so this is a
+    // warning rather than an error; the queries are logged so the next tuning
+    // pass can see exactly what was asked for.
+    this.logger.warn(
+      `no TheMovieDB match for '${movie.name}' (tried: ${queries.join(', ')})`,
+    );
+    return null;
+  }
+
+  /** The billboard is an optimisation — never let it fail the enrichment. */
+  private async spanishReleases(): Promise<TheMovieDBSearchResult[]> {
+    try {
+      return await this.billboard();
+    } catch (exception) {
+      this.logger.warn(
+        `billboard lookup failed, falling back to search: ${exception.message}`,
+      );
+      return [];
+    }
+  }
+
+  /** Resolve a shortlist to full records and take the best combined score. */
+  private async bestOf(
+    query: string,
     movie: Movie,
     candidates: TheMovieDBSearchResult[],
-  ): Promise<TheMovieDBMovie | null> {
-    if (candidates.length === 1) {
-      return this.theMovieDb.movie(candidates[0].id, LANG);
-    }
+  ): Promise<Match | null> {
+    if (candidates.length === 0) return null;
     const details = await Promise.all(
-      candidates
-        .slice(0, MAX_CANDIDATE_LOOKUPS)
-        .map((candidate) => this.theMovieDb.movie(candidate.id, LANG)),
+      candidates.map((candidate) => this.theMovieDb.movie(candidate.id, LANG)),
     );
-    const match = details.find((detail) =>
-      durationMatches(movie.duration, detail.runtime),
-    );
-    if (match) {
-      this.logger.log(
-        `Should match '${movie.name}' duration: ${movie.duration} ≈ ${match.runtime}`,
-      );
-    }
-    return match ?? null;
+    return pickBest(query, movie.duration, details);
   }
 
   private parseCredits(

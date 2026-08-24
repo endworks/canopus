@@ -46,20 +46,45 @@ export class TheMovieDBService {
     return this.fetch('themoviedb/configuration', '/configuration');
   }
 
-  public search(
-    query: string,
+  /**
+   * No `year` filter. It is a hard filter, and it tests TheMovieDB's per-country
+   * release-date rows — which are contributor-supplied and thin for Spain. A
+   * re-release only surfaces under the current year if someone added a Spanish
+   * release row for it, so pinning the year hides exactly what a billboard is
+   * full of: re-releases, restorations and films that opened abroad years ago.
+   */
+  public search(query: string, lang = 'en-US'): Promise<TheMovieDBSearch> {
+    return this.fetch(
+      `themoviedb/search/${generateSlug(query)}/${lang}`,
+      '/search/movie',
+      { language: lang, query, page: '1', include_adult: 'true' },
+    );
+  }
+
+  /**
+   * Films with a theatrical or limited-theatrical release row in `region`
+   * inside the window. Same engine as /movie/now_playing, but the window is
+   * explicit, so long runs and re-releases stay in range instead of falling out
+   * of TheMovieDB's own fixed ~7-week span.
+   */
+  public releasedIn(
+    region: string,
+    from: string,
+    to: string,
+    page = 1,
     lang = 'en-US',
-    year = new Date().getFullYear(),
   ): Promise<TheMovieDBSearch> {
     return this.fetch(
-      `themoviedb/search/${generateSlug(query)}/${lang}/${year}`,
-      '/search/movie',
+      `themoviedb/discover/${region}/${from}/${to}/${lang}/${page}`,
+      '/discover/movie',
       {
         language: lang,
-        query,
-        page: '1',
+        region,
+        with_release_type: '2|3',
+        'release_date.gte': from,
+        'release_date.lte': to,
         include_adult: 'true',
-        year: String(year),
+        page: String(page),
       },
     );
   }

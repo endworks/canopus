@@ -46,6 +46,20 @@ const describe = (match: Match): string =>
 const stripMongoFields = <T>({ _id, __v, ...rest }: T & Record<string, any>) =>
   rest;
 
+/** Accents and capitalisation vary between sources, so neither may decide order. */
+const collator = new Intl.Collator('es', { sensitivity: 'base' });
+
+/** Absent values sort last rather than ahead of every name. */
+const compareText = (a?: string, b?: string): number => {
+  if (!a) return b ? 1 : 0;
+  if (!b) return -1;
+  return collator.compare(a, b);
+};
+
+/** The listing reads as an alphabetical index: city first, then venue name. */
+const byCityThenName = (a: Cinema, b: Cinema): number =>
+  compareText(a.location, b.location) || compareText(a.name, b.name);
+
 @Injectable()
 export class CinemaService {
   private readonly logger = new Logger(CinemaService.name);
@@ -62,13 +76,17 @@ export class CinemaService {
     const key = location ? `cinema/${location}` : 'cinema';
     return this.cacheManager.wrap(key, async () => {
       const locations = location?.toLowerCase().split(',');
+      // Sorted by id in Mongo so venues sharing a city and name keep a stable
+      // order; the alphabetical sort below is stable and preserves it.
       const cinemas = await this.cinemaModel.find().sort({ id: 1 }).lean();
-      return cinemas
-        .filter(
-          (cinema) =>
-            !locations || locations.includes(cinema.location?.toLowerCase()),
-        )
-        .map(stripMongoFields) as Cinema[];
+      return (
+        cinemas
+          .filter(
+            (cinema) =>
+              !locations || locations.includes(cinema.location?.toLowerCase()),
+          )
+          .map(stripMongoFields) as Cinema[]
+      ).sort(byCityThenName);
     });
   }
 

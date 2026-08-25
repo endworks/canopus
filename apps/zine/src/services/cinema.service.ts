@@ -235,7 +235,10 @@ export class CinemaService {
         }
       }),
     );
-    await this.saveCinemas(this.sources.dedupe(catalogues.flat()));
+    const listed = catalogues.flat();
+    const catalogue = this.sources.dedupe(listed);
+    await this.saveCinemas(catalogue);
+    await this.dropMergedVenues(listed, catalogue);
     const cinemas = await this.getCinemas('zaragoza');
     await Promise.all(
       cinemas.map((cinema) =>
@@ -491,6 +494,25 @@ export class CinemaService {
       { $set: data },
       { upsert: true },
     );
+  }
+
+  /**
+   * A venue the dedupe now merges away may have been saved as a cinema of its
+   * own by an earlier run, and upserting never removes it. Without this the
+   * merged listing keeps showing up, with its own copy of the billboard —
+   * every film on it duplicated under whatever title the other site prints.
+   *
+   * Only venues seen in this run's listings are dropped, so a source that
+   * failed and returned nothing can never delete the venues it owns.
+   */
+  private async dropMergedVenues(listed: Cinema[], kept: Cinema[]) {
+    const keptIds = new Set(kept.map((cinema) => cinema.id));
+    const merged = listed
+      .map((cinema) => cinema.id)
+      .filter((id) => !keptIds.has(id));
+    if (!merged.length) return;
+    this.logger.log(`dropping ${merged.length} merged venues`);
+    await this.cinemaModel.deleteMany({ id: { $in: merged } });
   }
 
   /**

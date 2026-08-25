@@ -30,33 +30,72 @@ const siteOf = (cinema: Cinema): string => {
 };
 
 /**
- * The venue key with the city dropped from the end. Each site disambiguates
- * its own listing and picks a different qualifier for it: reservaentradas
- * files the Palafox under the street it stands on ('Palafox Independencia'),
- * SensaCine under the city ('Cine Palafox Zaragoza'). Neither key contains the
- * other, so without this they read as two venues.
+ * The venue key with the place it stands in dropped from the end. Each site
+ * disambiguates its own listing and picks a different qualifier for it:
+ * reservaentradas files the Palafox under the street it stands on ('Palafox
+ * Independencia'), SensaCine under the town ('Cine Palafox Zaragoza'). Neither
+ * key contains the other, so without this they read as two venues.
  */
-const withoutCity = (cinema: Cinema): string => {
+const placeWords = (place?: string): string =>
+  place ? sanitizeTitle(place.replace(/-/g, ' ')) : '';
+
+const withoutPlace = (cinema: Cinema): string => {
   const key = venueKey(cinema.name);
-  const city = cinema.location
-    ? sanitizeTitle(cinema.location.replace(/-/g, ' '))
-    : '';
-  // A venue named after nothing but its city keeps the city: an empty key
-  // would match every other venue in it.
-  if (!city || key === city || !key.endsWith(` ${city}`)) return key;
-  return key.slice(0, -city.length - 1);
+  for (const place of [cinema.town, cinema.location]) {
+    const words = placeWords(place);
+    // A venue named after nothing but its town keeps the town: an empty key
+    // would match every other venue in it.
+    if (!words || key === words || !key.endsWith(` ${words}`)) continue;
+    return key.slice(0, -words.length - 1);
+  }
+  return key;
 };
 
-/** Two listings of the same venue, allowing for a trailing city or "sala". */
+/**
+ * Whether two listings stand in the same place.
+ *
+ * The postal code is the only field either site publishes that actually
+ * locates a venue. Names don't: there is a Cine Goya in Maella, one in
+ * Mequinenza and one in Caspe. Nor does the region, which reservaentradas
+ * takes from the URL and SensaCine from whichever index page listed the venue,
+ * so all three read as 'zaragoza'. Fall back to the region only when a code is
+ * missing, which is the best that listing allows.
+ */
+const samePlace = (a: Cinema, b: Cinema): boolean =>
+  a.postalCode && b.postalCode
+    ? a.postalCode === b.postalCode
+    : a.location?.toLowerCase() === b.location?.toLowerCase();
+
+/**
+ * Whether both listings name the same town, allowing for the article and the
+ * island or comarca one of them tacks on: 'A Coruña' and 'Coruña', 'Arrecife'
+ * and 'Arrecife - Lanzarote'.
+ */
+const sameTown = (a: Cinema, b: Cinema): boolean => {
+  const left = placeWords(a.town);
+  const right = placeWords(b.town);
+  if (!left || !right) return false;
+  return (
+    left === right || left.endsWith(` ${right}`) || right.endsWith(` ${left}`)
+  );
+};
+
+/** Two listings of the same venue, allowing for a trailing town or "sala". */
 const isSameVenue = (a: Cinema, b: Cinema): boolean => {
-  if (a.location?.toLowerCase() !== b.location?.toLowerCase()) return false;
+  // The two sites disagree on the postal code often enough that requiring it
+  // to match splits real duplicates — the Callao is 28013 on one and 28018 on
+  // the other. A name that matches exactly, in a town that matches, is the
+  // stronger signal, and it stays clear of the near-misses that share a town:
+  // 'Cinesa Diagonal' and 'Cinesa Diagonal Mar' are two Barcelona venues.
+  if (sameTown(a, b) && venueKey(a.name) === venueKey(b.name)) return true;
+  if (!samePlace(a, b)) return false;
   if (alike(venueKey(a.name), venueKey(b.name))) return true;
   // Only across sites. One site names its own venues consistently, so there a
   // differing qualifier marks a different cinema: 'Cines Verdi' and 'Cines
   // Verdi Park' are two Barcelona venues, not one listed twice.
   return siteOf(a) === siteOf(b)
     ? false
-    : alike(withoutCity(a), withoutCity(b));
+    : alike(withoutPlace(a), withoutPlace(b));
 };
 
 /**

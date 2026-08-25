@@ -10,6 +10,10 @@ export interface BaseCinema {
   name: string;
   address?: string;
   location?: string;
+  /** Postal code of the venue, when the listing states it. */
+  postalCode?: string;
+  /** Town the postal code belongs to, which may differ from `location`. */
+  town?: string;
   website?: string;
   source?: string;
 }
@@ -93,6 +97,8 @@ export interface Actor extends Crew {
 export interface CinemaDetails extends Cinema {
   lastUpdated: string;
   movies: Movie[];
+  /** Showtimes grouped by TheMovieDB film id. */
+  sessions?: Record<string, Session[]>;
 }
 
 export interface CinemaDetailsBasic extends Cinema {

@@ -136,10 +136,10 @@ export class CinemaService {
       sessions,
     };
 
-    await this.saveCinema({
-      ...resp,
-      movies: movies.map((movie) => movie.id),
-    });
+    // The billboard is keyed by scraped title here, not by film. Only
+    // getCinema resolves the TheMovieDB ids the rest of the service stores, so
+    // writing these would put a second, private id space in the same fields.
+    await this.saveCinema({ id, lastUpdated: resp.lastUpdated });
     await this.cacheManager.set(`cinema/${id}/basic`, resp);
     return resp;
   }
@@ -152,22 +152,34 @@ export class CinemaService {
     const cinema = await this.getCinemaBasic(id);
     const scraped = cinema.movies as Movie[];
 
-    let movies: Movie[];
+    let matched: Movie[];
     try {
       const config = await this.theMovieDb.configuration();
-      movies = await Promise.all(
+      const enriched = await Promise.all(
         scraped.map((movie) => this.enrichMovie(movie, config)),
       );
+      matched = enriched.filter((movie): movie is Movie => movie !== null);
     } catch (exception) {
       // Enrichment is best-effort: fall back to the scraped billboard rather
-      // than failing a request that already has showtimes to return.
+      // than failing a request that already has showtimes to return. Those
+      // films are still keyed by title, so this response is never persisted
+      // or cached, and the next request retries.
       this.logger.error(
         `TheMovieDB enrichment failed for cinema '${id}', returning basic data: ${exception.message}`,
       );
       return this.toCinemaDetails(cinema, scraped);
     }
 
-    const resp = this.toCinemaDetails(cinema, movies);
+    if (matched.length < scraped.length) {
+      this.logger.warn(
+        `cinema '${id}': dropped ${scraped.length - matched.length} of ${scraped.length} films with no TheMovieDB match`,
+      );
+    }
+
+    const resp = this.toCinemaDetails(
+      cinema,
+      this.byFilm(matched, cinema.sessions),
+    );
     await this.saveMovies(resp.movies);
     await this.saveCinema({
       ...resp,
@@ -256,14 +268,45 @@ export class CinemaService {
     cinema: CinemaDetailsBasic,
     movies: Movie[],
   ): CinemaDetails {
+    // Sorted again because enrichment is what fills most release dates in:
+    // the scraped order this started from knew almost none of them.
+    const films = movies
+      .map((movie) => this.normalizeMovie(movie, cinema.sessions))
+      .sort(byReleaseDateDesc);
     return {
       ...cinema,
-      // Sorted again because enrichment is what fills most release dates in:
-      // the scraped order this started from knew almost none of them.
-      movies: movies
-        .map((movie) => this.normalizeMovie(movie, cinema.sessions))
-        .sort(byReleaseDateDesc),
+      // Rebuilt rather than carried over: enrichment re-keys the billboard by
+      // film, so the map the scrape produced is keyed by titles that are gone.
+      sessions: Object.fromEntries(
+        films.map((film) => [film.id, film.sessions]),
+      ),
+      movies: films,
     };
+  }
+
+  /**
+   * Key the billboard by film rather than by the title a site printed.
+   *
+   * Two scraped entries are often one film — a dubbed listing and a subtitled
+   * one, a re-release, or the same title spelt differently by the two sites —
+   * so their showtimes are pooled instead of one overwriting the other.
+   */
+  private byFilm(
+    movies: Movie[],
+    sessions?: Record<string, Session[]>,
+  ): Movie[] {
+    const films = new Map<string, Movie>();
+    for (const movie of movies) {
+      const id = String(movie.theMovieDbId);
+      const showings = movie.sessions ?? sessions?.[movie.id] ?? [];
+      const seen = films.get(id);
+      if (seen) {
+        seen.sessions = [...seen.sessions, ...showings];
+        continue;
+      }
+      films.set(id, { ...movie, id, sessions: [...showings] });
+    }
+    return [...films.values()];
   }
 
   // Movies that didn't match TheMovieDB fall through unenriched (basic shape).
@@ -283,13 +326,19 @@ export class CinemaService {
     };
   }
 
-  /** Overlay a scraped movie with TheMovieDB metadata, or return it unchanged. */
+  /**
+   * Overlay a scraped movie with TheMovieDB metadata, or drop it.
+   *
+   * A film TheMovieDB doesn't know has no id to be keyed by and no metadata to
+   * show, and the same title printed differently by the two sites would land
+   * as two films, so it is left off the billboard entirely.
+   */
   private async enrichMovie(
     movie: Movie,
     config: TheMovieDBConfiguration,
-  ): Promise<Movie> {
+  ): Promise<Movie | null> {
     const match = await this.findMatch(movie);
-    if (!match) return movie;
+    if (!match) return null;
     const movieDB = match.movie;
 
     // Credits and videos are independent — one round trip instead of two.
@@ -525,7 +574,11 @@ export class CinemaService {
       return {
         updateOne: {
           filter: { id: cinema.id },
-          update: { $set: { ...cinema, address, website } },
+          // The seed still wins, but the listings carry an address of their
+          // own now, so an unseeded venue keeps the one it was scraped with.
+          update: {
+            $set: { ...cinema, address: address ?? cinema.address, website },
+          },
           upsert: true,
         },
       };

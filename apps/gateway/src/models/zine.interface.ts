@@ -90,6 +90,18 @@ export class Cinema {
   location?: string;
 
   /**
+   * Postal code, when the listing states it.
+   * @example '50004'
+   */
+  postalCode?: string;
+
+  /**
+   * Town the postal code belongs to, which may differ from `location`.
+   * @example 'Zaragoza'
+   */
+  town?: string;
+
+  /**
    * Website, when known.
    * @example 'https://www.cinesa.es/cines/aragonia/'
    */
@@ -104,8 +116,9 @@ export class Cinema {
 
 export class MovieBasic {
   /**
-   * Movie id.
-   * @example '438631'
+   * TheMovieDB film id. A film TheMovieDB doesn't know is left off the
+   * billboard, so every movie returned has one.
+   * @example '693134'
    */
   id: string;
 
@@ -284,6 +297,9 @@ export class CinemaDetails extends Cinema {
 
   /** Movies showing, with full details. */
   movies: Movie[];
+
+  /** Sessions grouped by TheMovieDB film id. */
+  sessions?: Record<string, Session[]>;
 }
 
 export class CinemaDetailsBasic extends Cinema {

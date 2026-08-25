@@ -35,6 +35,9 @@ const KEEP_CINE_PREFIX = /^Cine Y/i;
 /** Trailing numeric segment of a film or session URL — a stable per-site id. */
 const SOURCE_ID = /\/(\d+)\/?(?:\?|$)/;
 
+/** `50004, Zaragoza` — the postal code and the town it belongs to. */
+const POSTAL_LINE = /^(\d{5}),\s*(.+)$/;
+
 const SPANISH_RATING = /menores de (\d+)/i;
 const ALL_AGES = /apto para todos/i;
 
@@ -101,9 +104,51 @@ export class ReservaEntradasService implements CinemaSource {
     return cheerio.load(data);
   }
 
-  /** Every cinema listed, across all provinces. */
+  /**
+   * Every cinema listed, across all provinces.
+   *
+   * The index gives only a name and a link, and the name alone cannot place a
+   * venue: the URL files every cinema in the province under the province, so
+   * the three Cine Goya in Maella, Mequinenza and Caspe all read as Zaragoza.
+   * One page per venue buys the postal code, which does place it.
+   */
   public async getCinemas(): Promise<Cinema[]> {
-    const $ = await this.load(CINEMAS_URL);
+    const listed = this.parseCinemaIndex(await this.load(CINEMAS_URL));
+    return mapWithLimit(listed, MAX_CONCURRENT_FETCHES, async (cinema) => {
+      try {
+        return {
+          ...cinema,
+          ...this.parseVenueAddress(await this.load(cinema.source)),
+        };
+      } catch (exception) {
+        // The venue is real and listed; only its address is missing, and the
+        // matching falls back to names without it.
+        this.logger.warn(
+          `reservaentradas: no address for '${cinema.id}': ${exception.message}`,
+        );
+        return cinema;
+      }
+    });
+  }
+
+  /** `50004, Zaragoza` on its own line, under the street. */
+  private parseVenueAddress($: cheerio.CheerioAPI): Partial<Cinema> {
+    let found: Partial<Cinema> = {};
+    $('p').each((_, el) => {
+      if (Object.keys(found).length) return;
+      const match = POSTAL_LINE.exec($(el).text().replace(/\s+/g, ' ').trim());
+      if (!match) return;
+      const street = $(el).prev('p').text().replace(/\s+/g, ' ').trim();
+      found = {
+        address: street ? `${street}, ${match[1]} ${match[2]}` : undefined,
+        postalCode: match[1],
+        town: match[2],
+      };
+    });
+    return found;
+  }
+
+  private parseCinemaIndex($: cheerio.CheerioAPI): Cinema[] {
     const cinemas: Cinema[] = [];
 
     $('li.provincia').each((_, el) => {

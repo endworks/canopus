@@ -278,7 +278,14 @@ export class CinemaService {
     });
     const sessions = await this.dropPastSessions();
     const movies = await this.dropUnwatchableMovies();
-    const caches = await this.dropOrphanCaches(live);
+    // What a prune deletes is reachable from more than one cache key — the
+    // city lists and the unfiltered listings included — so picking at the
+    // keys named after a venue would still serve it for the rest of the TTL.
+    let caches = 0;
+    if (deletedCount || movies || sessions) {
+      caches = (await this.listCacheKeys()).length;
+      await this.cacheManager.clear();
+    }
 
     this.logger.log(
       `pruned ${deletedCount} cinemas, ${movies} films, ${sessions} showtimes, ${caches} cache entries`,
@@ -336,25 +343,6 @@ export class CinemaService {
       id: { $nin: [...showing] },
     });
     return deletedCount;
-  }
-
-  /**
-   * Cache entries behind a cinema that no longer exists. The keys share one
-   * namespace — `cinema/<id>` is one venue, `cinema/<location>` is the list
-   * for a city — so anything still in use is kept by matching both.
-   */
-  private async dropOrphanCaches(live: Cinema[]): Promise<number> {
-    const known = new Set([
-      ...live.map((cinema) => cinema.id),
-      ...live.map((cinema) => cinema.location?.toLowerCase()),
-    ]);
-    const orphans = (await this.listCacheKeys()).filter((key) => {
-      const [prefix, name] = key.split('/');
-      if (!name || (prefix !== 'cinema' && prefix !== 'movies')) return false;
-      return !known.has(name);
-    });
-    for (const key of orphans) await this.cacheManager.del(key);
-    return orphans.length;
   }
 
   /** Warms every Zaragoza cinema from scratch. */

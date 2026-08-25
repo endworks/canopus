@@ -58,13 +58,15 @@ const withoutPlace = (cinema: Cinema): string => {
  * locates a venue. Names don't: there is a Cine Goya in Maella, one in
  * Mequinenza and one in Caspe. Nor does the region, which reservaentradas
  * takes from the URL and SensaCine from whichever index page listed the venue,
- * so all three read as 'zaragoza'. Fall back to the region only when a code is
- * missing, which is the best that listing allows.
+ * so all three read as 'zaragoza'.
+ *
+ * A venue whose page failed to load has no code, and there is no weaker field
+ * to fall back to: the region would merge those three Goya. It stays unmatched
+ * instead, because a venue listed twice is a far cheaper mistake than two
+ * venues collapsed into one — the merged-away listing gets deleted.
  */
 const samePlace = (a: Cinema, b: Cinema): boolean =>
-  a.postalCode && b.postalCode
-    ? a.postalCode === b.postalCode
-    : a.location?.toLowerCase() === b.location?.toLowerCase();
+  Boolean(a.postalCode && b.postalCode && a.postalCode === b.postalCode);
 
 /**
  * Whether both listings name the same town, allowing for the article and the

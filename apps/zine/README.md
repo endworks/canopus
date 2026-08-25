@@ -35,11 +35,16 @@ reservaentradas takes from the URL and SensaCine from whichever index listed
 the venue, so all three read as Zaragoza. The two sites disagree on the code
 often enough that an identical name in the same town counts as a match too.
 
+A venue whose page failed to load has no code, and nothing weaker is used in
+its place: it stays unmatched, and appears twice until the next run reads it.
+A duplicate is the cheaper mistake, because the merged-away listing is deleted.
+
 ## Pruning
 
 `updateAll` only ever writes: a venue that closes, or a film that leaves every
 billboard, stays in the database. `prune` is the other half, and is deliberately
-a separate call so a refresh never deletes on its own.
+a separate call so a refresh never deletes on its own. It is a `POST`: it
+removes documents, and nothing that merely follows links should reach it.
 
 Nothing carries a timestamp, so staleness is reachability rather than age — a
 venue neither site lists any more, then a film no remaining venue is showing.

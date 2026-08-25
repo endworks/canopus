@@ -65,6 +65,15 @@ const VERSION_TAGS: { tag: string; label: string }[] = [
 
 const LOCALIZATION_TAG = 'Localization.';
 
+/**
+ * Dubbing is filed under accessibility rather than localization, so the
+ * version tags above don't cover it. It names no choice in Spain — a showing
+ * is dubbed unless it says otherwise — and reservaentradas doesn't print it,
+ * so leaving it in made one site's screening read 'DUBBED' where the other
+ * called the very same one 'DIGITAL'.
+ */
+const DUBBED_TAG = 'Showtime.Accessibility.Dubbed';
+
 /** Tags every screening carries, so they say nothing about this one. */
 const GENERIC_FORMATS = new Set(['Digital', 'Standard']);
 
@@ -336,7 +345,10 @@ export class SensaCineService implements CinemaSource {
       experiences.some((experience) => experience.startsWith(tag)),
     );
     const formats = experiences
-      .filter((experience) => !experience.startsWith(LOCALIZATION_TAG))
+      .filter(
+        (experience) =>
+          !experience.startsWith(LOCALIZATION_TAG) && experience !== DUBBED_TAG,
+      )
       .map((experience) => experience.split('.').pop())
       .filter((format) => format && !GENERIC_FORMATS.has(format));
     const labels = [...new Set([version?.label, ...formats].filter(Boolean))];

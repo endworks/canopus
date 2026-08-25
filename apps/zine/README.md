@@ -17,7 +17,7 @@ Exposed as `ZINE_PATTERNS` in `@canopus/shared`:
 | `movies`       | `{ location?: string }` | Films on a billboard, optionally filtered      |
 | `cached`       | —                       | Current cache keys                             |
 | `prune`        | —                       | Deletes what the catalogue has dropped         |
-| `updateAll`    | —                       | Clears the cache and re-scrapes every cinema   |
+| `updateAll`    | `{ location?: string }` | Re-scrapes, then warms one city (def. Zaragoza) |
 
 ## Identity
 
@@ -40,6 +40,11 @@ its place: it stays unmatched, and appears twice until the next run reads it.
 A duplicate is the cheaper mistake, because the merged-away listing is deleted.
 
 ## Pruning
+
+`updateAll` saves the whole national catalogue, but only refreshes the
+billboards of the city it is given, defaulting to Zaragoza — every venue is one
+scrape plus a TheMovieDB lookup per film. A venue outside that city is stored
+with no films, so it lists nothing until a run names its city.
 
 `updateAll` only ever writes: a venue that closes, or a film that leaves every
 billboard, stays in the database. `prune` is the other half, and is deliberately

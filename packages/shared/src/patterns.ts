@@ -24,6 +24,7 @@ export const ZINE_PATTERNS = {
   cinemaBasic: 'cinema/basic',
   movies: 'movies',
   cached: 'cached',
+  prune: 'prune',
   updateAll: 'updateAll',
 } as const;
 

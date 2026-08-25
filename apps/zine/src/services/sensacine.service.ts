@@ -22,6 +22,29 @@ const VENUE_ID = /\/cines\/cine\/(E\d+)\//i;
 /** City pages cover the urban venues, province pages cover everything else. */
 const REGION_LINK = /\/cines\/(?:ciudades|provincias)-\d+\//;
 
+/** The listing row for one venue, which carries its address. */
+const VENUE_CARD = '.theater-card';
+
+/**
+ * `Paseo Independencia, 12 50004 Zaragoza` — street, then the postal code and
+ * the town it belongs to. The town is what actually places a venue: two sites
+ * can file the same cinema under different regions, and a province page files
+ * every town in it under the province.
+ */
+const POSTAL_ADDRESS = /^(.*?)\s*(\d{5})\s+(.+)$/;
+
+const parsePostalAddress = (
+  address: string,
+): { address?: string; postalCode?: string; town?: string } => {
+  const match = POSTAL_ADDRESS.exec(address);
+  if (!match) return address ? { address } : {};
+  return {
+    address,
+    postalCode: match[2],
+    town: match[3].trim(),
+  };
+};
+
 /** A film mid-scrape, before its showtimes have all been collected. */
 type ScrapedMovie = MovieBasic & { sessions: Session[] };
 
@@ -154,10 +177,18 @@ export class SensaCineService implements CinemaSource {
       const id = VENUE_ID.exec(href)?.[1];
       const name = $(a).text().replace(/\s+/g, ' ').trim();
       if (!id || !name || venues.has(id)) return;
+      const address = $(a)
+        .closest(VENUE_CARD)
+        .find('address')
+        .first()
+        .text()
+        .replace(/\s+/g, ' ')
+        .trim();
       venues.set(id, {
         id: `${ID_PREFIX}${id.toLowerCase()}`,
         name,
         location: generateSlug(region),
+        ...parsePostalAddress(address),
         source: this.absolute(href),
       });
     });

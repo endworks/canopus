@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, Post, Query } from '@nestjs/common';
 import {
   ApiDefaultResponse,
   ApiOperation,
@@ -13,6 +13,7 @@ import {
   CinemaDetails,
   CinemaDetailsBasic,
   Movie,
+  PruneReport,
 } from '../models/zine.interface';
 import { ErrorResponse } from '../models/error.interface';
 import { ZineService } from '../services/zine.service';
@@ -92,6 +93,23 @@ export class ZineController {
   })
   async zineCached() {
     return this.zineService.cached();
+  }
+
+  // Deletes documents, so it is not reachable by anything that follows links:
+  // a crawler or a browser prefetching the Swagger page would empty the
+  // database. This is not authentication — the gateway has none — only a
+  // guard against being triggered by accident.
+  @Post('prune')
+  @ApiOperation({
+    summary: 'Delete cinemas, films and showtimes the catalogue has dropped',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Return what was deleted',
+    type: PruneReport,
+  })
+  async zinePrune() {
+    return this.zineService.prune();
   }
 
   @Get('updateAll')

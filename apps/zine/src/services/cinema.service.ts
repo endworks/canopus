@@ -9,6 +9,7 @@ import {
   CinemaDetails,
   CinemaDetailsBasic,
   Crew,
+  PruneReport,
   Movie,
   MovieBasic,
   Session,
@@ -136,10 +137,10 @@ export class CinemaService {
       sessions,
     };
 
-    await this.saveCinema({
-      ...resp,
-      movies: movies.map((movie) => movie.id),
-    });
+    // The billboard is keyed by scraped title here, not by film. Only
+    // getCinema resolves the TheMovieDB ids the rest of the service stores, so
+    // writing these would put a second, private id space in the same fields.
+    await this.saveCinema({ id, lastUpdated: resp.lastUpdated });
     await this.cacheManager.set(`cinema/${id}/basic`, resp);
     return resp;
   }
@@ -152,22 +153,34 @@ export class CinemaService {
     const cinema = await this.getCinemaBasic(id);
     const scraped = cinema.movies as Movie[];
 
-    let movies: Movie[];
+    let matched: Movie[];
     try {
       const config = await this.theMovieDb.configuration();
-      movies = await Promise.all(
+      const enriched = await Promise.all(
         scraped.map((movie) => this.enrichMovie(movie, config)),
       );
+      matched = enriched.filter((movie): movie is Movie => movie !== null);
     } catch (exception) {
       // Enrichment is best-effort: fall back to the scraped billboard rather
-      // than failing a request that already has showtimes to return.
+      // than failing a request that already has showtimes to return. Those
+      // films are still keyed by title, so this response is never persisted
+      // or cached, and the next request retries.
       this.logger.error(
         `TheMovieDB enrichment failed for cinema '${id}', returning basic data: ${exception.message}`,
       );
       return this.toCinemaDetails(cinema, scraped);
     }
 
-    const resp = this.toCinemaDetails(cinema, movies);
+    if (matched.length < scraped.length) {
+      this.logger.warn(
+        `cinema '${id}': dropped ${scraped.length - matched.length} of ${scraped.length} films with no TheMovieDB match`,
+      );
+    }
+
+    const resp = this.toCinemaDetails(
+      cinema,
+      this.byFilm(matched, cinema.sessions),
+    );
     await this.saveMovies(resp.movies);
     await this.saveCinema({
       ...resp,
@@ -220,6 +233,118 @@ export class CinemaService {
     return { cacheSize: `${caches.length}`, caches };
   }
 
+  /**
+   * Drop what the catalogue no longer accounts for.
+   *
+   * Nothing here carries a timestamp, so staleness is reachability, not age: a
+   * venue neither site lists any more, and then a film no remaining venue is
+   * showing. That makes a failed scrape indistinguishable from a closed
+   * cinema, so the whole run is skipped unless every source returned a
+   * catalogue — better to prune nothing today than to empty the collection
+   * because one site was down.
+   */
+  public async prune(): Promise<PruneReport> {
+    const catalogues = await Promise.all(
+      this.sources.all().map(async (source) => {
+        try {
+          return await source.getCinemas();
+        } catch (exception) {
+          this.logger.error(
+            `failed to list cinemas from '${source.host}': ${exception.message}`,
+          );
+          return null;
+        }
+      }),
+    );
+
+    const empty = {
+      pruned: false,
+      cinemas: 0,
+      movies: 0,
+      sessions: 0,
+      caches: 0,
+    };
+    if (catalogues.some((catalogue) => !catalogue?.length)) {
+      const reason = 'a source returned no cinemas, so nothing was pruned';
+      this.logger.warn(reason);
+      return { ...empty, reason };
+    }
+
+    const live = this.sources.dedupe(catalogues.flat());
+    const liveIds = new Set(live.map((cinema) => cinema.id));
+
+    const { deletedCount = 0 } = await this.cinemaModel.deleteMany({
+      id: { $nin: [...liveIds] },
+    });
+    const sessions = await this.dropPastSessions();
+    const movies = await this.dropUnwatchableMovies();
+    // What a prune deletes is reachable from more than one cache key — the
+    // city lists and the unfiltered listings included — so picking at the
+    // keys named after a venue would still serve it for the rest of the TTL.
+    let caches = 0;
+    if (deletedCount || movies || sessions) {
+      caches = (await this.listCacheKeys()).length;
+      await this.cacheManager.clear();
+    }
+
+    this.logger.log(
+      `pruned ${deletedCount} cinemas, ${movies} films, ${sessions} showtimes, ${caches} cache entries`,
+    );
+    return { pruned: true, cinemas: deletedCount, movies, sessions, caches };
+  }
+
+  /**
+   * Drop showtimes that have already happened, and any film left with none:
+   * a billboard is what you can still go and see. Sessions the listing gave no
+   * date for are kept, since there is nothing to judge them by.
+   */
+  private async dropPastSessions(): Promise<number> {
+    const today = new Date().toISOString().slice(0, 10);
+    const cinemas = await this.cinemaModel
+      .find({}, 'id movies sessions')
+      .lean();
+    const operations: AnyBulkWriteOperation<CinemaSchema>[] = [];
+    let dropped = 0;
+
+    for (const cinema of cinemas) {
+      const sessions: Record<string, Session[]> = {};
+      const before = Object.values(cinema.sessions ?? {}).flat().length;
+      for (const [film, showings] of Object.entries(cinema.sessions ?? {})) {
+        const upcoming = showings.filter(
+          (session) => !session.date || session.date >= today,
+        );
+        if (upcoming.length) sessions[film] = upcoming;
+      }
+      const after = Object.values(sessions).flat().length;
+      if (after === before) continue;
+      dropped += before - after;
+      operations.push({
+        updateOne: {
+          filter: { id: cinema.id },
+          update: {
+            $set: {
+              sessions,
+              movies: (cinema.movies ?? []).filter((film) => sessions[film]),
+            },
+          },
+        },
+      });
+    }
+
+    if (operations.length) await this.cinemaModel.bulkWrite(operations);
+    return dropped;
+  }
+
+  /** Films no remaining cinema is showing: nothing links to them any more. */
+  private async dropUnwatchableMovies(): Promise<number> {
+    const cinemas = await this.cinemaModel.find({}, 'movies').lean();
+    const showing = new Set(cinemas.flatMap((cinema) => cinema.movies ?? []));
+    const { deletedCount = 0 } = await this.movieModel.deleteMany({
+      id: { $nin: [...showing] },
+    });
+    return deletedCount;
+  }
+
   /** Warms every Zaragoza cinema from scratch. */
   public async updateAll(): Promise<CacheData> {
     await this.cacheManager.clear();
@@ -235,7 +360,10 @@ export class CinemaService {
         }
       }),
     );
-    await this.saveCinemas(this.sources.dedupe(catalogues.flat()));
+    const listed = catalogues.flat();
+    const catalogue = this.sources.dedupe(listed);
+    await this.saveCinemas(catalogue);
+    await this.dropMergedVenues(listed, catalogue);
     const cinemas = await this.getCinemas('zaragoza');
     await Promise.all(
       cinemas.map((cinema) =>
@@ -253,14 +381,45 @@ export class CinemaService {
     cinema: CinemaDetailsBasic,
     movies: Movie[],
   ): CinemaDetails {
+    // Sorted again because enrichment is what fills most release dates in:
+    // the scraped order this started from knew almost none of them.
+    const films = movies
+      .map((movie) => this.normalizeMovie(movie, cinema.sessions))
+      .sort(byReleaseDateDesc);
     return {
       ...cinema,
-      // Sorted again because enrichment is what fills most release dates in:
-      // the scraped order this started from knew almost none of them.
-      movies: movies
-        .map((movie) => this.normalizeMovie(movie, cinema.sessions))
-        .sort(byReleaseDateDesc),
+      // Rebuilt rather than carried over: enrichment re-keys the billboard by
+      // film, so the map the scrape produced is keyed by titles that are gone.
+      sessions: Object.fromEntries(
+        films.map((film) => [film.id, film.sessions]),
+      ),
+      movies: films,
     };
+  }
+
+  /**
+   * Key the billboard by film rather than by the title a site printed.
+   *
+   * Two scraped entries are often one film — a dubbed listing and a subtitled
+   * one, a re-release, or the same title spelt differently by the two sites —
+   * so their showtimes are pooled instead of one overwriting the other.
+   */
+  private byFilm(
+    movies: Movie[],
+    sessions?: Record<string, Session[]>,
+  ): Movie[] {
+    const films = new Map<string, Movie>();
+    for (const movie of movies) {
+      const id = String(movie.theMovieDbId);
+      const showings = movie.sessions ?? sessions?.[movie.id] ?? [];
+      const seen = films.get(id);
+      if (seen) {
+        seen.sessions = [...seen.sessions, ...showings];
+        continue;
+      }
+      films.set(id, { ...movie, id, sessions: [...showings] });
+    }
+    return [...films.values()];
   }
 
   // Movies that didn't match TheMovieDB fall through unenriched (basic shape).
@@ -280,13 +439,19 @@ export class CinemaService {
     };
   }
 
-  /** Overlay a scraped movie with TheMovieDB metadata, or return it unchanged. */
+  /**
+   * Overlay a scraped movie with TheMovieDB metadata, or drop it.
+   *
+   * A film TheMovieDB doesn't know has no id to be keyed by and no metadata to
+   * show, and the same title printed differently by the two sites would land
+   * as two films, so it is left off the billboard entirely.
+   */
   private async enrichMovie(
     movie: Movie,
     config: TheMovieDBConfiguration,
-  ): Promise<Movie> {
+  ): Promise<Movie | null> {
     const match = await this.findMatch(movie);
-    if (!match) return movie;
+    if (!match) return null;
     const movieDB = match.movie;
 
     // Credits and videos are independent — one round trip instead of two.
@@ -494,6 +659,25 @@ export class CinemaService {
   }
 
   /**
+   * A venue the dedupe now merges away may have been saved as a cinema of its
+   * own by an earlier run, and upserting never removes it. Without this the
+   * merged listing keeps showing up, with its own copy of the billboard —
+   * every film on it duplicated under whatever title the other site prints.
+   *
+   * Only venues seen in this run's listings are dropped, so a source that
+   * failed and returned nothing can never delete the venues it owns.
+   */
+  private async dropMergedVenues(listed: Cinema[], kept: Cinema[]) {
+    const keptIds = new Set(kept.map((cinema) => cinema.id));
+    const merged = listed
+      .map((cinema) => cinema.id)
+      .filter((id) => !keptIds.has(id));
+    if (!merged.length) return;
+    this.logger.log(`dropping ${merged.length} merged venues`);
+    await this.cinemaModel.deleteMany({ id: { $in: merged } });
+  }
+
+  /**
    * The scraper returns every cinema in the country; `cinemas.ts` supplies the
    * address/website the listings don't carry. One round trip, not one per row.
    */
@@ -503,7 +687,11 @@ export class CinemaService {
       return {
         updateOne: {
           filter: { id: cinema.id },
-          update: { $set: { ...cinema, address, website } },
+          // The seed still wins, but the listings carry an address of their
+          // own now, so an unseeded venue keeps the one it was scraped with.
+          update: {
+            $set: { ...cinema, address: address ?? cinema.address, website },
+          },
           upsert: true,
         },
       };

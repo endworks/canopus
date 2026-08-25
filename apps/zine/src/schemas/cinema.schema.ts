@@ -19,6 +19,12 @@ export class Cinema extends Document {
   location?: string;
 
   @Prop()
+  postalCode?: string;
+
+  @Prop()
+  town?: string;
+
+  @Prop()
   website?: string;
 
   @Prop()

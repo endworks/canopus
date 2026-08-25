@@ -16,6 +16,7 @@ Exposed as `ZINE_PATTERNS` in `@canopus/shared`:
 | `cinema/basic` | `{ id: string }`        | Cinema with showtimes only (no TheMovieDB)     |
 | `movies`       | `{ location?: string }` | Films on a billboard, optionally filtered      |
 | `cached`       | —                       | Current cache keys                             |
+| `prune`        | —                       | Deletes what the catalogue has dropped         |
 | `updateAll`    | —                       | Clears the cache and re-scrapes every cinema   |
 
 ## Identity
@@ -33,6 +34,19 @@ in Mequinenza and one in Caspe — and neither does the region, which
 reservaentradas takes from the URL and SensaCine from whichever index listed
 the venue, so all three read as Zaragoza. The two sites disagree on the code
 often enough that an identical name in the same town counts as a match too.
+
+## Pruning
+
+`updateAll` only ever writes: a venue that closes, or a film that leaves every
+billboard, stays in the database. `prune` is the other half, and is deliberately
+a separate call so a refresh never deletes on its own.
+
+Nothing carries a timestamp, so staleness is reachability rather than age — a
+venue neither site lists any more, then a film no remaining venue is showing.
+That makes a failed scrape look exactly like a closed cinema, so the whole run
+is skipped unless every source returned a catalogue; `pruned: false` and a
+`reason` say so. Showtimes are dropped once their date has passed, and a film
+left with none drops off that cinema's billboard.
 
 ## Environment
 

@@ -33,6 +33,11 @@ export class CinemaController {
     return this.cinemaService.cached();
   }
 
+  @MessagePattern(ZINE_PATTERNS.prune, Transport.TCP)
+  async prune() {
+    return this.cinemaService.prune();
+  }
+
   @MessagePattern(ZINE_PATTERNS.updateAll, Transport.TCP)
   async updateAll() {
     return this.cinemaService.updateAll();

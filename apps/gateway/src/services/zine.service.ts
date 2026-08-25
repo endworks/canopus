@@ -27,6 +27,10 @@ export class ZineService {
     return lastValueFrom(this.client.send(ZINE_PATTERNS.cached, {}));
   }
 
+  prune() {
+    return lastValueFrom(this.client.send(ZINE_PATTERNS.prune, {}));
+  }
+
   updateAll() {
     return lastValueFrom(this.client.send(ZINE_PATTERNS.updateAll, {}));
   }

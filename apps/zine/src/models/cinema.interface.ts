@@ -107,6 +107,21 @@ export interface CinemaDetailsBasic extends Cinema {
   sessions?: Record<string, Session[]>;
 }
 
+export interface PruneReport {
+  /** False when the run was skipped rather than nothing being stale. */
+  pruned: boolean;
+  /** Why it was skipped, when it was. */
+  reason?: string;
+  /** Venues neither site lists any more. */
+  cinemas: number;
+  /** Films no remaining cinema is showing. */
+  movies: number;
+  /** Showtimes that have already happened. */
+  sessions: number;
+  /** Cache entries for cinemas that no longer exist. */
+  caches: number;
+}
+
 export interface CacheData {
   cacheSize: string;
   caches: string[];

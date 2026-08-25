@@ -13,6 +13,7 @@ import {
   CinemaDetails,
   CinemaDetailsBasic,
   Movie,
+  PruneReport,
 } from '../models/zine.interface';
 import { ErrorResponse } from '../models/error.interface';
 import { ZineService } from '../services/zine.service';
@@ -92,6 +93,19 @@ export class ZineController {
   })
   async zineCached() {
     return this.zineService.cached();
+  }
+
+  @Get('prune')
+  @ApiOperation({
+    summary: 'Delete cinemas, films and showtimes the catalogue has dropped',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Return what was deleted',
+    type: PruneReport,
+  })
+  async zinePrune() {
+    return this.zineService.prune();
   }
 
   @Get('updateAll')

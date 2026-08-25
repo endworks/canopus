@@ -316,6 +316,44 @@ export class CinemaDetailsBasic extends Cinema {
   sessions?: Record<string, Session[]>;
 }
 
+export class PruneReport {
+  /**
+   * False when the run was skipped rather than nothing being stale.
+   * @example true
+   */
+  pruned: boolean;
+
+  /**
+   * Why it was skipped, when it was.
+   * @example 'a source returned no cinemas, so nothing was pruned'
+   */
+  reason?: string;
+
+  /**
+   * Venues neither site lists any more.
+   * @example 3
+   */
+  cinemas: number;
+
+  /**
+   * Films no remaining cinema is showing.
+   * @example 128
+   */
+  movies: number;
+
+  /**
+   * Showtimes that have already happened.
+   * @example 412
+   */
+  sessions: number;
+
+  /**
+   * Cache entries for cinemas that no longer exist.
+   * @example 6
+   */
+  caches: number;
+}
+
 export class CacheData {
   /**
    * Number of cached entries.

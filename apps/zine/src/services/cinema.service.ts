@@ -9,6 +9,7 @@ import {
   CinemaDetails,
   CinemaDetailsBasic,
   Crew,
+  PruneReport,
   Movie,
   MovieBasic,
   Session,
@@ -230,6 +231,130 @@ export class CinemaService {
   public async cached(): Promise<CacheData> {
     const caches = await this.listCacheKeys();
     return { cacheSize: `${caches.length}`, caches };
+  }
+
+  /**
+   * Drop what the catalogue no longer accounts for.
+   *
+   * Nothing here carries a timestamp, so staleness is reachability, not age: a
+   * venue neither site lists any more, and then a film no remaining venue is
+   * showing. That makes a failed scrape indistinguishable from a closed
+   * cinema, so the whole run is skipped unless every source returned a
+   * catalogue — better to prune nothing today than to empty the collection
+   * because one site was down.
+   */
+  public async prune(): Promise<PruneReport> {
+    const catalogues = await Promise.all(
+      this.sources.all().map(async (source) => {
+        try {
+          return await source.getCinemas();
+        } catch (exception) {
+          this.logger.error(
+            `failed to list cinemas from '${source.host}': ${exception.message}`,
+          );
+          return null;
+        }
+      }),
+    );
+
+    const empty = {
+      pruned: false,
+      cinemas: 0,
+      movies: 0,
+      sessions: 0,
+      caches: 0,
+    };
+    if (catalogues.some((catalogue) => !catalogue?.length)) {
+      const reason = 'a source returned no cinemas, so nothing was pruned';
+      this.logger.warn(reason);
+      return { ...empty, reason };
+    }
+
+    const live = this.sources.dedupe(catalogues.flat());
+    const liveIds = new Set(live.map((cinema) => cinema.id));
+
+    const { deletedCount = 0 } = await this.cinemaModel.deleteMany({
+      id: { $nin: [...liveIds] },
+    });
+    const sessions = await this.dropPastSessions();
+    const movies = await this.dropUnwatchableMovies();
+    const caches = await this.dropOrphanCaches(live);
+
+    this.logger.log(
+      `pruned ${deletedCount} cinemas, ${movies} films, ${sessions} showtimes, ${caches} cache entries`,
+    );
+    return { pruned: true, cinemas: deletedCount, movies, sessions, caches };
+  }
+
+  /**
+   * Drop showtimes that have already happened, and any film left with none:
+   * a billboard is what you can still go and see. Sessions the listing gave no
+   * date for are kept, since there is nothing to judge them by.
+   */
+  private async dropPastSessions(): Promise<number> {
+    const today = new Date().toISOString().slice(0, 10);
+    const cinemas = await this.cinemaModel
+      .find({}, 'id movies sessions')
+      .lean();
+    const operations: AnyBulkWriteOperation<CinemaSchema>[] = [];
+    let dropped = 0;
+
+    for (const cinema of cinemas) {
+      const sessions: Record<string, Session[]> = {};
+      const before = Object.values(cinema.sessions ?? {}).flat().length;
+      for (const [film, showings] of Object.entries(cinema.sessions ?? {})) {
+        const upcoming = showings.filter(
+          (session) => !session.date || session.date >= today,
+        );
+        if (upcoming.length) sessions[film] = upcoming;
+      }
+      const after = Object.values(sessions).flat().length;
+      if (after === before) continue;
+      dropped += before - after;
+      operations.push({
+        updateOne: {
+          filter: { id: cinema.id },
+          update: {
+            $set: {
+              sessions,
+              movies: (cinema.movies ?? []).filter((film) => sessions[film]),
+            },
+          },
+        },
+      });
+    }
+
+    if (operations.length) await this.cinemaModel.bulkWrite(operations);
+    return dropped;
+  }
+
+  /** Films no remaining cinema is showing: nothing links to them any more. */
+  private async dropUnwatchableMovies(): Promise<number> {
+    const cinemas = await this.cinemaModel.find({}, 'movies').lean();
+    const showing = new Set(cinemas.flatMap((cinema) => cinema.movies ?? []));
+    const { deletedCount = 0 } = await this.movieModel.deleteMany({
+      id: { $nin: [...showing] },
+    });
+    return deletedCount;
+  }
+
+  /**
+   * Cache entries behind a cinema that no longer exists. The keys share one
+   * namespace — `cinema/<id>` is one venue, `cinema/<location>` is the list
+   * for a city — so anything still in use is kept by matching both.
+   */
+  private async dropOrphanCaches(live: Cinema[]): Promise<number> {
+    const known = new Set([
+      ...live.map((cinema) => cinema.id),
+      ...live.map((cinema) => cinema.location?.toLowerCase()),
+    ]);
+    const orphans = (await this.listCacheKeys()).filter((key) => {
+      const [prefix, name] = key.split('/');
+      if (!name || (prefix !== 'cinema' && prefix !== 'movies')) return false;
+      return !known.has(name);
+    });
+    for (const key of orphans) await this.cacheManager.del(key);
+    return orphans.length;
   }
 
   /** Warms every Zaragoza cinema from scratch. */

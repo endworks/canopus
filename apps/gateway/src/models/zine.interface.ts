@@ -316,6 +316,58 @@ export class CinemaDetailsBasic extends Cinema {
   sessions?: Record<string, Session[]>;
 }
 
+export class UpdateReport {
+  /**
+   * Cities whose cinemas were refreshed.
+   * @example 'zaragoza'
+   */
+  location: string;
+
+  /**
+   * Sites that failed to list their cinemas at all.
+   * @example ['sensacine.com']
+   */
+  failedSources: string[];
+
+  /**
+   * Venues the sites listed, before duplicates were merged.
+   * @example 491
+   */
+  listed: number;
+
+  /**
+   * Venues kept, and saved, after merging duplicates.
+   * @example 442
+   */
+  saved: number;
+
+  /**
+   * Duplicate venue documents an earlier run had saved, now removed. How many
+   * venues this run merged away is `listed` minus `saved`; this is how many of
+   * them were still in the database.
+   * @example 49
+   */
+  deleted: number;
+
+  /**
+   * Cinemas whose billboard was refreshed.
+   * @example 7
+   */
+  warmed: number;
+
+  /**
+   * Cinemas whose billboard failed, by id.
+   * @example ['cervantes']
+   */
+  failed: string[];
+
+  /**
+   * Films on the refreshed billboards.
+   * @example 84
+   */
+  films: number;
+}
+
 export class PruneReport {
   /**
    * False when the run was skipped rather than nothing being stale.

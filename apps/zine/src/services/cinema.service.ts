@@ -10,6 +10,7 @@ import {
   CinemaDetailsBasic,
   Crew,
   PruneReport,
+  UpdateReport,
   Movie,
   MovieBasic,
   Session,
@@ -25,6 +26,9 @@ import { Match, pickBest, searchQueries, shortlist } from '../movie-matcher';
 import { minutesToString, venueKey } from '../utils';
 import { CinemaSources } from './cinema-source';
 import { TheMovieDBService } from './themoviedb.service';
+
+/** updateAll warms one city's billboards; this is the one it defaults to. */
+const DEFAULT_LOCATION = 'zaragoza';
 
 const LANG = 'es-ES';
 const REGION = 'ES';
@@ -346,8 +350,8 @@ export class CinemaService {
   }
 
   /** Warms every Zaragoza cinema from scratch. */
-  public async updateAll(): Promise<CacheData> {
-    await this.cacheManager.clear();
+  public async updateAll(location = DEFAULT_LOCATION): Promise<UpdateReport> {
+    const failedSources: string[] = [];
     const catalogues = await Promise.all(
       this.sources.all().map(async (source) => {
         try {
@@ -356,6 +360,7 @@ export class CinemaService {
           this.logger.error(
             `failed to list cinemas from '${source.host}': ${exception.message}`,
           );
+          failedSources.push(source.host);
           return [];
         }
       }),
@@ -363,18 +368,43 @@ export class CinemaService {
     const listed = catalogues.flat();
     const catalogue = this.sources.dedupe(listed);
     await this.saveCinemas(catalogue);
-    await this.dropMergedVenues(listed, catalogue);
-    const cinemas = await this.getCinemas('zaragoza');
-    await Promise.all(
+    const deleted = await this.dropMergedVenues(listed, catalogue);
+
+    // Cleared here rather than up front: the catalogue scrape above reads a
+    // page per venue, and clearing before it leaves every cached listing cold
+    // for the whole of it, so each request that lands meanwhile re-scrapes.
+    await this.cacheManager.clear();
+
+    const cinemas = await this.getCinemas(location);
+    const failed: string[] = [];
+    const films = await Promise.all(
       cinemas.map((cinema) =>
-        this.getCinema(cinema.id).catch((exception) => {
-          this.logger.error(
-            `failed to get movies from '${cinema.id}' with exception: '${exception.message}'`,
-          );
-        }),
+        this.getCinema(cinema.id)
+          .then((details) => details.movies.length)
+          .catch((exception) => {
+            this.logger.error(
+              `failed to get movies from '${cinema.id}' with exception: '${exception.message}'`,
+            );
+            failed.push(cinema.id);
+            return 0;
+          }),
       ),
     );
-    return this.cached();
+
+    const report: UpdateReport = {
+      location,
+      failedSources,
+      listed: listed.length,
+      saved: catalogue.length,
+      deleted,
+      warmed: cinemas.length - failed.length,
+      failed,
+      films: films.reduce((total, count) => total + count, 0),
+    };
+    this.logger.log(
+      `updated ${location}: ${report.warmed}/${cinemas.length} cinemas, ${report.films} films, ${report.saved} venues saved`,
+    );
+    return report;
   }
 
   private toCinemaDetails(
@@ -667,14 +697,20 @@ export class CinemaService {
    * Only venues seen in this run's listings are dropped, so a source that
    * failed and returned nothing can never delete the venues it owns.
    */
-  private async dropMergedVenues(listed: Cinema[], kept: Cinema[]) {
+  private async dropMergedVenues(
+    listed: Cinema[],
+    kept: Cinema[],
+  ): Promise<number> {
     const keptIds = new Set(kept.map((cinema) => cinema.id));
     const merged = listed
       .map((cinema) => cinema.id)
       .filter((id) => !keptIds.has(id));
-    if (!merged.length) return;
+    if (!merged.length) return 0;
     this.logger.log(`dropping ${merged.length} merged venues`);
-    await this.cinemaModel.deleteMany({ id: { $in: merged } });
+    const { deletedCount = 0 } = await this.cinemaModel.deleteMany({
+      id: { $in: merged },
+    });
+    return deletedCount;
   }
 
   /**

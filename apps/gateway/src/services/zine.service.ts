@@ -31,7 +31,9 @@ export class ZineService {
     return lastValueFrom(this.client.send(ZINE_PATTERNS.prune, {}));
   }
 
-  updateAll() {
-    return lastValueFrom(this.client.send(ZINE_PATTERNS.updateAll, {}));
+  updateAll(location?: string) {
+    return lastValueFrom(
+      this.client.send(ZINE_PATTERNS.updateAll, { location }),
+    );
   }
 }

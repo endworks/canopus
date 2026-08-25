@@ -6,6 +6,33 @@ export interface MoviePayload {
   location?: string;
 }
 
+export interface UpdatePayload {
+  location?: string;
+}
+
+export interface UpdateReport {
+  /** Cities whose cinemas were refreshed. */
+  location: string;
+  /** Sites that failed to list their cinemas at all. */
+  failedSources: string[];
+  /** Venues the sites listed, before duplicates were merged. */
+  listed: number;
+  /** Venues kept, and saved, after merging duplicates. */
+  saved: number;
+  /**
+   * Duplicate venue documents an earlier run had saved, now removed. How many
+   * venues this run merged away is `listed` minus `saved`; this is how many of
+   * them were still in the database.
+   */
+  deleted: number;
+  /** Cinemas whose billboard was refreshed. */
+  warmed: number;
+  /** Cinemas whose billboard failed, by id. */
+  failed: string[];
+  /** Films on the refreshed billboards. */
+  films: number;
+}
+
 export interface BaseCinema {
   name: string;
   address?: string;

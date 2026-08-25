@@ -65,6 +65,18 @@ const VERSION_TAGS: { tag: string; label: string }[] = [
 
 const LOCALIZATION_TAG = 'Localization.';
 
+/**
+ * Dubbing is filed under accessibility rather than localization, so the
+ * version tags above don't cover it. It names no choice in Spain — a showing
+ * is dubbed unless it says otherwise — and reservaentradas doesn't print it,
+ * so leaving it in made one site's screening read 'DUBBED' where the other
+ * called the very same one 'DIGITAL'.
+ */
+const DUBBED_TAG = 'Showtime.Accessibility.Dubbed';
+
+/** base64 of `htt`, which every booking URL in a class name starts with. */
+const ENCODED_HTTP = 'aHR';
+
 /** Tags every screening carries, so they say nothing about this one. */
 const GENERIC_FORMATS = new Set(['Digital', 'Standard']);
 
@@ -310,7 +322,8 @@ export class SensaCineService implements CinemaSource {
   /**
    * The link that books this showtime. The site makes the time itself the
    * anchor on some layouts and wraps it on others, so try the element, then
-   * what encloses it, then what it encloses.
+   * what encloses it, then what it encloses — and failing all three, the
+   * class, which is where the booking URL actually lives.
    */
   private bookingLink(el: cheerio.Cheerio<any>): string | undefined {
     const anchors = [
@@ -321,6 +334,32 @@ export class SensaCineService implements CinemaSource {
     for (const anchor of anchors) {
       const href = anchor?.attr('href');
       if (href) return href;
+    }
+    return this.encodedLink(el);
+  }
+
+  /**
+   * The booking URL SensaCine hides in the class attribute.
+   *
+   * A showtime is a `<span>` with no href; the link to the ticket seller is
+   * base64 in one of its class names, with a short marker repeated through it
+   * to stop exactly this. The marker is whatever precedes the encoded `http`,
+   * so it is read off each token rather than hardcoded, and rotating it
+   * changes nothing. Only a value that decodes to a URL is returned, so a
+   * class that is merely a class yields no link rather than nonsense.
+   *
+   * Every showtime the site marks bookable carries one; the rest are the
+   * sessions it isn't selling.
+   */
+  private encodedLink(el: cheerio.Cheerio<any>): string | undefined {
+    const tokens = (el.attr('class') ?? '').split(/\s+/);
+    for (const token of tokens) {
+      const start = token.indexOf(ENCODED_HTTP);
+      if (start < 0) continue;
+      const marker = token.slice(0, start);
+      const payload = marker ? token.split(marker).join('') : token;
+      const url = Buffer.from(payload, 'base64').toString('utf8');
+      if (url.startsWith('http')) return url;
     }
     return undefined;
   }
@@ -336,7 +375,10 @@ export class SensaCineService implements CinemaSource {
       experiences.some((experience) => experience.startsWith(tag)),
     );
     const formats = experiences
-      .filter((experience) => !experience.startsWith(LOCALIZATION_TAG))
+      .filter(
+        (experience) =>
+          !experience.startsWith(LOCALIZATION_TAG) && experience !== DUBBED_TAG,
+      )
       .map((experience) => experience.split('.').pop())
       .filter((format) => format && !GENERIC_FORMATS.has(format));
     const labels = [...new Set([version?.label, ...formats].filter(Boolean))];

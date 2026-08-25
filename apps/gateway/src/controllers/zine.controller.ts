@@ -14,6 +14,7 @@ import {
   CinemaDetailsBasic,
   Movie,
   PruneReport,
+  UpdateReport,
 } from '../models/zine.interface';
 import { ErrorResponse } from '../models/error.interface';
 import { ZineService } from '../services/zine.service';
@@ -114,14 +115,20 @@ export class ZineController {
 
   @Get('updateAll')
   @ApiOperation({
-    summary: 'Update all movies for all cinemas and caches them',
+    summary:
+      "Re-scrape the catalogue, then refresh one city's billboards (default Zaragoza)",
+  })
+  @ApiQuery({
+    name: 'location',
+    type: String,
+    required: false,
   })
   @ApiResponse({
     status: 200,
-    description: 'Return status code',
-    type: CacheData,
+    description: 'Return what the run did',
+    type: UpdateReport,
   })
-  async zineUpdateAll() {
-    return this.zineService.updateAll();
+  async zineUpdateAll(@Query('location') location: string) {
+    return this.zineService.updateAll(location);
   }
 }

@@ -266,6 +266,13 @@ export class Movie extends MovieBasic {
    * @example 4521
    */
   voteCount: number;
+
+  /**
+   * Ids of the cinemas currently showing this film. Only the movie listing
+   * fills it in; cinema details already knows which cinema it is.
+   * @example ['aragonia', 'palafox']
+   */
+  cinemas?: string[];
 }
 
 export class CinemaDetails extends Cinema {

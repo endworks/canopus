@@ -2,6 +2,10 @@ export interface CinemaPayload {
   location?: string;
 }
 
+export interface MoviePayload {
+  location?: string;
+}
+
 export interface BaseCinema {
   name: string;
   address?: string;
@@ -58,6 +62,11 @@ export interface Movie extends MovieBasic {
   popularity: number;
   voteAverage: number;
   voteCount: number;
+  /**
+   * Ids of the cinemas currently showing this film. Only the movie listing
+   * fills it in; cinema details already knows which cinema it is.
+   */
+  cinemas?: string[];
 }
 
 export interface Session {

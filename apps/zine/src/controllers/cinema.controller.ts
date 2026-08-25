@@ -1,6 +1,6 @@
 import { Controller } from '@nestjs/common';
 import { MessagePattern, Payload, Transport } from '@nestjs/microservices';
-import { CinemaPayload } from '../models/cinema.interface';
+import { CinemaPayload, MoviePayload } from '../models/cinema.interface';
 import { IdPayload, ZINE_PATTERNS } from '@canopus/shared';
 import { CinemaService } from '../services/cinema.service';
 
@@ -24,8 +24,8 @@ export class CinemaController {
   }
 
   @MessagePattern(ZINE_PATTERNS.movies, Transport.TCP)
-  async movies() {
-    return this.cinemaService.getMovies();
+  async movies(@Payload() data: MoviePayload) {
+    return this.cinemaService.getMovies(data.location);
   }
 
   @MessagePattern(ZINE_PATTERNS.cached, Transport.TCP)

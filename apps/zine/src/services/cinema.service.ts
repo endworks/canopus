@@ -10,6 +10,7 @@ import {
   CinemaDetailsBasic,
   Crew,
   Movie,
+  MovieBasic,
   Session,
 } from '../models/cinema.interface';
 import {
@@ -64,6 +65,24 @@ const byCityThenName = (a: Cinema, b: Cinema): number =>
   compareText(a.location, b.location) ||
   compareText(venueKey(a.name), venueKey(b.name));
 
+/**
+ * Newest release first. Release dates are ISO `YYYY-MM-DD`, so comparing them
+ * as text is chronological. A film with no known release date sorts last:
+ * reservaentradas never states one, and an unknown date is not a new one.
+ */
+const byReleaseDateDesc = (a: MovieBasic, b: MovieBasic): number => {
+  if (!a.releaseDate) return b.releaseDate ? 1 : 0;
+  if (!b.releaseDate) return -1;
+  return b.releaseDate.localeCompare(a.releaseDate);
+};
+
+/** Comma-separated and case-insensitive; no filter matches every city. */
+const locationFilter = (location?: string) => {
+  const locations = location?.toLowerCase().split(',');
+  return (value?: string) =>
+    !locations || locations.includes(value?.toLowerCase());
+};
+
 @Injectable()
 export class CinemaService {
   private readonly logger = new Logger(CinemaService.name);
@@ -79,16 +98,13 @@ export class CinemaService {
   public getCinemas(location?: string): Promise<Cinema[]> {
     const key = location ? `cinema/${location}` : 'cinema';
     return this.cacheManager.wrap(key, async () => {
-      const locations = location?.toLowerCase().split(',');
+      const matches = locationFilter(location);
       // Sorted by id in Mongo so venues sharing a city and name keep a stable
       // order; the alphabetical sort below is stable and preserves it.
       const cinemas = await this.cinemaModel.find().sort({ id: 1 }).lean();
       return (
         cinemas
-          .filter(
-            (cinema) =>
-              !locations || locations.includes(cinema.location?.toLowerCase()),
-          )
+          .filter((cinema) => matches(cinema.location))
           .map(stripMongoFields) as Cinema[]
       ).sort(byCityThenName);
     });
@@ -106,9 +122,9 @@ export class CinemaService {
       throw new NotFoundException(`Resource with ID '${id}' was not found`);
     }
 
-    const movies = await this.sources
-      .for(cinema.source)
-      .getMovies(cinema.source);
+    const movies = (
+      await this.sources.for(cinema.source).getMovies(cinema.source)
+    ).sort(byReleaseDateDesc);
     const sessions = Object.fromEntries(
       movies.map((movie) => [movie.id, movie.sessions ?? []]),
     );
@@ -161,10 +177,41 @@ export class CinemaService {
     return resp;
   }
 
-  public getMovies(): Promise<Movie[]> {
-    return this.cacheManager.wrap('movies', async () => {
-      const movies = await this.movieModel.find().sort({ id: 1 }).lean();
-      return movies.map(stripMongoFields) as Movie[];
+  /**
+   * Every film on a current billboard, newest first, each carrying the cinemas
+   * showing it. Derived from the cinemas rather than stored on the film: a
+   * billboard changes every week, so a persisted copy would be stale by the
+   * next scrape.
+   */
+  public getMovies(location?: string): Promise<Movie[]> {
+    const key = location ? `movies/${location}` : 'movies';
+    return this.cacheManager.wrap(key, async () => {
+      const matches = locationFilter(location);
+      // Sorted by id so a film's list of cinemas has a stable order.
+      const cinemas = await this.cinemaModel
+        .find({}, 'id location movies')
+        .sort({ id: 1 })
+        .lean();
+
+      const showing = new Map<string, string[]>();
+      for (const cinema of cinemas) {
+        if (!matches(cinema.location)) continue;
+        for (const id of cinema.movies ?? []) {
+          showing.set(id, [...(showing.get(id) ?? []), cinema.id]);
+        }
+      }
+
+      // Films that fell off every billboard stay in the collection but are not
+      // showing anywhere, so they are never asked for here.
+      const movies = await this.movieModel
+        .find({ id: { $in: [...showing.keys()] } })
+        .lean();
+      return (
+        movies.map((movie) => ({
+          ...stripMongoFields(movie),
+          cinemas: showing.get(movie.id),
+        })) as Movie[]
+      ).sort(byReleaseDateDesc);
     });
   }
 
@@ -208,9 +255,11 @@ export class CinemaService {
   ): CinemaDetails {
     return {
       ...cinema,
-      movies: movies.map((movie) =>
-        this.normalizeMovie(movie, cinema.sessions),
-      ),
+      // Sorted again because enrichment is what fills most release dates in:
+      // the scraped order this started from knew almost none of them.
+      movies: movies
+        .map((movie) => this.normalizeMovie(movie, cinema.sessions))
+        .sort(byReleaseDateDesc),
     };
   }
 

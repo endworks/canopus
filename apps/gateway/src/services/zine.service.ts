@@ -19,8 +19,8 @@ export class ZineService {
     return lastValueFrom(this.client.send(ZINE_PATTERNS.cinemaBasic, { id }));
   }
 
-  getMovies() {
-    return lastValueFrom(this.client.send(ZINE_PATTERNS.movies, {}));
+  getMovies(location?: string) {
+    return lastValueFrom(this.client.send(ZINE_PATTERNS.movies, { location }));
   }
 
   cached() {

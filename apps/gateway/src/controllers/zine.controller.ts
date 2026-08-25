@@ -67,13 +67,18 @@ export class ZineController {
 
   @Get('movies')
   @ApiOperation({ summary: 'Get movies' })
+  @ApiQuery({
+    name: 'location',
+    type: String,
+    required: false,
+  })
   @ApiResponse({
     status: 200,
     description: 'Return movies',
     type: [Movie],
   })
-  async zineMovies() {
-    return this.zineService.getMovies();
+  async zineMovies(@Query('location') location: string) {
+    return this.zineService.getMovies(location);
   }
 
   @Get('cached')

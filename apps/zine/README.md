@@ -14,7 +14,7 @@ Exposed as `ZINE_PATTERNS` in `@canopus/shared`:
 | `cinemas`      | `{ location?: string }` | Cinemas, optionally filtered (comma-separated) |
 | `cinema`       | `{ id: string }`        | Cinema with showtimes and enriched films       |
 | `cinema/basic` | `{ id: string }`        | Cinema with showtimes only (no TheMovieDB)     |
-| `movies`       | —                       | Every persisted film                           |
+| `movies`       | `{ location?: string }` | Films on a billboard, optionally filtered      |
 | `cached`       | —                       | Current cache keys                             |
 | `updateAll`    | —                       | Clears the cache and re-scrapes every cinema   |
 

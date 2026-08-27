@@ -64,8 +64,14 @@ the observed temperature rather than being invented from the wrong field.
 
 `country` exists because warnings are scoped by one and a coordinate does not
 carry one. Asking by `location` works it out from the geocoded place; asking by
-`lat`/`lon` through a provider that does no geocoding — Apple does none — has no
-other way to know, and without it such a request comes back with no warnings.
+`lat`/`lon` has no other way to know, and without it such a request comes back
+with no warnings.
+
+`location` works for every provider, including the ones that cannot geocode.
+A provider that can answers for itself, so the place it names and the reading
+it gives come from one source. Apple cannot — WeatherKit answers the weather at
+a point and nothing else — so the name is resolved by Open-Meteo's keyless
+geocoder instead, and credited to it rather than to the provider.
 
 The provider's own refusals come back as themselves: a key it rejects is a 401,
 a spent quota is a 429, a place it has never heard of is a 404. A caller who

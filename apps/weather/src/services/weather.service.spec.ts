@@ -6,6 +6,7 @@ import { of, throwError } from 'rxjs';
 import { AppleWeatherProvider } from '../providers/apple-weather.provider';
 import { MeteoAlarmProvider } from '../providers/meteoalarm.provider';
 import { OpenMeteoAirProvider } from '../providers/open-meteo-air.provider';
+import { OpenMeteoGeocoder } from '../providers/open-meteo-geocoder';
 import { OpenMeteoUvProvider } from '../providers/open-meteo-uv.provider';
 import { RegionAtlas } from '../providers/region-atlas';
 import { OpenWeatherProvider } from '../providers/open-weather.provider';
@@ -217,6 +218,7 @@ const build = (routes: Record<string, unknown>, keys: string[] = []) => {
     air,
     meteoalarm,
     new RegionAtlas(),
+    new OpenMeteoGeocoder(cache, http),
     new ClientKeys(keys),
   );
   return { service, calls, headers };
@@ -1000,8 +1002,21 @@ const logo = {
 
 const APPLE_LEGAL = 'https://weather-data.apple.com/legal-attribution.html';
 
+/** Open-Meteo's keyless geocoder, which needs no key of any kind. */
+const geocoded = {
+  results: [
+    {
+      name: 'Zaragoza',
+      latitude: 41.6488,
+      longitude: -0.8891,
+      country_code: 'ES',
+    },
+  ],
+};
+
 const appleRoutes = {
   ...routes,
+  'geocoding-api.open-meteo.com': geocoded,
   'weatherkit.apple.com/attribution': appleBranding,
   'weatherkit.apple.com': appleBody(),
 };
@@ -1371,16 +1386,53 @@ describe('apple weather', () => {
     expect(asked(calls, '/api/v1/weather/')).toBeUndefined();
   });
 
-  it('refuses a place name rather than pretending to geocode', async () => {
-    const { service } = build(appleRoutes);
+  it('resolves a place name for a provider that cannot, and says who did', async () => {
+    const { service, calls } = build(appleRoutes);
 
-    await expect(
-      service.getWeather({
-        provider: 'apple',
-        apiKey: 'signed.jwt.token',
-        location: 'Zaragoza',
-      }),
-    ).rejects.toThrow('Apple Weather does not resolve place names');
+    const reading = await service.getWeather({
+      provider: 'apple',
+      apiKey: 'signed.jwt.token',
+      location: 'Zaragoza',
+    });
+
+    // Apple answers the weather at a point and nothing else, so the name is
+    // resolved elsewhere rather than the question being refused.
+    expect(asked(calls, 'geocoding-api.open-meteo.com')).toContain(
+      'name=Zaragoza',
+    );
+    expect(reading.location.name).toBe('Zaragoza');
+    // Which also hands Apple the country its warnings are scoped by.
+    expect(reading.location.country).toBe('ES');
+    expect(asked(calls, '/api/v1/weather/')).toContain('/41.65/-0.89?');
+
+    // Credited to whoever actually did it: Apple is not owed the geocoding.
+    const apple = reading.attribution.find(
+      (source) => source.name === 'Apple Weather',
+    );
+    expect(apple?.provides).not.toContain('geocoding');
+    expect(reading.attribution).toContainEqual({
+      name: 'Open-Meteo',
+      url: 'https://open-meteo.com/',
+      licence: 'https://creativecommons.org/licenses/by/4.0/',
+      provides: ['geocoding'],
+    });
+  });
+
+  it('still credits a provider for geocoding it did itself', async () => {
+    const { service } = build(routes);
+
+    const reading = await service.getWeather({
+      apiKey: 'key',
+      location: 'Madrid',
+    });
+
+    const openweather = reading.attribution.find(
+      (source) => source.name === 'OpenWeather',
+    );
+    expect(openweather?.provides).toContain('geocoding');
+    expect(
+      reading.attribution.filter((source) => source.name === 'Open-Meteo'),
+    ).toEqual([]);
   });
 
   it('refuses a country that is not a code', async () => {

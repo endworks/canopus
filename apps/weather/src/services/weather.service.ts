@@ -23,6 +23,7 @@ import {
 } from '../providers/alert-filter';
 import { ClientKeys } from '../providers/client-keys';
 import { MeteoAlarmProvider } from '../providers/meteoalarm.provider';
+import { OpenMeteoGeocoder } from '../providers/open-meteo-geocoder';
 import { RegionAtlas } from '../providers/region-atlas';
 import { OpenMeteoAirProvider } from '../providers/open-meteo-air.provider';
 import { OpenMeteoUvProvider } from '../providers/open-meteo-uv.provider';
@@ -49,6 +50,8 @@ interface Cell {
   name?: string;
   country?: string;
   geocoded: boolean;
+  /** Whether the name was resolved by someone other than the provider. */
+  borrowed?: boolean;
 }
 
 @Injectable()
@@ -60,6 +63,7 @@ export class WeatherService {
     private readonly airProvider: OpenMeteoAirProvider,
     private readonly alertProvider: MeteoAlarmProvider,
     private readonly atlas: RegionAtlas,
+    private readonly geocoder: OpenMeteoGeocoder,
     private readonly clients: ClientKeys,
   ) {
     // A credential the deployment pays for, reachable by anyone who finds the
@@ -175,13 +179,23 @@ export class WeatherService {
         url: provider.info.url,
         provides: [
           ...reading.provides,
-          ...((cell.geocoded ? ['geocoding'] : []) as DataKind[]),
+          ...((cell.geocoded && !cell.borrowed
+            ? ['geocoding']
+            : []) as DataKind[]),
         ],
         // Whatever this source's terms ask for beyond its name — a licence to
         // link, a mark to draw. Only the provider knows.
         ...(reading.credit ?? {}),
       },
     ];
+    if (cell.borrowed) {
+      attribution.push({
+        name: this.geocoder.name,
+        url: this.geocoder.url,
+        licence: this.geocoder.licence,
+        provides: ['geocoding'],
+      });
+    }
     if (uv) {
       attribution.push({
         name: this.uvProvider.name,
@@ -436,13 +450,15 @@ export class WeatherService {
         'Ask about a place: either `location`, or both `lat` and `lon`',
       );
     }
-    if (!provider.info.geocoding) {
-      throw new BadRequestException(
-        `${provider.info.name} does not resolve place names; send \`lat\` and \`lon\``,
-      );
-    }
-
-    const place = await provider.locate(query, apiKey, language);
+    // A provider that geocodes answers for itself, so the place it names and
+    // the reading it gives come from one source. One that does not — Apple
+    // answers the weather at a point and nothing else — is not a reason to
+    // refuse the question, only a reason to ask someone else where the place
+    // is. Which of the two answered is what `borrowed` records, so the credit
+    // can follow.
+    const place = provider.info.geocoding
+      ? await provider.locate(query, apiKey, language)
+      : await this.geocoder.locate(query, language);
     if (!place) {
       throw new NotFoundException(`No place matching '${query}'`);
     }
@@ -452,6 +468,7 @@ export class WeatherService {
       name: place.name,
       country: place.country,
       geocoded: true,
+      borrowed: !provider.info.geocoding,
     };
   }
 

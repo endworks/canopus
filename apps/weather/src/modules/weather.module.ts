@@ -4,6 +4,7 @@ import { WeatherController } from '../controllers/weather.controller';
 import { ClientKeys, clientKeys } from '../providers/client-keys';
 import { MeteoAlarmProvider } from '../providers/meteoalarm.provider';
 import { OpenMeteoAirProvider } from '../providers/open-meteo-air.provider';
+import { OpenMeteoGeocoder } from '../providers/open-meteo-geocoder';
 import { OpenMeteoUvProvider } from '../providers/open-meteo-uv.provider';
 import { RegionAtlas } from '../providers/region-atlas';
 import { weatherProviders } from '../providers/registry';
@@ -15,6 +16,7 @@ import { WeatherService } from '../services/weather.service';
   providers: [
     ...weatherProviders,
     OpenMeteoUvProvider,
+    OpenMeteoGeocoder,
     OpenMeteoAirProvider,
     MeteoAlarmProvider,
     RegionAtlas,

@@ -1,6 +1,6 @@
 import { HttpService } from '@nestjs/axios';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { Cache } from 'cache-manager';
 import {
   Attribution,
@@ -32,6 +32,9 @@ import {
   WeatherKitCredential,
   weatherKitCredential,
 } from './weatherkit-credential';
+
+/** Three dot-separated segments: the shape of any JWT, including Apple's. */
+const TOKEN = /^[\w-]+\.[\w-]+\.[\w-]+$/;
 
 const HOST = 'https://weatherkit.apple.com';
 const API_URL = `${HOST}/api/v1/weather`;
@@ -200,6 +203,19 @@ export class AppleWeatherProvider extends WeatherProvider {
       includeAlerts,
       includeUv,
     } = request;
+
+    // A credential that is not even a JWT is almost always this service's own
+    // client key sent in the wrong header — the two are both opaque strings in
+    // adjacent headers, and Apple's answer to the mistake is a bare 401 that
+    // says nothing about which one went astray. Named here instead, before a
+    // call is spent finding out.
+    if (!TOKEN.test(apiKey)) {
+      throw new UnauthorizedException(
+        'X-Weather-Api-Key does not hold a WeatherKit developer token, which ' +
+          "is an ES256 JWT. If that was this service's client key, send it " +
+          'in X-Weather-Client-Key instead.',
+      );
+    }
 
     // Warnings are the one dataset that has to be asked for: it is what the
     // country code is for, and leaving it out of the URL keeps it out of the

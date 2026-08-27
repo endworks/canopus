@@ -1354,6 +1354,21 @@ describe('apple weather', () => {
     });
   });
 
+  it('names the wrong-header mistake instead of letting Apple 401 it', async () => {
+    const { service, calls } = build(appleRoutes);
+
+    // The client key and the WeatherKit token are both opaque strings in
+    // adjacent headers. Sent in the wrong one, this used to reach Apple as a
+    // bearer token and come back as "Apple Weather rejected the API key",
+    // which points at the wrong thing entirely.
+    await expect(
+      service.getWeather(ask({ apiKey: 'utMSVo2wXx2rNqcylL0lKCSNWnRFieZ' })),
+    ).rejects.toThrow('send it in X-Weather-Client-Key instead');
+
+    // And not at the cost of an upstream call to find out.
+    expect(asked(calls, '/api/v1/weather/')).toBeUndefined();
+  });
+
   it('refuses a place name rather than pretending to geocode', async () => {
     const { service } = build(appleRoutes);
 

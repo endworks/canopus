@@ -1,30 +1,39 @@
 /**
  * How precisely a place is asked about.
  *
- * One decimal is about eleven kilometres, which puts a whole city in a cell or
- * two — and the weather is the same at every bus stop in it. It is what makes
- * the cache worth having: every caller standing anywhere in town asks the same
- * question, so they share one upstream call instead of minting one each. Two
- * decimals looked more careful and would mean a kilometre-wide cell, which a
- * phone with the map following mints a new question for every minute of a bus
- * ride.
+ * Two decimals, a little over a kilometre. It was one — eleven kilometres, a
+ * whole city in a cell or two — on the reasoning that the weather is the same
+ * at every bus stop in a town and that every caller sharing one question is
+ * what makes the cache worth having.
+ *
+ * The first half of that is true of the temperature and not of the wind, which
+ * is the reading that varies most over a few kilometres and the one a caller
+ * checks against the weather app already on their phone. Answering a point five
+ * kilometres from where somebody is standing is a different valley, and it read
+ * as this service being wrong rather than as it being coarse.
+ *
+ * The cache survives it. A cell is smaller, so there are more of them, and each
+ * is still shared by everyone standing in it — a street rather than a city, and
+ * a street is where the people asking about a bus stop actually are. What it
+ * costs is entries, which are cheap; what it bought was an answer about the
+ * right place.
  *
  * Applied once, where a real coordinate becomes a question — and the rounded
  * value is what comes back in `location`, so a caller can see which cell it
  * was answered for.
  */
 export const roundCoordinate = (value: number): number =>
-  Math.round(value * 10) / 10;
+  Math.round(value * 100) / 100;
 
 /**
- * How wide a cell is, in degrees — the same tenth the rounding above works in,
- * named because the region atlas needs it.
+ * How wide a cell is, in degrees — the same hundredth the rounding above works
+ * in, named because the region atlas needs it.
  *
  * Kept as its own constant rather than divided into `roundCoordinate`, which
  * would round through a float: `Math.round(40.4168 / 0.1) * 0.1` is
  * 40.400000000000006, and that is not a name for a cell.
  */
-export const CELL = 0.1;
+export const CELL = 0.01;
 
 /**
  * How long each kind of answer stands, matched to how often its source moves.

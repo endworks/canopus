@@ -250,9 +250,11 @@ describe('getWeather', () => {
       longitude: -0.8891,
     });
 
-    expect(reading.location.latitude).toBe(41.6);
-    expect(reading.location.longitude).toBe(-0.9);
-    expect(asked(calls, '/data/2.5/weather')).toContain('lat=41.6&lon=-0.9');
+    // 41.6488, -0.8891 to the hundredth: a cell a little over a kilometre
+    // across rather than the eleven it used to be.
+    expect(reading.location.latitude).toBe(41.65);
+    expect(reading.location.longitude).toBe(-0.89);
+    expect(asked(calls, '/data/2.5/weather')).toContain('lat=41.65&lon=-0.89');
   });
 
   it('takes the range from the forecast, not from the observation', async () => {
@@ -303,7 +305,7 @@ describe('getWeather', () => {
     expect(reading.location).toMatchObject({
       name: 'Madrid',
       country: 'ES',
-      latitude: 40.4,
+      latitude: 40.42,
       longitude: -3.7,
     });
     expect(asked(calls, '/geo/1.0/direct')).toBeDefined();
@@ -1047,7 +1049,7 @@ describe('apple weather', () => {
     await service.getWeather(ask());
 
     const url = asked(calls, 'weatherkit.apple.com') as string;
-    expect(url).toContain('/api/v1/weather/en/41.6/-0.9?');
+    expect(url).toContain('/api/v1/weather/en/41.65/-0.89?');
     expect(url).toContain(
       'dataSets=currentWeather%2CforecastDaily%2CforecastHourly',
     );

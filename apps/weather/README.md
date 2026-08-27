@@ -3,11 +3,18 @@
 Current conditions, a short forecast and the official warnings in force for one
 place, from whichever provider the caller has a key for.
 
-The service holds no API key of its own. Every request carries the caller's —
-the bot's, the app's — in a header, and the quota it spends is theirs. What the
-service adds is the part neither of them should each be doing: one shape for the
-answer, one cache in front of the provider, and an honest account of which
-services the answer came from.
+By default the service holds no API key of its own. Every request carries the
+caller's — the bot's, the app's — in a header, and the quota it spends is
+theirs. What the service adds is the part neither of them should each be doing:
+one shape for the answer, one cache in front of the provider, and an honest
+account of which services the answer came from.
+
+The one exception is a credential a caller cannot physically carry. Apple's
+WeatherKit wants a token signed with an Apple Developer key, and an app that
+shipped that key would be handing it to anyone who unzipped the bundle — so a
+deployment meaning to serve its own app configures the key here instead. See
+[Configuration](#configuration). Nothing sensitive lives in this repository
+either way.
 
 ## Endpoint
 
@@ -17,13 +24,20 @@ GET /weather?lat=41.6488&lon=-0.8891&lang=es&units=metric
 GET /weather/providers
 ```
 
-| Header               | Required | Meaning                                                 |
-| -------------------- | -------- | ------------------------------------------------------- |
-| `X-Weather-Api-Key`  | yes      | The caller's own key for the chosen provider            |
-| `X-Weather-Provider` | no       | Which provider to ask. Defaults to `openweather`        |
-| `X-Weather-Uv`       | no       | Set to include the UV index, which costs a second party |
-| `X-Weather-Alerts`   | no       | Set to include official warnings. Europe only           |
-| `X-Weather-Forecast` | no       | Set to `false`, `0` or `no` to skip it. On by default   |
+| Header               | Required | Meaning                                                  |
+| -------------------- | -------- | -------------------------------------------------------- |
+| `X-Weather-Api-Key`  | usually  | The caller's own key or token. See `managed` below       |
+| `X-Weather-Client-Key` | sometimes | Leave to spend this deployment's own credential      |
+| `X-Weather-Provider` | no       | Which provider to ask. Defaults to `openweather`         |
+| `X-Weather-Uv`       | no       | Set to include the UV index                              |
+| `X-Weather-Alerts`   | no       | Set to include the official warnings in force            |
+| `X-Weather-Forecast` | no       | Set to `false`, `0` or `no` to skip it. On by default    |
+
+`GET /weather/providers` lists what this build can answer from, and what each
+one carries: `geocoding`, its own `alerts`, its own `uv`, and `managed` — which
+says whether this deployment holds a credential for it, so a caller may send no
+`X-Weather-Api-Key` at all. A key the caller does send is always preferred, so
+their quota is spent rather than the deployment's.
 
 Any value but a plain refusal — `false`, `0`, `no` — turns a header on. `1`, `yes`
 and a bare `X-Weather-Uv:` all mean the same thing, and refusing one on a
@@ -46,6 +60,12 @@ the observed temperature rather than being invented from the wrong field.
 | `units`    | `metric` (default), `imperial` or `standard`                        |
 | `safety`   | Least band of warning worth returning. Absent returns them all      |
 | `area`     | Keep only warnings whose region matches. Ignores case and accents   |
+| `country`  | ISO alpha-2 the coordinates stand in. Only needed for warnings      |
+
+`country` exists because warnings are scoped by one and a coordinate does not
+carry one. Asking by `location` works it out from the geocoded place; asking by
+`lat`/`lon` through a provider that does no geocoding — Apple does none — has no
+other way to know, and without it such a request comes back with no warnings.
 
 The provider's own refusals come back as themselves: a key it rejects is a 401,
 a spent quota is a 429, a place it has never heard of is a 404. A caller who
@@ -207,6 +227,84 @@ Warnings are written in the language asked for where the office publishes it,
 and in English otherwise — matched on the language alone, since the same feed
 spells English `en-GB` in Spain and `en` in Germany. English is also what a
 request that names no language gets.
+
+## Configuration
+
+Everything sensitive comes from the environment. There is no key, certificate or
+`.p8` in this repository, and there is not meant to be one.
+
+| Variable                 | Meaning                                            |
+| ------------------------ | -------------------------------------------------- |
+| `WEATHERKIT_TEAM_ID`     | The 10-character Apple Developer team identifier   |
+| `WEATHERKIT_SERVICE_ID`  | The Services ID registered for WeatherKit          |
+| `WEATHERKIT_KEY_ID`      | The 10-character identifier of the WeatherKit key  |
+| `WEATHERKIT_PRIVATE_KEY` | The `.p8` itself, base64-encoded                   |
+| `WEATHER_CLIENT_KEY_VERSION` | Bump to rotate the derived client key          |
+| `WEATHER_CLIENT_KEYS`    | Optional: your own keys, instead of the derived one |
+
+All four of the WeatherKit variables, or none. A deployment setting three of them is misconfigured rather
+than opted out, and the service refuses to start rather than answering 401 to
+every Apple request for a reason no log explains. Set none and `apple` reports
+`managed: false`, callers bring their own tokens, and nothing else changes.
+
+### Who may spend it
+
+A credential the deployment pays for, behind a URL anyone can reach, is an open
+tap — WeatherKit's free tier is 500,000 calls a month, and there is a bill after
+it. So a configured credential always has a client key in front of it, and the
+service refuses to start if it somehow does not.
+
+That key needs no new secret. It is an HMAC of the WeatherKit private key you
+already configured, so it is derived rather than stored:
+
+```
+WEATHERKIT_PRIVATE_KEY="$(op read 'op://end.works/Apple WeatherKit/private key')" \
+  pnpm --filter @canopus/weather client-key
+```
+
+Print it once, put it in the app, and there is nothing extra in the vault. Bump
+`WEATHER_CLIENT_KEY_VERSION` to rotate it — no new Apple key, no new field.
+
+The three identifiers beside the key are **not** usable for this, and it is
+worth saying why, because reaching for one is the obvious idea. The Team ID is
+in the `embedded.mobileprovision` of every build. The Service ID is public the
+moment it is used for Sign in with Apple, and guessable regardless. The Key ID
+is the middle of the `.p8`'s own filename. A gate whose secret ships inside the
+thing it guards is not a gate. The private key is the one genuine secret in the
+set, and HMAC is one-way, so the derived key reveals nothing about it.
+
+Set `WEATHER_CLIENT_KEYS` to take this over with your own comma-separated list —
+useful for several clients with separate keys, or for rotating with an overlap.
+It replaces the derived key rather than adding to it.
+
+The check applies **only** to the managed path. A caller sending their own
+`X-Weather-Api-Key` is spending their own quota and needs no leave from us; a
+caller sending none, against a provider whose credential we hold, must send an
+`X-Weather-Client-Key` we recognise or be turned away before anything is
+fetched. Keys are compared in constant time and the list takes several, so one
+can be rotated without a gap: add the new key, ship the clients, drop the old.
+
+It is a shared secret, not an identity — enough that the endpoint is not an open
+proxy, and not a substitute for real authentication if this ever serves more
+than its own apps. It is also not a rate limit: a leaked key still spends the
+quota until it is rotated.
+
+The key is stored **base64-encoded** because a `.p8` is a PEM block, and its
+newlines do not survive the trip from a secret store through a CI environment,
+an SSH hop and `docker run -e` intact:
+
+```
+base64 -i AuthKey_FGHIJ67890.p8 | pbcopy
+```
+
+The deploy workflow reads all four from 1Password, as every other secret here is
+read, and passes them to the container. It expects an item named
+`Apple WeatherKit` in the `end.works` vault with the fields `team id`,
+`service id`, `key id` and `private key`. Nothing else — the client key is
+derived from the last of those.
+
+Running it locally, put them in the environment `docker compose` inherits, or
+export them before `pnpm start:dev`. Never in a file this repository tracks.
 
 ## Adding a provider
 

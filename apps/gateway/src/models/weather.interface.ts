@@ -19,6 +19,50 @@ export class Attribution {
    * @example ['weather', 'forecast', 'airQuality', 'geocoding']
    */
   provides: string[];
+
+  /**
+   * The licence or legal page the source requires linked alongside the credit.
+   * Apple's is the page WeatherKit itself names; OpenWeather's free tier is
+   * CC BY-SA 4.0; Open-Meteo's is CC BY 4.0.
+   * @example 'https://creativecommons.org/licenses/by-sa/4.0/'
+   */
+  licence?: string;
+
+  /**
+   * The mark the source requires shown, where it publishes one.
+   *
+   * Apple is why this exists: WeatherKit's terms ask for the Apple Weather
+   * wordmark beside the data, not merely the words. A source that asks only
+   * for a line of text has no `logo`, and a client draws `name` instead.
+   */
+  logo?: AttributionLogo;
+}
+
+/** One mark, in the three appearances a client may need to draw it in. */
+export class AttributionLogo {
+  /** For drawing on a light background. */
+  light: AttributionImage;
+
+  /** For drawing on a dark background. */
+  dark: AttributionImage;
+
+  /** The square mark, for where a wordmark will not fit. */
+  square: AttributionImage;
+}
+
+/** One image at the three pixel densities its publisher ships it in. */
+export class AttributionImage {
+  /**
+   * @1x
+   * @example 'https://weatherkit.apple.com/assets/branding/en/Apple_Weather_blk_en_1X_090122.png'
+   */
+  x1: string;
+
+  /** @2x */
+  x2: string;
+
+  /** @3x */
+  x3: string;
 }
 
 export class WeatherLocation {
@@ -145,8 +189,15 @@ export class CurrentWeather {
   observedAt: number;
 
   /**
-   * Air quality index, 1 (good) to 5 (very poor). Absent when the provider
-   * did not answer it.
+   * European Air Quality Index, 1 (good) to 6 (extremely poor).
+   *
+   * The EEA's own scale and its own rule — the grade is the poorest of the five
+   * pollutants, not their average. Computed from concentrations rather than
+   * taken from whichever provider answered, so two providers cannot grade the
+   * same air differently.
+   *
+   * Absent where nothing was measured. That is not a claim that the air is
+   * clean, which is why it is left off rather than sent as a 1.
    * @example 2
    */
   airQuality?: number;
@@ -417,4 +468,28 @@ export class WeatherProviderInfo {
    * @example true
    */
   geocoding: boolean;
+
+  /**
+   * Whether this provider issues its own warnings, rather than the response
+   * borrowing them from MeteoAlarm. One that does covers more than Europe and
+   * costs no extra call.
+   * @example false
+   */
+  alerts: boolean;
+
+  /**
+   * Whether this provider carries the UV index itself, rather than the
+   * response borrowing it from Open-Meteo.
+   * @example false
+   */
+  uv: boolean;
+
+  /**
+   * Whether this deployment holds a credential for the provider, so a caller
+   * may send no `X-Weather-Api-Key` at all. True only where a key cannot
+   * reasonably be carried by the caller — Apple's is a token signed with a
+   * developer key that must not ship inside an app.
+   * @example false
+   */
+  managed: boolean;
 }

@@ -2,7 +2,7 @@ import { HttpService } from '@nestjs/axios';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Inject, Injectable } from '@nestjs/common';
 import { Cache } from 'cache-manager';
-import { TTL, UV_PROTECTION } from '../utils';
+import { TTL, UV_PROTECTION, UvReading, uvReading } from '../utils';
 import { upstreamGet } from './upstream';
 
 const API_URL = 'https://api.open-meteo.com/v1/forecast';
@@ -11,11 +11,6 @@ type UvResponse = {
   current?: { uv_index?: number };
   hourly?: { time?: number[]; uv_index?: number[] };
 };
-
-export interface UvReading {
-  uv: number;
-  uvProtectionUntil?: number;
-}
 
 /**
  * Where the sun's part of this comes from, which is not the weather provider.
@@ -31,6 +26,8 @@ export interface UvReading {
 export class OpenMeteoUvProvider {
   readonly name = 'Open-Meteo';
   readonly url = 'https://open-meteo.com/';
+  /** Open-Meteo publishes under CC BY 4.0, which asks for the credit back. */
+  readonly licence = 'https://creativecommons.org/licenses/by/4.0/';
 
   constructor(
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
@@ -70,23 +67,17 @@ export class OpenMeteoUvProvider {
       TTL.uv,
     );
 
-    const uv = body?.current?.uv_index;
-    // Nought is a reading — it is night — so this asks what the value is rather
-    // than whether it is truthy.
-    if (typeof uv !== 'number') return undefined;
-    if (uv < UV_PROTECTION) return { uv };
-
-    // The first hour ahead that is back under the threshold, not the last one
-    // over it. The sun comes down once a day, so on this one-day window the two
-    // are the same answer; on a longer one, the last hour over the line is
-    // tomorrow lunchtime, which is not what "until" means.
-    const times = body.hourly?.time ?? [];
-    const values = body.hourly?.uv_index ?? [];
-    const now = Date.now() / 1000;
-    const until = times.find(
-      (time, index) => time > now && (values[index] ?? 0) < UV_PROTECTION,
-    );
-
-    return { uv, ...(until ? { uvProtectionUntil: until } : {}) };
+    return uvReading(body?.current?.uv_index, () => {
+      // The first hour ahead that is back under the threshold, not the last one
+      // over it. The sun comes down once a day, so on this one-day window the
+      // two are the same answer; on a longer one, the last hour over the line
+      // is tomorrow lunchtime, which is not what "until" means.
+      const times = body.hourly?.time ?? [];
+      const values = body.hourly?.uv_index ?? [];
+      const now = Date.now() / 1000;
+      return times.find(
+        (time, index) => time > now && (values[index] ?? 0) < UV_PROTECTION,
+      );
+    });
   }
 }

@@ -20,6 +20,7 @@
     "prebuild": "rimraf dist",
     "build": "nest build",
     "build:regions": "node scripts/build-regions.mjs",
+    "client-key": "ts-node -T -P tsconfig.json scripts/client-key.ts",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",

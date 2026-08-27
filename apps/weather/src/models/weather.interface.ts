@@ -6,6 +6,14 @@
 export interface WeatherPayload {
   provider?: string;
   apiKey?: string;
+  /**
+   * Proof the caller may spend this deployment's own credential.
+   *
+   * Only consulted when falling back to one — see `ProviderInfo.managed`. A
+   * caller sending their own `apiKey` is spending their own quota and needs
+   * none of this.
+   */
+  clientKey?: string;
   latitude?: number;
   longitude?: number;
   location?: string;
@@ -17,11 +25,32 @@ export interface WeatherPayload {
   safety?: string;
   /** Region name to keep, matched loosely against each warning's `areas`. */
   area?: string;
+  /**
+   * ISO alpha-2 country the cell stands in, when the caller knows it.
+   *
+   * Warnings are scoped by country and the country is otherwise only known
+   * once a place name has been geocoded — which a provider that does no
+   * geocoding, such as Apple, never does. Sent by the caller it unblocks the
+   * warnings for a coordinate-only request; absent, the reading is asked for
+   * the country instead and a provider that does not name one simply has no
+   * warnings to offer.
+   */
+  country?: string;
   /** Defaults to true: the forecast is what the day's high and low come from. */
   includeForecast?: boolean;
 }
 
 export type WeatherUnits = 'metric' | 'imperial' | 'standard';
+
+/**
+ * A kind of data a source can be owed credit for.
+ *
+ * One vocabulary rather than three: it is what `Attribution.provides` lists,
+ * what `ProviderInfo.provides` declares a provider capable of, and what the
+ * service asks a provider for. A new kind is a member here and nowhere else.
+ */
+export type DataKind =
+  'weather' | 'forecast' | 'alerts' | 'uv' | 'airQuality' | 'geocoding';
 
 /**
  * One source, and what this particular response owes it.
@@ -33,7 +62,43 @@ export type WeatherUnits = 'metric' | 'imperial' | 'standard';
 export interface Attribution {
   name: string;
   url: string;
-  provides: string[];
+  provides: DataKind[];
+  /**
+   * The licence or legal page the source requires linked, where it requires
+   * one. Apple's is the attribution page named by the reading itself;
+   * OpenWeather's free tier is CC BY-SA 4.0; Open-Meteo's is CC BY 4.0. A
+   * client that draws the credit at all should draw this link with it.
+   */
+  licence?: string;
+  /**
+   * The mark the source requires shown, where it publishes one.
+   *
+   * Apple is the reason this exists: WeatherKit's terms ask for the Apple
+   * Weather wordmark beside the data, not merely the words, and the artwork is
+   * served per language. A source that asks only for a line of text has no
+   * `logo` and a client draws its `name` instead.
+   */
+  logo?: AttributionLogo;
+}
+
+/** One mark, in the three appearances a client may need to draw it in. */
+export interface AttributionLogo {
+  /** For drawing on a light background. */
+  light: AttributionImage;
+  /** For drawing on a dark background. */
+  dark: AttributionImage;
+  /** The square mark, for where a wordmark will not fit. */
+  square: AttributionImage;
+}
+
+/** One image at the three pixel densities its publisher ships it in. */
+export interface AttributionImage {
+  /** @1x */
+  x1: string;
+  /** @2x */
+  x2: string;
+  /** @3x */
+  x3: string;
 }
 
 /** Where the reading is for, as the provider itself names it. */
@@ -43,7 +108,15 @@ export interface WeatherLocation {
   /** The coordinates actually asked about — rounded, so they name the cell. */
   latitude: number;
   longitude: number;
-  /** Seconds the place is offset from UTC, for rendering its own clock. */
+  /**
+   * Seconds the place is offset from UTC, for rendering its own clock.
+   *
+   * Exact where the provider states it. Where it does not — WeatherKit answers
+   * no time zone at all — this is the solar offset of the cell's longitude,
+   * which is right to the hour across most of the world and can be two out
+   * where a country keeps a clock its longitude does not justify, or is on
+   * summer time.
+   */
   timezoneOffset: number;
 }
 
@@ -58,8 +131,13 @@ export interface CurrentWeather {
   /** The provider's icon code — `01d`, `10n`. */
   icon: string;
   /**
-   * The provider's condition id, which is finer than the icon code: every
-   * atmospheric condition from mist to a tornado shares the code `50`.
+   * The condition id, which is finer than the icon code: every atmospheric
+   * condition from mist to a tornado shares the icon `50`.
+   *
+   * Always on OpenWeather's scale, whichever provider answered. A provider
+   * whose own vocabulary is different — Apple names conditions in words — is
+   * mapped onto it, so that a client switches on one set of ids rather than
+   * learning a second when it changes provider.
    */
   condition: number;
   humidity: number;
@@ -73,7 +151,13 @@ export interface CurrentWeather {
   sunset: number;
   /** Unix seconds of the observation itself, not of the request. */
   observedAt: number;
-  /** Air quality index, 1 (good) to 5 (very poor); absent if unanswered. */
+  /**
+   * European Air Quality Index, 1 (good) to 6 (extremely poor).
+   *
+   * Computed here from concentrations rather than taken from a provider, so
+   * every provider grades the same air the same way — see `european-aqi`.
+   * Absent where nothing was measured, which is not the same as clean air.
+   */
   airQuality?: number;
   /** The UV index now; present only when the caller asked for it. */
   uv?: number;
@@ -108,13 +192,19 @@ export interface WeatherResponse {
    * Warnings in force, most severe first — present only when the caller asked
    * for them and a feed answered.
    *
-   * Scoped to the country, not to the cell. MeteoAlarm publishes one feed per
-   * country and scopes each warning by a region code with no geometry attached
-   * — and the codes are not even the same kind of code from one country to the
-   * next — so narrowing to the cell would mean shipping a region atlas and
-   * keeping it true. Every warning names its own `areas` instead, and a caller
-   * who knows which region it stands in can say so better than a lookup table
-   * would. An empty array is an answer: MeteoAlarm was asked and holds nothing.
+   * From the weather provider itself where it issues warnings — Apple does,
+   * for the coordinate asked about and for most of the world — and from
+   * MeteoAlarm otherwise, which covers Europe and scopes by country. How wide
+   * the net was is in `alertScope` rather than left to be inferred.
+   *
+   * MeteoAlarm publishes one feed per country and scopes each warning by a
+   * region code with no geometry attached — and the codes are not even the same
+   * kind of code from one country to the next — so narrowing to the cell means
+   * placing it in the region atlas, which only works where the atlas speaks the
+   * same scheme the feed does. Every warning names its own `areas` too, and a
+   * caller who knows which region it stands in can say so better than a lookup
+   * table would. An empty array is an answer: a feed was asked and holds
+   * nothing.
    */
   alerts?: WeatherAlert[];
   /** How `alerts` was narrowed; present whenever `alerts` is. */
@@ -138,13 +228,14 @@ export interface AlertRegion {
 /**
  * How the warnings were narrowed.
  *
- * `area` means the cell was placed in the atlas and only the warnings covering
- * it came back. `country` means it could not be — a country scoping its
- * warnings by codes the atlas does not hold, or a cell that landed off every
- * region — and everything the national feed carries came back instead. The
- * difference matters enough to say out loud: a short list means two very
- * different things under the two, and a caller told only the list would read
- * the wrong one as reassurance.
+ * `area` means the warnings came back narrowed to the place — either because
+ * the cell was placed in the region atlas, or because the provider scopes its
+ * own warnings to the coordinate it was asked about, as Apple does. `country`
+ * means neither: a country scoping its warnings by codes the atlas does not
+ * hold, or a cell that landed off every region, and everything the national
+ * feed carries came back instead. The difference matters enough to say out
+ * loud: a short list means two very different things under the two, and a
+ * caller told only the list would read the wrong one as reassurance.
  */
 export type AlertScope = 'area' | 'country';
 
@@ -210,4 +301,40 @@ export interface ProviderInfo {
   apiKeyUrl: string;
   /** Whether this provider can turn a place name into coordinates. */
   geocoding: boolean;
+  /**
+   * Whether this provider issues its own warnings.
+   *
+   * True means the warnings come back inside the reading and MeteoAlarm is not
+   * asked at all — the provider is nearer the source, covers more of the world
+   * than Europe, and costs no extra call. It also means the provider is the one
+   * credited for them in `attribution`.
+   */
+  alerts: boolean;
+  /**
+   * Whether this provider carries the UV index itself.
+   *
+   * True means Open-Meteo is not asked: the index is already in the document
+   * the reading came from, so a caller who wants it adds neither a third party
+   * to their request nor a call to anyone's quota.
+   */
+  uv: boolean;
+  /**
+   * Whether this provider answers pollutant concentrations of its own.
+   *
+   * The index is never the provider's — it is computed here, from whatever
+   * concentrations came back, so that two providers cannot grade the same air
+   * differently. See `european-aqi`. This only says whether the concentrations
+   * arrive with the reading or have to be asked of Open-Meteo, which answers
+   * them without a key.
+   */
+  airQuality: boolean;
+  /**
+   * Whether this deployment holds a credential for the provider itself.
+   *
+   * True means a caller may send no key at all, because one cannot reasonably
+   * be carried: Apple's is a token signed with a developer key, and an app
+   * that shipped that key would be handing it to anyone who unzipped the
+   * bundle. False is the usual case and means the key is the caller's to send.
+   */
+  managed: boolean;
 }

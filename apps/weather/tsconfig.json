@@ -1,6 +1,10 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    // Node 24 is the runtime; the base target stays es2017 for emit, but the
+    // type surface has to admit ES2022 additions such as `new Error(msg,
+    // { cause })`, which the repo's lint rules require when rethrowing.
+    "lib": ["ES2022"],
     "outDir": "./dist",
     "rootDir": "./src",
     "types": ["node", "jest"]

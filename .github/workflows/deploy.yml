@@ -21,6 +21,10 @@ on:
 
 env:
   REGISTRY: ghcr.io
+  # Rotates the weather client key, which is derived from the WeatherKit
+  # private key rather than stored — bump this, redeploy, ship the clients.
+  # `pnpm --filter @canopus/weather client-key` prints the current one.
+  WEATHER_CLIENT_KEY_VERSION: "1"
 
 jobs:
   # Work out which deployable services this change affects. A service is
@@ -237,6 +241,21 @@ jobs:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           THE_MOVIE_DB_API_KEY: op://end.works/The Movie DB API Key/credential
 
+      - name: Load weatherkit secrets
+        if: ${{ github.event_name != 'pull_request' && (github.ref_name == 'main' || github.ref_type == 'tag') && matrix.service == 'weather' }}
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          WEATHERKIT_TEAM_ID: op://end.works/Apple WeatherKit/team id
+          WEATHERKIT_SERVICE_ID: op://end.works/Apple WeatherKit/service id
+          WEATHERKIT_KEY_ID: op://end.works/Apple WeatherKit/key id
+          # Stored base64-encoded: a .p8 is a PEM block, and its newlines do
+          # not survive the trip through this environment, the SSH hop and
+          # `docker run -e` intact.
+          WEATHERKIT_PRIVATE_KEY: op://end.works/Apple WeatherKit/private key
+
       - name: Compute image ref and container name
         if: ${{ github.event_name != 'pull_request' && (github.ref_name == 'main' || github.ref_type == 'tag') }}
         run: |
@@ -258,7 +277,7 @@ jobs:
           port: ${{ env.PORT }}
           username: ${{ env.USERNAME }}
           key: ${{ env.KEY }}
-          envs: IMAGE,CONTAINER,MONGODB_URI,TWITTER_CLIENT_TOKEN,THE_MOVIE_DB_API_KEY
+          envs: IMAGE,CONTAINER,MONGODB_URI,TWITTER_CLIENT_TOKEN,THE_MOVIE_DB_API_KEY,WEATHERKIT_TEAM_ID,WEATHERKIT_SERVICE_ID,WEATHERKIT_KEY_ID,WEATHERKIT_PRIVATE_KEY,WEATHER_CLIENT_KEY_VERSION
           script: |
             docker pull "$IMAGE"
             docker stop "$CONTAINER" 2>/dev/null || true
@@ -267,6 +286,8 @@ jobs:
               docker run --network canopus -p ${{ matrix.port }}/tcp -e MONGODB_URI="$MONGODB_URI" -e THE_MOVIE_DB_API_KEY="$THE_MOVIE_DB_API_KEY" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
             elif [ -n "$MONGODB_URI" ]; then
               docker run --network canopus -p ${{ matrix.port }}/tcp -e MONGODB_URI="$MONGODB_URI" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
+            elif [ "$CONTAINER" = "canopus-weather" ]; then
+              docker run --network canopus -p ${{ matrix.port }}/tcp -e WEATHERKIT_TEAM_ID="$WEATHERKIT_TEAM_ID" -e WEATHERKIT_SERVICE_ID="$WEATHERKIT_SERVICE_ID" -e WEATHERKIT_KEY_ID="$WEATHERKIT_KEY_ID" -e WEATHERKIT_PRIVATE_KEY="$WEATHERKIT_PRIVATE_KEY" -e WEATHER_CLIENT_KEY_VERSION="$WEATHER_CLIENT_KEY_VERSION" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
             elif [ "$CONTAINER" = "canopus-twitter-downloader" ]; then
               docker run --network canopus -p ${{ matrix.port }}/tcp -e TWITTER_CLIENT_TOKEN="$TWITTER_CLIENT_TOKEN" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
             else

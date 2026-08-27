@@ -1,4 +1,5 @@
 import { Provider } from '@nestjs/common';
+import { AppleWeatherProvider } from './apple-weather.provider';
 import { OpenWeatherProvider } from './open-weather.provider';
 import { WeatherProvider } from './weather-provider';
 
@@ -12,7 +13,7 @@ export const WEATHER_PROVIDERS = 'WEATHER_PROVIDERS';
  * by `info.id`, so nothing else — not the controller, not the service, not the
  * gateway — carries a provider's name.
  */
-const IMPLEMENTATIONS = [OpenWeatherProvider];
+const IMPLEMENTATIONS = [OpenWeatherProvider, AppleWeatherProvider];
 
 export const weatherProviders: Provider[] = [
   ...IMPLEMENTATIONS,

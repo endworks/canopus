@@ -52,6 +52,12 @@ export const TTL = {
    * indefinitely.
    */
   geocode: 1000 * 60 * 60 * 24 * 7,
+  /**
+   * A source's own branding, which changes on the timescale of a rebrand. Held
+   * as long as a place name, and for the same reason: nothing bounds it but its
+   * expiry.
+   */
+  attribution: 1000 * 60 * 60 * 24 * 7,
 };
 
 /**
@@ -65,3 +71,45 @@ export const UV_PROTECTION = 3;
 
 /** How far ahead the forecast looks: eight three-hour steps, so a day. */
 export const FORECAST_STEPS = 8;
+
+/**
+ * An ISO instant as unix seconds, which is what the wire carries.
+ *
+ * Every upstream here dates things in ISO 8601 and every field of ours is in
+ * seconds, so this sits between them once rather than once per provider.
+ */
+export const seconds = (time?: string): number | undefined => {
+  if (!time) return undefined;
+  const parsed = Date.parse(time);
+  return Number.isNaN(parsed) ? undefined : Math.floor(parsed / 1000);
+};
+
+/** The UV index now, and when it stops being worth protecting against. */
+export interface UvReading {
+  uv: number;
+  uvProtectionUntil?: number;
+}
+
+/**
+ * The rule about when protection stops mattering, written once.
+ *
+ * Two providers answer the UV index — whichever one the reading came from, and
+ * Open-Meteo for the rest — and the two must not disagree about what "until"
+ * means. What differs between them is only the shape their hours arrive in, so
+ * the scan stays with each caller as a thunk and the rule lives here.
+ *
+ * `protectionUntil` is not called below the threshold: under it there is
+ * nothing to be until, so neither provider pays to look.
+ */
+export const uvReading = (
+  uv: number | undefined,
+  protectionUntil: () => number | undefined,
+): UvReading | undefined => {
+  // Nought is a reading — it is night — so this asks what the value is rather
+  // than whether it is truthy.
+  if (typeof uv !== 'number') return undefined;
+  if (uv < UV_PROTECTION) return { uv };
+
+  const until = protectionUntil();
+  return { uv, ...(until ? { uvProtectionUntil: until } : {}) };
+};

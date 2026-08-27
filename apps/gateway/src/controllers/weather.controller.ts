@@ -123,9 +123,9 @@ export class WeatherController {
     @Query('lon', new ParseFloatPipe({ optional: true })) longitude: number,
     @Query('lang') language: string,
     @Query('units') units: WeatherUnits,
-    @Headers('x-weather-provider') provider: string,
-    @Headers('x-weather-api-key') apiKey: string,
-    @Headers('x-weather-uv') uv: string,
+    @Headers('X-Weather-Provider') provider: string,
+    @Headers('X-Weather-Api-Key') apiKey: string,
+    @Headers('X-Weather-Uv') uv: string,
   ) {
     return this.weatherService.getWeather({
       location,

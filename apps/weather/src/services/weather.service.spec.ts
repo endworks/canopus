@@ -2,6 +2,7 @@ import { HttpService } from '@nestjs/axios';
 import { HttpException } from '@nestjs/common';
 import { createCache } from 'cache-manager';
 import { of, throwError } from 'rxjs';
+import { MeteoAlarmProvider } from '../providers/meteoalarm.provider';
 import { OpenMeteoUvProvider } from '../providers/open-meteo-uv.provider';
 import { OpenWeatherProvider } from '../providers/open-weather.provider';
 import { WeatherService } from './weather.service';
@@ -11,12 +12,12 @@ const HOUR = 3600;
 // first hour ahead of now, so a fixed timestamp would stop meaning "ahead".
 const NOW = Math.floor(Date.now() / 1000);
 
-const current = (name = 'Zaragoza') => ({
+const current = (name = 'Zaragoza', country = 'ES') => ({
   weather: [{ id: 800, icon: '01d', description: 'cielo claro' }],
   main: { temp: 24.3, feels_like: 23.8, humidity: 41, pressure: 1014 },
   wind: { speed: 4.6, deg: 310 },
   clouds: { all: 0 },
-  sys: { sunrise: NOW - 6 * HOUR, sunset: NOW + 7 * HOUR, country: 'ES' },
+  sys: { sunrise: NOW - 6 * HOUR, sunset: NOW + 7 * HOUR, country },
   dt: NOW,
   timezone: 7200,
   name,
@@ -46,6 +47,87 @@ const uvBody = {
     time: [NOW, NOW + HOUR, NOW + 2 * HOUR],
     uv_index: [7.2, 4.1, 1.2],
   },
+};
+
+const iso = (seconds: number) => new Date(seconds * 1000).toISOString();
+
+/** One CAP info block, in the shape MeteoAlarm actually publishes. */
+const info = (
+  language: string,
+  event: string,
+  extra: Record<string, unknown> = {},
+) => ({
+  language,
+  event,
+  headline: `${event}. Litoral norte de Tarragona`,
+  description: 'Precipitacion acumulada en 12 horas: 180 mm.',
+  instruction: 'Tome medidas preventivas.',
+  severity: 'Extreme',
+  certainty: 'Observed',
+  urgency: 'Immediate',
+  onset: iso(NOW - HOUR),
+  expires: iso(NOW + HOUR),
+  senderName: 'AEMET. Agencia Estatal de Meteorologia',
+  web: 'https://www.aemet.es/es/eltiempo/prediccion/avisos',
+  area: [
+    {
+      areaDesc: 'Litoral norte de Tarragona',
+      geocode: [{ value: 'ES191', valueName: 'EMMA_ID' }],
+    },
+  ],
+  parameter: [
+    { value: '4; red; Extreme', valueName: 'awareness_level' },
+    { value: '10; Rain', valueName: 'awareness_type' },
+  ],
+  ...extra,
+});
+
+const warning = (
+  identifier: string,
+  infos: unknown[],
+  extra: Record<string, unknown> = {},
+) => ({
+  alert: {
+    identifier,
+    status: 'Actual',
+    scope: 'Public',
+    msgType: 'Alert',
+    info: infos,
+    ...extra,
+  },
+});
+
+const yellowWind = {
+  severity: 'Moderate',
+  parameter: [
+    { value: '2; yellow; Moderate', valueName: 'awareness_level' },
+    { value: '1; Wind', valueName: 'awareness_type' },
+  ],
+};
+
+const alerts = {
+  warnings: [
+    warning('wind-now', [
+      info('en-GB', 'Moderate wind warning', yellowWind),
+      info('es-ES', 'Aviso de viento de nivel amarillo', yellowWind),
+    ]),
+    warning('rain-now', [
+      info('en-GB', 'Extreme rain warning'),
+      info('es-ES', 'Aviso de lluvias de nivel rojo'),
+    ]),
+    warning('rain-lapsed', [
+      info('en-GB', 'Extreme rain warning', { expires: iso(NOW - HOUR) }),
+    ]),
+    warning('snow-replaced', [info('en-GB', 'Snow warning')]),
+    warning(
+      'snow-update',
+      [info('en-GB', 'Updated snow warning', { severity: 'Severe' })],
+      {
+        msgType: 'Update',
+        references: `http://www.aemet.es,snow-replaced,${iso(NOW - HOUR)}`,
+      },
+    ),
+  ],
 };
 
 const httpError = (status: number) => {
@@ -87,9 +169,11 @@ const build = (routes: Record<string, unknown>) => {
   const cache = createCache();
   const provider = new OpenWeatherProvider(cache, http);
   const uv = new OpenMeteoUvProvider(cache, http);
+  const meteoalarm = new MeteoAlarmProvider(cache, http);
   const service = new WeatherService(
     new Map([[provider.info.id, provider]]),
     uv,
+    meteoalarm,
   );
   return { service, calls };
 };
@@ -102,6 +186,7 @@ const routes = {
     { name: 'Madrid', country: 'ES', lat: 40.4168, lon: -3.7038 },
   ],
   'open-meteo.com': uvBody,
+  'feeds.meteoalarm.org': alerts,
 };
 
 describe('getWeather', () => {
@@ -237,6 +322,202 @@ describe('getWeather', () => {
     expect(reading.current.temperature).toBe(24.3);
     expect(reading.current.uv).toBeUndefined();
     expect(reading.attribution).toHaveLength(1);
+  });
+
+  it('lists the warnings in force, most severe first', async () => {
+    const { service } = build(routes);
+
+    const reading = await service.getWeather({
+      apiKey: 'key',
+      latitude: 41.6,
+      longitude: -0.9,
+      includeAlerts: true,
+    });
+
+    expect(reading.alerts?.map((alert) => alert.event)).toEqual([
+      'Extreme rain warning',
+      'Updated snow warning',
+      'Moderate wind warning',
+    ]);
+    expect(reading.alerts?.[0]).toMatchObject({
+      id: 'rain-now',
+      severity: 'Extreme',
+      level: 'red',
+      awareness: 'Rain',
+      urgency: 'Immediate',
+      certainty: 'Observed',
+      onset: NOW - HOUR,
+      expires: NOW + HOUR,
+      areas: ['Litoral norte de Tarragona'],
+      sender: 'AEMET. Agencia Estatal de Meteorologia',
+      url: 'https://www.aemet.es/es/eltiempo/prediccion/avisos',
+    });
+  });
+
+  it('drops a warning that has already lapsed', async () => {
+    const { service } = build(routes);
+
+    const reading = await service.getWeather({
+      apiKey: 'key',
+      latitude: 41.6,
+      longitude: -0.9,
+      includeAlerts: true,
+    });
+
+    expect(reading.alerts?.map((alert) => alert.id)).not.toContain(
+      'rain-lapsed',
+    );
+  });
+
+  it('drops the warning an update replaces, keeping the update', async () => {
+    const { service } = build(routes);
+
+    const reading = await service.getWeather({
+      apiKey: 'key',
+      latitude: 41.6,
+      longitude: -0.9,
+      includeAlerts: true,
+    });
+
+    const ids = reading.alerts?.map((alert) => alert.id);
+    expect(ids).not.toContain('snow-replaced');
+    expect(ids).toContain('snow-update');
+  });
+
+  it('writes the warnings in English until a language is asked for', async () => {
+    const { service } = build(routes);
+
+    const reading = await service.getWeather({
+      apiKey: 'key',
+      latitude: 41.6,
+      longitude: -0.9,
+      includeAlerts: true,
+    });
+
+    expect(reading.alerts?.[0].event).toBe('Extreme rain warning');
+  });
+
+  it('writes them in the language asked for when the office publishes it', async () => {
+    const { service } = build(routes);
+
+    const reading = await service.getWeather({
+      apiKey: 'key',
+      latitude: 41.6,
+      longitude: -0.9,
+      language: 'es',
+      includeAlerts: true,
+    });
+
+    expect(reading.alerts?.[0].event).toBe('Aviso de lluvias de nivel rojo');
+  });
+
+  it('leaves the warnings out until they are asked for', async () => {
+    const { service, calls } = build(routes);
+
+    const reading = await service.getWeather({
+      apiKey: 'key',
+      latitude: 41.6,
+      longitude: -0.9,
+    });
+
+    expect(reading.alerts).toBeUndefined();
+    expect(calls.some((url) => url.includes('meteoalarm'))).toBe(false);
+  });
+
+  it('asks no feed for a country MeteoAlarm does not cover', async () => {
+    const { service, calls } = build({
+      ...routes,
+      '/data/2.5/weather': current('Denver', 'US'),
+    });
+
+    const reading = await service.getWeather({
+      apiKey: 'key',
+      latitude: 39.7,
+      longitude: -105,
+      includeAlerts: true,
+    });
+
+    expect(reading.alerts).toBeUndefined();
+    expect(reading.attribution).toHaveLength(1);
+    expect(calls.some((url) => url.includes('meteoalarm'))).toBe(false);
+  });
+
+  it('credits MeteoAlarm for saying nothing is in force', async () => {
+    const { service } = build({
+      ...routes,
+      'feeds.meteoalarm.org': { warnings: [] },
+    });
+
+    const reading = await service.getWeather({
+      apiKey: 'key',
+      latitude: 41.6,
+      longitude: -0.9,
+      includeAlerts: true,
+    });
+
+    expect(reading.alerts).toEqual([]);
+    expect(reading.attribution).toContainEqual({
+      name: 'MeteoAlarm',
+      url: 'https://meteoalarm.org/',
+      provides: ['alerts'],
+    });
+  });
+
+  it('costs the warnings rather than the temperature when the feed is down', async () => {
+    const { service } = build({
+      ...routes,
+      'feeds.meteoalarm.org': httpError(503),
+    });
+
+    const reading = await service.getWeather({
+      apiKey: 'key',
+      latitude: 41.6,
+      longitude: -0.9,
+      includeAlerts: true,
+    });
+
+    expect(reading.current.temperature).toBe(24.3);
+    expect(reading.alerts).toBeUndefined();
+    expect(reading.attribution).toHaveLength(1);
+  });
+
+  it('serves a whole country one feed however many cells ask', async () => {
+    const { service, calls } = build(routes);
+    const question = { apiKey: 'key', includeAlerts: true };
+
+    await service.getWeather({ ...question, latitude: 41.6, longitude: -0.9 });
+    await service.getWeather({ ...question, latitude: 40.4, longitude: -3.7 });
+
+    expect(calls.filter((url) => url.includes('meteoalarm'))).toHaveLength(1);
+  });
+
+  it('skips the forecast, and its call, when the caller turns it off', async () => {
+    const { service, calls } = build(routes);
+
+    const reading = await service.getWeather({
+      apiKey: 'key',
+      latitude: 41.6,
+      longitude: -0.9,
+      includeForecast: false,
+    });
+
+    expect(reading.forecast).toEqual([]);
+    expect(calls.some((url) => url.includes('/data/2.5/forecast'))).toBe(false);
+    expect(reading.attribution[0].provides).toEqual(['weather', 'airQuality']);
+  });
+
+  it('collapses the range to the observation with no forecast to read it off', async () => {
+    const { service } = build(routes);
+
+    const reading = await service.getWeather({
+      apiKey: 'key',
+      latitude: 41.6,
+      longitude: -0.9,
+      includeForecast: false,
+    });
+
+    expect(reading.current.high).toBe(24.3);
+    expect(reading.current.low).toBe(24.3);
   });
 
   it('costs the air quality field rather than the reading', async () => {

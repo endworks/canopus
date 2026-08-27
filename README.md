@@ -11,7 +11,7 @@ apps/
   gateway/             # @canopus/gateway            — HTTP/REST gateway, proxies to services over TCP
   zaragoza/            # @canopus/zaragoza           — Zaragoza transport (bus/tram/bizi), MongoDB
   zine/                # @canopus/zine               — cinema & movies, MongoDB
-  weather/             # @canopus/weather            — weather, caller-supplied provider key
+  weather/             # @canopus/weather            — weather & warnings, caller-supplied provider key
   rae/                 # @canopus/rae                — Spanish dictionary (RAE) scraper
   twitter-downloader/  # @canopus/twitter-downloader — tweet media-URL extractor
 packages/

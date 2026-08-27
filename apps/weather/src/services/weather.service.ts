@@ -8,10 +8,12 @@ import {
 import {
   Attribution,
   ProviderInfo,
+  WeatherAlert,
   WeatherPayload,
   WeatherResponse,
   WeatherUnits,
 } from '../models/weather.interface';
+import { MeteoAlarmProvider } from '../providers/meteoalarm.provider';
 import { OpenMeteoUvProvider } from '../providers/open-meteo-uv.provider';
 import { WEATHER_PROVIDERS } from '../providers/registry';
 import { WeatherProvider } from '../providers/weather-provider';
@@ -35,6 +37,7 @@ export class WeatherService {
     @Inject(WEATHER_PROVIDERS)
     private readonly providers: Map<string, WeatherProvider>,
     private readonly uvProvider: OpenMeteoUvProvider,
+    private readonly alertProvider: MeteoAlarmProvider,
   ) {}
 
   listProviders(): ProviderInfo[] {
@@ -54,13 +57,17 @@ export class WeatherService {
     const units = this.units(payload.units);
     const cell = await this.locate(provider, payload, apiKey, language);
 
-    const [reading, uv] = await Promise.all([
+    const [reading, uv, geocodedAlerts] = await Promise.all([
       provider.read({
         apiKey,
         latitude: cell.latitude,
         longitude: cell.longitude,
         language,
         units,
+        // The one flag that defaults on: the day's high and low are read off
+        // the forecast, so a caller who says nothing keeps the answer they
+        // have always had.
+        includeForecast: payload.includeForecast ?? true,
       }),
       // Swallowed rather than awaited with the rest: the sun is one field from
       // a second service, and that service being down should cost the field
@@ -70,7 +77,15 @@ export class WeatherService {
             .read(cell.latitude, cell.longitude)
             .catch(() => undefined)
         : undefined,
+      // Warnings are national, so the country picks the feed — and the country
+      // is known this early only when a name was geocoded. Asked alongside the
+      // reading when it is, and off the reading itself when it is not.
+      cell.country ? this.alerts(payload, cell.country, language) : undefined,
     ]);
+
+    const alerts = cell.country
+      ? geocodedAlerts
+      : await this.alerts(payload, reading.location.country, language);
 
     const provides = [
       ...reading.provides,
@@ -86,6 +101,17 @@ export class WeatherService {
         provides: ['uv'],
       });
     }
+    // Credited for an empty list too, unlike the fields above. "No warnings are
+    // in force here" is a claim, and it is MeteoAlarm's rather than ours; the
+    // case where nothing is owed is the feed not answering at all, and that
+    // leaves `alerts` off the response entirely.
+    if (alerts) {
+      attribution.push({
+        name: this.alertProvider.name,
+        url: this.alertProvider.url,
+        provides: ['alerts'],
+      });
+    }
 
     return {
       provider: provider.info.id,
@@ -99,9 +125,28 @@ export class WeatherService {
       },
       current: { ...reading.current, ...(uv ?? {}) },
       forecast: reading.forecast,
+      ...(alerts ? { alerts } : {}),
       attribution,
       lastUpdated: new Date(reading.current.observedAt * 1000).toISOString(),
     };
+  }
+
+  /**
+   * The warnings in force, or nothing at all.
+   *
+   * Swallowed like the UV index and for the same reason, with one more way of
+   * coming back empty-handed: MeteoAlarm covers Europe, and a cell outside it
+   * has no feed to ask rather than a feed that answers nothing.
+   */
+  private alerts(
+    payload: WeatherPayload,
+    country: string,
+    language: string,
+  ): Promise<WeatherAlert[] | undefined> | undefined {
+    if (!payload.includeAlerts || !this.alertProvider.covers(country)) {
+      return undefined;
+    }
+    return this.alertProvider.read(country, language).catch(() => undefined);
   }
 
   private pick(id?: string): WeatherProvider {

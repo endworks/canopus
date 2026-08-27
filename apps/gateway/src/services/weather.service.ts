@@ -13,6 +13,8 @@ export interface WeatherQuery {
   provider?: string;
   apiKey?: string;
   includeUv?: boolean;
+  includeAlerts?: boolean;
+  includeForecast?: boolean;
 }
 
 @Injectable()

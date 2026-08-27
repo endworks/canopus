@@ -13,6 +13,8 @@ export interface WeatherRequest {
   longitude: number;
   language: string;
   units: WeatherUnits;
+  /** Whether the short forecast is worth the upstream call this time. */
+  includeForecast: boolean;
 }
 
 /** A place a name resolved to, before it is rounded to a cell. */

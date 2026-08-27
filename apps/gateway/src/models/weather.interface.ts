@@ -211,6 +211,99 @@ export class ForecastStep {
   precipitation: number;
 }
 
+export class WeatherAlert {
+  /**
+   * The CAP identifier, stable across updates so a client can dedupe.
+   * @example '2.49.0.0.724.0.ES.260822032408.694303PRP2220569048'
+   */
+  id: string;
+
+  /**
+   * The sender's name for the phenomenon, in the requested language.
+   * @example 'Extreme rain warning'
+   */
+  event: string;
+
+  /**
+   * One line naming the warning and the region.
+   * @example 'Extreme rain warning. Litoral norte de Tarragona'
+   */
+  headline: string;
+
+  /**
+   * What the office says is coming.
+   * @example 'Twelve-hours accumulated precipitation: 180 mm.'
+   */
+  description: string;
+
+  /**
+   * What to do about it. Absent where the office writes no advice.
+   * @example 'Take precautionary action and remain vigilant.'
+   */
+  instruction?: string;
+
+  /**
+   * CAP severity.
+   * @example 'Extreme'
+   */
+  severity: string;
+
+  /**
+   * MeteoAlarm's colour band, which is what its maps are drawn in.
+   * @example 'red'
+   */
+  level?: string;
+
+  /**
+   * What it is a warning of.
+   * @example 'Rain'
+   */
+  awareness?: string;
+
+  /**
+   * CAP urgency.
+   * @example 'Immediate'
+   */
+  urgency: string;
+
+  /**
+   * CAP certainty.
+   * @example 'Observed'
+   */
+  certainty: string;
+
+  /**
+   * When the warning starts, in unix seconds.
+   * @example 1756263600
+   */
+  onset: number;
+
+  /**
+   * When it lapses, in unix seconds. Absent where the office set no end.
+   * @example 1756270799
+   */
+  expires?: number;
+
+  /**
+   * The regions it covers, as the issuing office names them — the only thing
+   * that says whether a national warning is about the caller's own valley.
+   * @example ['Litoral norte de Tarragona']
+   */
+  areas: string[];
+
+  /**
+   * The national met office that issued it.
+   * @example 'AEMET. Agencia Estatal de Meteorología'
+   */
+  sender: string;
+
+  /**
+   * Where that office publishes its warnings.
+   * @example 'https://www.aemet.es/es/eltiempo/prediccion/avisos'
+   */
+  url?: string;
+}
+
 export class WeatherReading {
   /**
    * The provider that answered.
@@ -230,8 +323,22 @@ export class WeatherReading {
   /** Conditions now. */
   current: CurrentWeather;
 
-  /** The next steps of the short forecast, three hours apart. */
+  /**
+   * The next steps of the short forecast, three hours apart. Empty when
+   * `X-Weather-Forecast` turned it off.
+   */
   forecast: ForecastStep[];
+
+  /**
+   * Warnings in force, most severe first. Present only when
+   * `X-Weather-Alerts` asked for them and a feed answered — an empty array
+   * means MeteoAlarm was asked and holds nothing for the country.
+   *
+   * Scoped to the country rather than to the cell: MeteoAlarm publishes one
+   * feed per country and scopes each warning by a region code carrying no
+   * geometry, so each warning names its own `areas` instead.
+   */
+  alerts?: WeatherAlert[];
 
   /** Every source this response owes a credit, and what for. */
   attribution: Attribution[];

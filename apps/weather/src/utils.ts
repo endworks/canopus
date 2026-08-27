@@ -31,6 +31,11 @@ export const TTL = {
   /** So is the UV index, though its "now" is interpolated within the hour. */
   uv: 1000 * 60 * 30,
   /**
+   * Warnings are the one thing here that is urgent by definition: a met office
+   * upgrading an orange to a red is saying so now, not on the half hour.
+   */
+  alerts: 1000 * 60 * 5,
+  /**
    * Place names do not move, so this one is not bounded by truth. A week is
    * what bounds it instead: nothing evicts a cached entry but its expiry, and
    * a caller looping over invented names should not be able to grow the map

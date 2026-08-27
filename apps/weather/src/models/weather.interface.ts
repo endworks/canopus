@@ -12,6 +12,9 @@ export interface WeatherPayload {
   language?: string;
   units?: WeatherUnits;
   includeUv?: boolean;
+  includeAlerts?: boolean;
+  /** Defaults to true: the forecast is what the day's high and low come from. */
+  includeForecast?: boolean;
 }
 
 export type WeatherUnits = 'metric' | 'imperial' | 'standard';
@@ -97,6 +100,19 @@ export interface WeatherResponse {
   location: WeatherLocation;
   current: CurrentWeather;
   forecast: ForecastStep[];
+  /**
+   * Warnings in force, most severe first — present only when the caller asked
+   * for them and a feed answered.
+   *
+   * Scoped to the country, not to the cell. MeteoAlarm publishes one feed per
+   * country and scopes each warning by a region code with no geometry attached
+   * — and the codes are not even the same kind of code from one country to the
+   * next — so narrowing to the cell would mean shipping a region atlas and
+   * keeping it true. Every warning names its own `areas` instead, and a caller
+   * who knows which region it stands in can say so better than a lookup table
+   * would. An empty array is an answer: MeteoAlarm was asked and holds nothing.
+   */
+  alerts?: WeatherAlert[];
   attribution: Attribution[];
   /**
    * When the reading was taken, not when it was served. A cached answer keeps
@@ -104,6 +120,50 @@ export interface WeatherResponse {
    * cannot stack its staleness on top of ours.
    */
   lastUpdated: string;
+}
+
+/**
+ * One warning in force over the place asked about.
+ *
+ * Straight out of CAP, with the two fields MeteoAlarm adds to it — the colour
+ * band its maps are drawn in, and the phenomenon it files the warning under —
+ * lifted out of the parameter list a client would otherwise have to parse.
+ */
+export interface WeatherAlert {
+  /** The CAP identifier, stable across updates, so a client can dedupe. */
+  id: string;
+  /** The sender's name for the phenomenon, in the requested language. */
+  event: string;
+  headline: string;
+  description: string;
+  /** What the sender says to do about it; not every office writes one. */
+  instruction?: string;
+  /** CAP severity: `Minor`, `Moderate`, `Severe`, `Extreme`. */
+  severity: string;
+  /** MeteoAlarm's colour band: `green`, `yellow`, `orange`, `red`. */
+  level?: string;
+  /** What it is a warning of: `Wind`, `Rain`, `snow-ice`, `Thunderstorm`… */
+  awareness?: string;
+  /** CAP urgency: `Immediate`, `Expected`, `Future`, `Past`. */
+  urgency: string;
+  /** CAP certainty: `Observed`, `Likely`, `Possible`, `Unlikely`. */
+  certainty: string;
+  /** Unix seconds the warning starts. */
+  onset: number;
+  /** Unix seconds it lapses; absent where the sender set no end. */
+  expires?: number;
+  /**
+   * The regions it covers, as the issuing office names them.
+   *
+   * The feed scopes a warning by region code alone and carries no geometry, so
+   * this is what tells a caller whether a national warning is about their
+   * valley. See `alerts` on the response.
+   */
+  areas: string[];
+  /** The national met office that issued it. */
+  sender: string;
+  /** Where that office publishes its warnings. */
+  url?: string;
 }
 
 /** One entry of the provider catalogue, for callers picking one. */

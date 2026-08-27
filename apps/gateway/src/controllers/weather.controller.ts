@@ -33,6 +33,15 @@ const enabled = (value?: string): boolean => {
   return normalized !== 'false' && normalized !== '0' && normalized !== 'no';
 };
 
+/**
+ * The same reading, for a row that is on until it is turned off.
+ *
+ * Only the forecast: it is the one part of the answer that was always there,
+ * and a caller who has never heard of the header should keep getting it.
+ */
+const enabledByDefault = (value?: string): boolean =>
+  value === undefined || enabled(value);
+
 @ApiTags('Weather')
 @ApiDefaultResponse({ description: 'Error response', type: ErrorResponse })
 @Controller('weather')
@@ -57,7 +66,9 @@ export class WeatherController {
       'Ask by `location` or by `lat`/`lon`. Coordinates are rounded to a ~11 km cell before ' +
       'anything is fetched, and readings are cached per cell for as long as their source stands ' +
       'still — so every caller in the same town shares one upstream call. The key is the ' +
-      "caller's own: this endpoint holds none.",
+      "caller's own: this endpoint holds none. The UV index and the official warnings come from " +
+      'other services, are opt-in behind their own headers, and are credited separately in ' +
+      '`attribution`.',
   })
   @ApiQuery({
     name: 'location',
@@ -105,6 +116,26 @@ export class WeatherController {
     description: 'Which provider to ask. Defaults to openweather.',
   })
   @ApiHeader({
+    name: 'X-Weather-Alerts',
+    required: false,
+    description:
+      'Set to include the official weather warnings in force, from MeteoAlarm (EUMETNET, no key ' +
+      'needed) and credited separately in `attribution`. Off by default, like the UV index: it ' +
+      'is another party in the request. Europe only — MeteoAlarm aggregates the European ' +
+      'national met offices, and a place outside their coverage comes back with no `alerts` at ' +
+      'all rather than an empty list. Warnings are scoped to the country, not to the cell: the ' +
+      'feed carries no geometry, so each warning names the regions it covers in `areas`.',
+  })
+  @ApiHeader({
+    name: 'X-Weather-Forecast',
+    required: false,
+    description:
+      'Set to `false`, `0` or `no` to skip the short forecast and the upstream call it costs. ' +
+      "On by default. It also carries the day's high and low — OpenWeather's own min/max on the " +
+      'current reading is the spread across reporting stations, a different quantity — so with ' +
+      'the forecast off, `current.high` and `current.low` collapse to the observed temperature.',
+  })
+  @ApiHeader({
     name: 'X-Weather-Uv',
     required: false,
     description:
@@ -126,6 +157,8 @@ export class WeatherController {
     @Headers('X-Weather-Provider') provider: string,
     @Headers('X-Weather-Api-Key') apiKey: string,
     @Headers('X-Weather-Uv') uv: string,
+    @Headers('X-Weather-Alerts') alerts: string,
+    @Headers('X-Weather-Forecast') forecast: string,
   ) {
     return this.weatherService.getWeather({
       location,
@@ -136,6 +169,8 @@ export class WeatherController {
       provider,
       apiKey,
       includeUv: enabled(uv),
+      includeAlerts: enabled(alerts),
+      includeForecast: enabledByDefault(forecast),
     });
   }
 }

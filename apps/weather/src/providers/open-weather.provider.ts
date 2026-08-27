@@ -127,7 +127,8 @@ export class OpenWeatherProvider extends WeatherProvider {
   }
 
   async read(request: WeatherRequest): Promise<ProviderReading> {
-    const { latitude, longitude, language, units, apiKey } = request;
+    const { latitude, longitude, language, units, apiKey, includeForecast } =
+      request;
     const cell = `${latitude},${longitude}`;
     const params = {
       lat: String(latitude),
@@ -144,13 +145,19 @@ export class OpenWeatherProvider extends WeatherProvider {
         params,
         TTL.current,
       ),
-      this.fetch<ForecastResponse>(
-        `openweather/forecast/${cell}/${units}/${language}`,
-        `${API_URL}/forecast`,
-        apiKey,
-        { ...params, cnt: String(FORECAST_STEPS) },
-        TTL.forecast,
-      ),
+      // The day's high and low are read off these steps, so turning the
+      // forecast off costs those too — see `current` below. Left to the caller
+      // rather than fetched anyway and hidden: a client drawing only the
+      // current conditions should not spend a call on a list it discards.
+      includeForecast
+        ? this.fetch<ForecastResponse>(
+            `openweather/forecast/${cell}/${units}/${language}`,
+            `${API_URL}/forecast`,
+            apiKey,
+            { ...params, cnt: String(FORECAST_STEPS) },
+            TTL.forecast,
+          )
+        : undefined,
       // Swallowed rather than awaited with the rest: the air is one field, and
       // a key whose plan does not carry this endpoint should cost that field
       // rather than the temperature.
@@ -163,7 +170,7 @@ export class OpenWeatherProvider extends WeatherProvider {
       ).catch(() => undefined),
     ]);
 
-    const steps = this.steps(forecast);
+    const steps = forecast ? this.steps(forecast) : [];
     const airQuality = air?.list?.[0]?.main?.aqi;
 
     return {
@@ -176,7 +183,11 @@ export class OpenWeatherProvider extends WeatherProvider {
       },
       current: this.current(current, steps, airQuality),
       forecast: steps,
-      provides: ['weather', 'forecast', ...(airQuality ? ['airQuality'] : [])],
+      provides: [
+        'weather',
+        ...(includeForecast ? ['forecast'] : []),
+        ...(airQuality ? ['airQuality'] : []),
+      ],
     };
   }
 
@@ -201,7 +212,8 @@ export class OpenWeatherProvider extends WeatherProvider {
    * across the reporting stations rather than today's high and low, which is a
    * different quantity that happens to have the same name. The forecast steps
    * are the same data a paid endpoint would answer with, and they are already
-   * here.
+   * here — unless the caller turned them off, in which case the range collapses
+   * to the observation rather than being invented from the wrong field.
    */
   private current(
     current: CurrentResponse,

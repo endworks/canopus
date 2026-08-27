@@ -17,6 +17,16 @@ export const roundCoordinate = (value: number): number =>
   Math.round(value * 10) / 10;
 
 /**
+ * How wide a cell is, in degrees — the same tenth the rounding above works in,
+ * named because the region atlas needs it.
+ *
+ * Kept as its own constant rather than divided into `roundCoordinate`, which
+ * would round through a float: `Math.round(40.4168 / 0.1) * 0.1` is
+ * 40.400000000000006, and that is not a name for a cell.
+ */
+export const CELL = 0.1;
+
+/**
  * How long each kind of answer stands, matched to how often its source moves.
  *
  * cache-manager v7 TTLs are milliseconds.
@@ -30,6 +40,11 @@ export const TTL = {
   airQuality: 1000 * 60 * 60,
   /** So is the UV index, though its "now" is interpolated within the hour. */
   uv: 1000 * 60 * 30,
+  /**
+   * Warnings are the one thing here that is urgent by definition: a met office
+   * upgrading an orange to a red is saying so now, not on the half hour.
+   */
+  alerts: 1000 * 60 * 5,
   /**
    * Place names do not move, so this one is not bounded by truth. A week is
    * what bounds it instead: nothing evicts a cached entry but its expiry, and

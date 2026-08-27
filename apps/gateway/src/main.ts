@@ -38,7 +38,7 @@ async function bootstrap() {
     .addTag('Zine, cinemas and movies', 'Cinema listings and movie details')
     .addTag(
       'Weather',
-      'Current conditions and a short forecast, from the provider whose key the caller sends',
+      'Current conditions, a short forecast and official warnings, from the provider whose key the caller sends',
     )
     .addTag('RAE definitions', 'Spanish dictionary (RAE) lookups')
     .addTag('Twitter downloader', 'Media URLs extracted from tweets')

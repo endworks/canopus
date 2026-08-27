@@ -211,6 +211,122 @@ export class ForecastStep {
   precipitation: number;
 }
 
+export class AlertRegion {
+  /**
+   * The region code, in whichever scheme published it.
+   * @example 'ES191'
+   */
+  code: string;
+
+  /**
+   * The scheme the code is in. It travels with the code because codes collide
+   * across schemes: four of France's `NUTS3` departments are spelled exactly
+   * like `EMMA_ID` regions elsewhere.
+   * @example 'EMMA_ID'
+   */
+  type: string;
+}
+
+export class WeatherAlert {
+  /**
+   * The CAP identifier, stable across updates so a client can dedupe.
+   * @example '2.49.0.0.724.0.ES.260822032408.694303PRP2220569048'
+   */
+  id: string;
+
+  /**
+   * The sender's name for the phenomenon, in the requested language.
+   * @example 'Extreme rain warning'
+   */
+  event: string;
+
+  /**
+   * One line naming the warning and the region.
+   * @example 'Extreme rain warning. Litoral norte de Tarragona'
+   */
+  headline: string;
+
+  /**
+   * What the office says is coming.
+   * @example 'Twelve-hours accumulated precipitation: 180 mm.'
+   */
+  description: string;
+
+  /**
+   * What to do about it. Absent where the office writes no advice.
+   * @example 'Take precautionary action and remain vigilant.'
+   */
+  instruction?: string;
+
+  /**
+   * CAP severity.
+   * @example 'Extreme'
+   */
+  severity: string;
+
+  /**
+   * MeteoAlarm's colour band, which is what its maps are drawn in.
+   * @example 'red'
+   */
+  level?: string;
+
+  /**
+   * What it is a warning of.
+   * @example 'Rain'
+   */
+  awareness?: string;
+
+  /**
+   * CAP urgency.
+   * @example 'Immediate'
+   */
+  urgency: string;
+
+  /**
+   * CAP certainty.
+   * @example 'Observed'
+   */
+  certainty: string;
+
+  /**
+   * When the warning starts, in unix seconds.
+   * @example 1756263600
+   */
+  onset: number;
+
+  /**
+   * When it lapses, in unix seconds. Absent where the office set no end.
+   * @example 1756270799
+   */
+  expires?: number;
+
+  /**
+   * The regions it covers, as the issuing office names them — the only thing
+   * that says whether a national warning is about the caller's own valley.
+   * @example ['Litoral norte de Tarragona']
+   */
+  areas: string[];
+
+  /**
+   * The regions it is scoped by, each with the scheme its code is in —
+   * `EMMA_ID` in most countries, `NUTS3` in France and Romania, `FIPS` in
+   * Ireland, and Germany publishes its own `WARNCELLID` alongside `EMMA_ID`.
+   */
+  regions: AlertRegion[];
+
+  /**
+   * The national met office that issued it.
+   * @example 'AEMET. Agencia Estatal de Meteorología'
+   */
+  sender: string;
+
+  /**
+   * Where that office publishes its warnings.
+   * @example 'https://www.aemet.es/es/eltiempo/prediccion/avisos'
+   */
+  url?: string;
+}
+
 export class WeatherReading {
   /**
    * The provider that answered.
@@ -230,8 +346,35 @@ export class WeatherReading {
   /** Conditions now. */
   current: CurrentWeather;
 
-  /** The next steps of the short forecast, three hours apart. */
+  /**
+   * The next steps of the short forecast, three hours apart. Empty when
+   * `X-Weather-Forecast` turned it off.
+   */
   forecast: ForecastStep[];
+
+  /**
+   * Warnings in force, most severe first. Present only when
+   * `X-Weather-Alerts` asked for them and a feed answered — an empty array
+   * means MeteoAlarm was asked and holds nothing for the country.
+   *
+   * Narrowed to the regions the cell falls in where that is possible, and to
+   * the country where it is not — see `alertScope`, and narrow further with
+   * the `safety` and `area` query parameters.
+   */
+  alerts?: WeatherAlert[];
+
+  /**
+   * How `alerts` was narrowed, present whenever `alerts` is.
+   *
+   * `area` means the cell was placed in the region atlas and only the warnings
+   * covering it came back. `country` means it could not be — a country that
+   * scopes warnings by codes the atlas does not hold (France, Romania,
+   * Ireland, Norway, Sweden), or a cell that landed off every region — and
+   * everything the national feed carries came back instead. A short list means
+   * two very different things under the two.
+   * @example 'area'
+   */
+  alertScope?: 'area' | 'country';
 
   /** Every source this response owes a credit, and what for. */
   attribution: Attribution[];

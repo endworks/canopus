@@ -15,6 +15,7 @@ export const TCP_PORT = 3000;
 export const SERVICE_TOKENS = {
   zaragoza: 'ZARAGOZA_SERVICE',
   zine: 'ZINE_SERVICE',
+  weather: 'WEATHER_SERVICE',
   rae: 'RAE_SERVICE',
   twitterDownloader: 'TWITTER_DOWNLOADER_SERVICE',
 } as const;

@@ -36,6 +36,10 @@ async function bootstrap() {
       'Public transport — bus, tram and Bizi bike stations and lines',
     )
     .addTag('Zine, cinemas and movies', 'Cinema listings and movie details')
+    .addTag(
+      'Weather',
+      'Current conditions and a short forecast, from the provider whose key the caller sends',
+    )
     .addTag('RAE definitions', 'Spanish dictionary (RAE) lookups')
     .addTag('Twitter downloader', 'Media URLs extracted from tweets')
     .addTag('Health', 'Service readiness')

@@ -63,6 +63,14 @@ jobs:
               - 'turbo.json'
               - 'tsconfig.base.json'
               - 'package.json'
+            weather:
+              - 'apps/weather/**'
+              - 'packages/shared/**'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'turbo.json'
+              - 'tsconfig.base.json'
+              - 'package.json'
             rae:
               - 'apps/rae/**'
               - 'pnpm-lock.yaml'
@@ -84,7 +92,7 @@ jobs:
           # Via env, not inline interpolation, so the input can't break the script.
           SERVICES: ${{ inputs.services }}
         run: |
-          ALL='["gateway","zaragoza","zine","rae","twitter-downloader"]'
+          ALL='["gateway","zaragoza","zine","weather","rae","twitter-downloader"]'
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             if [ -z "$SERVICES" ] || [ "$SERVICES" = "all" ]; then
               CHANGED="$ALL"
@@ -102,6 +110,7 @@ jobs:
               gateway:  {service:"gateway",  image:"canopus",          container:"canopus",          port:"3000:3000", db:false},
               zaragoza: {service:"zaragoza", image:"canopus-zaragoza", container:"canopus-zaragoza", port:"8877:3000", db:true},
               zine:     {service:"zine",     image:"canopus-zine",     container:"canopus-zine",     port:"8878:3000", db:true},
+              weather:  {service:"weather",  image:"canopus-weather",  container:"canopus-weather",  port:"8880:3000", db:false},
               rae:      {service:"rae",      image:"canopus-rae",      container:"canopus-rae",      port:"8879:3000", db:false},
               "twitter-downloader": {service:"twitter-downloader", image:"canopus-twitter-downloader", container:"canopus-twitter-downloader", port:"8876:3000", db:false}
             } as $cfg

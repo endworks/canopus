@@ -6,10 +6,12 @@ import { LoggingModule } from '@canopus/nest';
 import { RAEController } from './controllers/rae.controller';
 import { TwitterDownloaderController } from './controllers/twitter-downloader.controller';
 import { ZaragozaController } from './controllers/zaragoza.controller';
+import { WeatherController } from './controllers/weather.controller';
 import { ZineController } from './controllers/zine.controller';
 import { RAEService } from './services/rae.service';
 import { TwitterDownloaderService } from './services/twitter-downloader.service';
 import { ZaragozaService } from './services/zaragoza.service';
+import { WeatherService } from './services/weather.service';
 import { ZineService } from './services/zine.service';
 import { HealthModule } from './health/health.module';
 
@@ -40,12 +42,14 @@ import { HealthModule } from './health/health.module';
   controllers: [
     ZaragozaController,
     ZineController,
+    WeatherController,
     RAEController,
     TwitterDownloaderController,
   ],
   providers: [
     ZaragozaService,
     ZineService,
+    WeatherService,
     RAEService,
     TwitterDownloaderService,
   ],

@@ -28,6 +28,11 @@ export const ZINE_PATTERNS = {
   updateAll: 'updateAll',
 } as const;
 
+export const WEATHER_PATTERNS = {
+  weather: 'weather',
+  providers: 'providers',
+} as const;
+
 export const RAE_PATTERNS = {
   search: 'search',
 } as const;

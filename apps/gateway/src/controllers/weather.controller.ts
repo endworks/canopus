@@ -100,6 +100,37 @@ export class WeatherController {
     example: 'es',
   })
   @ApiQuery({
+    name: 'safety',
+    enum: [
+      'green',
+      'yellow',
+      'orange',
+      'red',
+      'minor',
+      'moderate',
+      'severe',
+      'extreme',
+    ],
+    required: false,
+    description:
+      'Least band of warning worth returning, as either a MeteoAlarm colour or the CAP severity ' +
+      'beside it — `orange` and `severe` are the same floor. Only meaningful with ' +
+      '`X-Weather-Alerts`. Absent returns every warning in force. Warnings are ranked by their ' +
+      'colour rather than their severity where the two disagree, which they do across the feed: ' +
+      'Spain files yellow as Moderate and Germany files it as Minor, and the colour is the one ' +
+      'MeteoAlarm normalises across its members.',
+  })
+  @ApiQuery({
+    name: 'area',
+    type: String,
+    required: false,
+    description:
+      'Keep only warnings whose region matches this, ignoring case and accents. Matched as a ' +
+      "substring of the region names in a warning's `areas`, or exactly against one of its " +
+      'region codes. Only meaningful with `X-Weather-Alerts`.',
+    example: 'Menorca',
+  })
+  @ApiQuery({
     name: 'units',
     enum: ['metric', 'imperial', 'standard'],
     required: false,
@@ -123,8 +154,9 @@ export class WeatherController {
       'needed) and credited separately in `attribution`. Off by default, like the UV index: it ' +
       'is another party in the request. Europe only — MeteoAlarm aggregates the European ' +
       'national met offices, and a place outside their coverage comes back with no `alerts` at ' +
-      'all rather than an empty list. Warnings are scoped to the country, not to the cell: the ' +
-      'feed carries no geometry, so each warning names the regions it covers in `areas`.',
+      'all rather than an empty list. Narrow further with `safety` and `area`. The response says ' +
+      'in `alertScope` whether it managed to narrow the warnings to the cell (`area`) or is ' +
+      'handing back everything the country has (`country`).',
   })
   @ApiHeader({
     name: 'X-Weather-Forecast',
@@ -154,6 +186,8 @@ export class WeatherController {
     @Query('lon', new ParseFloatPipe({ optional: true })) longitude: number,
     @Query('lang') language: string,
     @Query('units') units: WeatherUnits,
+    @Query('safety') safety: string,
+    @Query('area') area: string,
     @Headers('X-Weather-Provider') provider: string,
     @Headers('X-Weather-Api-Key') apiKey: string,
     @Headers('X-Weather-Uv') uv: string,
@@ -170,6 +204,8 @@ export class WeatherController {
       apiKey,
       includeUv: enabled(uv),
       includeAlerts: enabled(alerts),
+      safety,
+      area,
       includeForecast: enabledByDefault(forecast),
     });
   }

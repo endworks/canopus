@@ -4,6 +4,7 @@ import { createCache } from 'cache-manager';
 import { of, throwError } from 'rxjs';
 import { MeteoAlarmProvider } from '../providers/meteoalarm.provider';
 import { OpenMeteoUvProvider } from '../providers/open-meteo-uv.provider';
+import { RegionAtlas } from '../providers/region-atlas';
 import { OpenWeatherProvider } from '../providers/open-weather.provider';
 import { WeatherService } from './weather.service';
 
@@ -52,14 +53,21 @@ const uvBody = {
 const iso = (seconds: number) => new Date(seconds * 1000).toISOString();
 
 /** One CAP info block, in the shape MeteoAlarm actually publishes. */
+// ES107 is the region the atlas puts 41.6,-0.9 in, and ES191 is the Tarragona
+// coast three hundred kilometres away — the pair is what makes narrowing
+// visible rather than assumed.
+const ZARAGOZA = { desc: 'Ribera del Ebro de Zaragoza', code: 'ES107' };
+const TARRAGONA = { desc: 'Litoral norte de Tarragona', code: 'ES191' };
+
 const info = (
   language: string,
   event: string,
   extra: Record<string, unknown> = {},
+  where = ZARAGOZA,
 ) => ({
   language,
   event,
-  headline: `${event}. Litoral norte de Tarragona`,
+  headline: `${event}. ${where.desc}`,
   description: 'Precipitacion acumulada en 12 horas: 180 mm.',
   instruction: 'Tome medidas preventivas.',
   severity: 'Extreme',
@@ -71,8 +79,8 @@ const info = (
   web: 'https://www.aemet.es/es/eltiempo/prediccion/avisos',
   area: [
     {
-      areaDesc: 'Litoral norte de Tarragona',
-      geocode: [{ value: 'ES191', valueName: 'EMMA_ID' }],
+      areaDesc: where.desc,
+      geocode: [{ value: where.code, valueName: 'EMMA_ID' }],
     },
   ],
   parameter: [
@@ -97,6 +105,14 @@ const warning = (
   },
 });
 
+const orangeSnow = {
+  severity: 'Severe',
+  parameter: [
+    { value: '3; orange; Severe', valueName: 'awareness_level' },
+    { value: '2; snow-ice', valueName: 'awareness_type' },
+  ],
+};
+
 const yellowWind = {
   severity: 'Moderate',
   parameter: [
@@ -119,9 +135,12 @@ const alerts = {
       info('en-GB', 'Extreme rain warning', { expires: iso(NOW - HOUR) }),
     ]),
     warning('snow-replaced', [info('en-GB', 'Snow warning')]),
+    warning('rain-coast', [
+      info('en-GB', 'Extreme coastal rain warning', {}, TARRAGONA),
+    ]),
     warning(
       'snow-update',
-      [info('en-GB', 'Updated snow warning', { severity: 'Severe' })],
+      [info('en-GB', 'Updated snow warning', orangeSnow)],
       {
         msgType: 'Update',
         references: `http://www.aemet.es,snow-replaced,${iso(NOW - HOUR)}`,
@@ -174,6 +193,7 @@ const build = (routes: Record<string, unknown>) => {
     new Map([[provider.info.id, provider]]),
     uv,
     meteoalarm,
+    new RegionAtlas(),
   );
   return { service, calls };
 };
@@ -348,7 +368,8 @@ describe('getWeather', () => {
       certainty: 'Observed',
       onset: NOW - HOUR,
       expires: NOW + HOUR,
-      areas: ['Litoral norte de Tarragona'],
+      areas: ['Ribera del Ebro de Zaragoza'],
+      regions: [{ code: 'ES107', type: 'EMMA_ID' }],
       sender: 'AEMET. Agencia Estatal de Meteorologia',
       url: 'https://www.aemet.es/es/eltiempo/prediccion/avisos',
     });
@@ -518,6 +539,168 @@ describe('getWeather', () => {
 
     expect(reading.current.high).toBe(24.3);
     expect(reading.current.low).toBe(24.3);
+  });
+
+  it('narrows the warnings to the regions the cell falls in', async () => {
+    const { service } = build(routes);
+
+    const reading = await service.getWeather({
+      apiKey: 'key',
+      latitude: 41.6,
+      longitude: -0.9,
+      includeAlerts: true,
+    });
+
+    expect(reading.alertScope).toBe('area');
+    expect(reading.alerts?.map((alert) => alert.id)).not.toContain(
+      'rain-coast',
+    );
+  });
+
+  it('hands back the whole country when it cannot place the cell', async () => {
+    const { service } = build({
+      ...routes,
+      '/data/2.5/weather': current('Reykjavik', 'IS'),
+    });
+
+    const reading = await service.getWeather({
+      apiKey: 'key',
+      // Off Iceland, so inside a country the atlas holds but outside every
+      // region in it.
+      latitude: 63.0,
+      longitude: -24.0,
+      includeAlerts: true,
+    });
+
+    expect(reading.alertScope).toBe('country');
+    expect(reading.alerts?.map((alert) => alert.id)).toContain('rain-coast');
+  });
+
+  it('does not narrow when the atlas and the feed speak different codes', async () => {
+    const nuts = {
+      warnings: [
+        {
+          alert: {
+            identifier: 'fr-wind',
+            status: 'Actual',
+            scope: 'Public',
+            msgType: 'Alert',
+            info: [
+              {
+                ...info('en-GB', 'Wind warning'),
+                area: [
+                  {
+                    areaDesc: 'Landes',
+                    geocode: [{ value: 'FR613', valueName: 'NUTS3' }],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    };
+    const { service } = build({
+      ...routes,
+      '/data/2.5/weather': current('Bordeaux', 'FR'),
+      'feeds.meteoalarm.org': nuts,
+    });
+
+    const reading = await service.getWeather({
+      apiKey: 'key',
+      latitude: 44.8,
+      longitude: -0.6,
+      includeAlerts: true,
+    });
+
+    expect(reading.alertScope).toBe('country');
+    expect(reading.alerts?.map((alert) => alert.id)).toEqual(['fr-wind']);
+  });
+
+  it('keeps only the warnings at or above the safety band asked for', async () => {
+    const { service } = build(routes);
+
+    const reading = await service.getWeather({
+      apiKey: 'key',
+      latitude: 41.6,
+      longitude: -0.9,
+      includeAlerts: true,
+      safety: 'orange',
+    });
+
+    expect(reading.alerts?.map((alert) => alert.event)).toEqual([
+      'Extreme rain warning',
+      'Updated snow warning',
+    ]);
+  });
+
+  it('takes the safety band by either of its two names', async () => {
+    const { service } = build(routes);
+    const question = {
+      apiKey: 'key',
+      latitude: 41.6,
+      longitude: -0.9,
+      includeAlerts: true,
+    };
+
+    const byColour = await service.getWeather({ ...question, safety: 'red' });
+    const bySeverity = await service.getWeather({
+      ...question,
+      safety: 'Extreme',
+    });
+
+    expect(byColour.alerts?.map((alert) => alert.id)).toEqual(['rain-now']);
+    expect(bySeverity.alerts?.map((alert) => alert.id)).toEqual(['rain-now']);
+  });
+
+  it('refuses a safety band it does not know rather than ignoring it', async () => {
+    const { service } = build(routes);
+
+    await expect(
+      service.getWeather({
+        apiKey: 'key',
+        latitude: 41.6,
+        longitude: -0.9,
+        includeAlerts: true,
+        safety: 'puce',
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('filters by area name, ignoring case and accents', async () => {
+    const { service } = build(routes);
+
+    const reading = await service.getWeather({
+      apiKey: 'key',
+      latitude: 41.6,
+      longitude: -0.9,
+      includeAlerts: true,
+      area: 'RIBERA DEL EBRO',
+    });
+
+    expect(reading.alerts?.length).toBeGreaterThan(0);
+    expect(
+      reading.alerts?.every((alert) =>
+        alert.areas.some((name) => name.includes('Ribera')),
+      ),
+    ).toBe(true);
+  });
+
+  it('filters by area given a region code instead of a name', async () => {
+    const { service } = build({
+      ...routes,
+      '/data/2.5/weather': current('Reykjavik', 'IS'),
+    });
+
+    const reading = await service.getWeather({
+      apiKey: 'key',
+      latitude: 63.0,
+      longitude: -24.0,
+      includeAlerts: true,
+      area: 'ES191',
+    });
+
+    expect(reading.alerts?.map((alert) => alert.id)).toEqual(['rain-coast']);
   });
 
   it('costs the air quality field rather than the reading', async () => {

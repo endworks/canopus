@@ -44,6 +44,8 @@ the observed temperature rather than being invented from the wrong field.
 | `lon`      | Longitude, sent together with `lat`                                 |
 | `lang`     | Language for the provider's descriptions. Defaults to `en`          |
 | `units`    | `metric` (default), `imperial` or `standard`                        |
+| `safety`   | Least band of warning worth returning. Absent returns them all      |
+| `area`     | Keep only warnings whose region matches. Ignores case and accents   |
 
 The provider's own refusals come back as themselves: a key it rejects is a 401,
 a spent quota is a 429, a place it has never heard of is a 404. A caller who
@@ -82,6 +84,9 @@ because a warning is the one thing here that is urgent by definition.
 `lastUpdated` is the observation's own time rather than the moment it was
 served, so a client running its own TTL over the response cannot stack its
 staleness on top of ours.
+
+The region atlas is not cached but loaded — once, on the first request that
+needs it, and held for the life of the process. It is a map, not a reading.
 
 ## Attribution
 
@@ -135,18 +140,61 @@ it; MeteoAlarm's own colour band (`green`, `yellow`, `orange`, `red`) and the
 phenomenon it files the warning under (`Wind`, `Rain`, `snow-ice`, …) are lifted
 out of the CAP parameter list into `level` and `awareness`.
 
-Two things a caller should know about the scope:
-
 **Europe only.** The 38 countries EUMETNET publishes for. Anywhere else has no
 feed to ask, and comes back with no `alerts` field at all.
 
-**Country, not cell.** The feed scopes each warning by a region code and carries
-no geometry — and the codes are not even the same kind of code from one country
-to the next: Spain uses `EMMA_ID`, France `NUTS3`, Germany both plus its own
-`WARNCELLID`. Narrowing to the eleven-kilometre cell would mean shipping a
-region atlas and keeping it true. Every warning names the regions it covers in
-`areas` instead, as the issuing office names them, and a caller who knows which
-region it stands in can filter better than a lookup table would.
+### Narrowing to the place
+
+The feed publishes one document per country and scopes each warning by a region
+code with no geometry attached, so placing a warning takes a map the feed does
+not ship. `src/data/meteoalarm-regions.json` is that map — 2,003 regions, built
+by `pnpm build:regions` from the public MIT-licensed atlas in the [`meteoalarm`
+Python package](https://github.com/NiklasJordan/meteoalarm), reduced from 31 MB
+to 2 by keeping outer rings only at two decimals. A cell is eleven kilometres
+wide and the atlas is accurate to one, so it is an order of magnitude finer than
+the question it answers.
+
+The cell's corners are tested along with its middle, and holes in a region are
+dropped rather than cut out. Both over-include rather than under-include, which
+for a warning is the direction it is safe to be wrong in.
+
+`alertScope` says which of two things happened:
+
+| `alertScope` | Meaning                                                         |
+| ------------ | --------------------------------------------------------------- |
+| `area`       | The cell was placed, and only the warnings covering it are here |
+| `country`    | It could not be placed, and everything the country has is here  |
+
+It is reported rather than left to be inferred because a short list means two
+very different things under the two, and the wrong reading of it is reassurance.
+The `country` case is the honest answer for a feed the atlas cannot speak to:
+the atlas is drawn in `EMMA_ID`, and France and Romania scope by `NUTS3`,
+Ireland by `FIPS`, Norway and Sweden by nothing at all.
+
+The scheme travels with every code in `regions`, and the match is on both. Four
+of France's `NUTS3` departments are spelled exactly like `EMMA_ID` regions
+elsewhere in the atlas, so matching the string alone narrowed Bordeaux to no
+warnings at all and called it an area with none in it.
+
+### Narrowing by hand
+
+`safety` keeps only the warnings at or above a band, named as either a colour or
+the CAP severity beside it — `orange` and `severe` are the same floor. It earns
+its place: of the 22 warnings in force over Zaragoza on an August afternoon, 21
+were green, which is the band AEMET publishes to say a hazard is _not_ expected.
+
+Where the two names disagree, the colour wins. They do disagree across the feed:
+Spain files yellow as `Moderate` and Germany files it as `Minor`, and the colour
+is the one MeteoAlarm normalises across its members and draws its maps in.
+
+`area` keeps only the warnings whose region matches a string, ignoring case and
+accents — as a substring of the names in `areas`, or exactly against one of the
+codes in `regions`. It works in every country, including the ones the atlas
+cannot place, which is the point of having it as well as the atlas.
+
+Both narrow a list already fetched and cached whole, so asking for only the red
+warnings in one valley costs the same single national call as asking for all of
+them.
 
 The feed is a rolling window several days wide, so most of what it carries has
 already happened. What comes back is what is still in force: warnings whose

@@ -1,7 +1,7 @@
 {
   "name": "@canopus/weather",
   "version": "0.1.0",
-  "description": "Weather microservice — one reading per place, from whichever provider the caller has a key for",
+  "description": "Weather microservice \u2014 one reading per place, from whichever provider the caller has a key for",
   "author": {
     "name": "end.works",
     "email": "ender@end.works",
@@ -19,6 +19,7 @@
   "scripts": {
     "prebuild": "rimraf dist",
     "build": "nest build",
+    "build:regions": "node scripts/build-regions.mjs",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",

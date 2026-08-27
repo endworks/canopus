@@ -13,6 +13,10 @@ export interface WeatherPayload {
   units?: WeatherUnits;
   includeUv?: boolean;
   includeAlerts?: boolean;
+  /** Least severity worth returning: a colour or a CAP severity. */
+  safety?: string;
+  /** Region name to keep, matched loosely against each warning's `areas`. */
+  area?: string;
   /** Defaults to true: the forecast is what the day's high and low come from. */
   includeForecast?: boolean;
 }
@@ -113,6 +117,8 @@ export interface WeatherResponse {
    * would. An empty array is an answer: MeteoAlarm was asked and holds nothing.
    */
   alerts?: WeatherAlert[];
+  /** How `alerts` was narrowed; present whenever `alerts` is. */
+  alertScope?: AlertScope;
   attribution: Attribution[];
   /**
    * When the reading was taken, not when it was served. A cached answer keeps
@@ -121,6 +127,26 @@ export interface WeatherResponse {
    */
   lastUpdated: string;
 }
+
+/** One region a warning is scoped by, in whichever scheme published it. */
+export interface AlertRegion {
+  code: string;
+  /** `EMMA_ID`, `NUTS3`, `FIPS`, `WARNCELLID` — the scheme the code is in. */
+  type: string;
+}
+
+/**
+ * How the warnings were narrowed.
+ *
+ * `area` means the cell was placed in the atlas and only the warnings covering
+ * it came back. `country` means it could not be — a country scoping its
+ * warnings by codes the atlas does not hold, or a cell that landed off every
+ * region — and everything the national feed carries came back instead. The
+ * difference matters enough to say out loud: a short list means two very
+ * different things under the two, and a caller told only the list would read
+ * the wrong one as reassurance.
+ */
+export type AlertScope = 'area' | 'country';
 
 /**
  * One warning in force over the place asked about.
@@ -160,6 +186,15 @@ export interface WeatherAlert {
    * valley. See `alerts` on the response.
    */
   areas: string[];
+  /**
+   * The regions it is scoped by, each with the scheme its code is in.
+   *
+   * The scheme has to travel with the code, because the codes collide across
+   * schemes: four of France's `NUTS3` departments are spelled exactly like
+   * `EMMA_ID` regions elsewhere in the atlas, and matching on the string alone
+   * places a warning about the Gironde in the wrong country's map.
+   */
+  regions: AlertRegion[];
   /** The national met office that issued it. */
   sender: string;
   /** Where that office publishes its warnings. */

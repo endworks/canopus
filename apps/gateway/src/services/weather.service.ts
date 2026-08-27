@@ -15,6 +15,8 @@ export interface WeatherQuery {
   includeUv?: boolean;
   includeAlerts?: boolean;
   includeForecast?: boolean;
+  safety?: string;
+  area?: string;
 }
 
 @Injectable()

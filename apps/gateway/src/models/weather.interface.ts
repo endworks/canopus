@@ -211,6 +211,22 @@ export class ForecastStep {
   precipitation: number;
 }
 
+export class AlertRegion {
+  /**
+   * The region code, in whichever scheme published it.
+   * @example 'ES191'
+   */
+  code: string;
+
+  /**
+   * The scheme the code is in. It travels with the code because codes collide
+   * across schemes: four of France's `NUTS3` departments are spelled exactly
+   * like `EMMA_ID` regions elsewhere.
+   * @example 'EMMA_ID'
+   */
+  type: string;
+}
+
 export class WeatherAlert {
   /**
    * The CAP identifier, stable across updates so a client can dedupe.
@@ -292,6 +308,13 @@ export class WeatherAlert {
   areas: string[];
 
   /**
+   * The regions it is scoped by, each with the scheme its code is in —
+   * `EMMA_ID` in most countries, `NUTS3` in France and Romania, `FIPS` in
+   * Ireland, and Germany publishes its own `WARNCELLID` alongside `EMMA_ID`.
+   */
+  regions: AlertRegion[];
+
+  /**
    * The national met office that issued it.
    * @example 'AEMET. Agencia Estatal de Meteorología'
    */
@@ -334,11 +357,24 @@ export class WeatherReading {
    * `X-Weather-Alerts` asked for them and a feed answered — an empty array
    * means MeteoAlarm was asked and holds nothing for the country.
    *
-   * Scoped to the country rather than to the cell: MeteoAlarm publishes one
-   * feed per country and scopes each warning by a region code carrying no
-   * geometry, so each warning names its own `areas` instead.
+   * Narrowed to the regions the cell falls in where that is possible, and to
+   * the country where it is not — see `alertScope`, and narrow further with
+   * the `safety` and `area` query parameters.
    */
   alerts?: WeatherAlert[];
+
+  /**
+   * How `alerts` was narrowed, present whenever `alerts` is.
+   *
+   * `area` means the cell was placed in the region atlas and only the warnings
+   * covering it came back. `country` means it could not be — a country that
+   * scopes warnings by codes the atlas does not hold (France, Romania,
+   * Ireland, Norway, Sweden), or a cell that landed off every region — and
+   * everything the national feed carries came back instead. A short list means
+   * two very different things under the two.
+   * @example 'area'
+   */
+  alertScope?: 'area' | 'country';
 
   /** Every source this response owes a credit, and what for. */
   attribution: Attribution[];

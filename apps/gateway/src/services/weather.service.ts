@@ -12,11 +12,13 @@ export interface WeatherQuery {
   units?: WeatherUnits;
   provider?: string;
   apiKey?: string;
+  clientKey?: string;
   includeUv?: boolean;
   includeAlerts?: boolean;
   includeForecast?: boolean;
   safety?: string;
   area?: string;
+  country?: string;
 }
 
 @Injectable()

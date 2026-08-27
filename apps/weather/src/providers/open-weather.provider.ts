@@ -4,10 +4,12 @@ import { Inject, Injectable } from '@nestjs/common';
 import { Cache } from 'cache-manager';
 import {
   CurrentWeather,
+  DataKind,
   ForecastStep,
   ProviderInfo,
 } from '../models/weather.interface';
 import { FORECAST_STEPS, TTL } from '../utils';
+import { europeanAqi } from './european-aqi';
 import { upstreamGet } from './upstream';
 import {
   GeocodedPlace,
@@ -46,8 +48,26 @@ type ForecastResponse = {
   }[];
 };
 
-/** One measurement of the air, of which only the index is worth passing on. */
-type AirResponse = { list?: { main?: { aqi?: number } }[] };
+/**
+ * One measurement of the air.
+ *
+ * The concentrations, not the index beside them. OpenWeather answers an `aqi`
+ * of its own — one to five, with five of the European index's six words — and
+ * grading the same air on a different scale under the same names is the one
+ * thing worse than not grading it. `components` is what every provider here can
+ * be asked for, so it is what everything is graded from. See `european-aqi`.
+ */
+type AirResponse = {
+  list?: {
+    components?: {
+      pm2_5?: number;
+      pm10?: number;
+      no2?: number;
+      o3?: number;
+      so2?: number;
+    };
+  }[];
+};
 
 type GeocodeResponse = {
   name?: string;
@@ -64,6 +84,15 @@ export class OpenWeatherProvider extends WeatherProvider {
     url: 'https://openweathermap.org/',
     apiKeyUrl: 'https://home.openweathermap.org/api_keys',
     geocoding: true,
+    // The free plan carries neither: the warnings come from MeteoAlarm and the
+    // UV index from Open-Meteo, each credited separately in `attribution`.
+    alerts: false,
+    uv: false,
+    // `/air_pollution` answers the five concentrations on the free plan.
+    airQuality: true,
+    // A key small enough to carry, and one the caller's own quota is spent
+    // against, so it stays the caller's to send.
+    managed: false,
   };
 
   constructor(
@@ -171,7 +200,7 @@ export class OpenWeatherProvider extends WeatherProvider {
     ]);
 
     const steps = forecast ? this.steps(forecast) : [];
-    const airQuality = air?.list?.[0]?.main?.aqi;
+    const airQuality = europeanAqi(air?.list?.[0]?.components ?? {});
 
     return {
       location: {
@@ -183,10 +212,14 @@ export class OpenWeatherProvider extends WeatherProvider {
       },
       current: this.current(current, steps, airQuality),
       forecast: steps,
+      // The free plan is CC BY-SA 4.0, which asks for the credit and the
+      // licence link back — so the link travels rather than being folded into
+      // the provider's home page.
+      credit: { licence: 'https://creativecommons.org/licenses/by-sa/4.0/' },
       provides: [
         'weather',
-        ...(includeForecast ? ['forecast'] : []),
-        ...(airQuality ? ['airQuality'] : []),
+        ...((includeForecast ? ['forecast'] : []) as DataKind[]),
+        ...((airQuality ? ['airQuality'] : []) as DataKind[]),
       ],
     };
   }

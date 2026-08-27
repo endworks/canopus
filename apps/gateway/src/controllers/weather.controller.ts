@@ -136,10 +136,38 @@ export class WeatherController {
     required: false,
     description: 'Defaults to metric.',
   })
+  @ApiQuery({
+    name: 'country',
+    type: String,
+    required: false,
+    description:
+      'ISO alpha-2 country the coordinates stand in. Only needed when asking by `lat`/`lon` ' +
+      'with `X-Weather-Alerts` on: the warnings are scoped by country and a coordinate does not ' +
+      'carry one, so without it a coordinate-only request comes back with no warnings. Asking ' +
+      'by `location` works it out from the geocoded place instead.',
+    example: 'ES',
+  })
   @ApiHeader({
     name: 'X-Weather-Api-Key',
-    required: true,
-    description: "The caller's own API key for the chosen provider.",
+    required: false,
+    description:
+      "The caller's own credential for the chosen provider — an API key, or for Apple a " +
+      'WeatherKit developer token, which is an ES256 JWT signed with an Apple Developer key. ' +
+      'Required unless the provider reports `managed: true` in `GET /weather/providers`, which ' +
+      'means this deployment was configured with a credential of its own and the caller sends ' +
+      'nothing. That exists because a WeatherKit key cannot be carried by an app: anything in a ' +
+      'bundle can be read out of it. A key the caller does send is always preferred, so its own ' +
+      "quota is spent rather than the deployment's.",
+  })
+  @ApiHeader({
+    name: 'X-Weather-Client-Key',
+    required: false,
+    description:
+      "Proof that you may spend this deployment's own credential. Needed only for a provider " +
+      'reporting `managed: true` in `GET /weather/providers`, and only when you send no ' +
+      '`X-Weather-Api-Key` of your own — that quota is finite and somebody pays for it, so an ' +
+      'unrecognised caller is turned away rather than quietly billed to us. A caller sending ' +
+      'their own provider key needs none of this.',
   })
   @ApiHeader({
     name: 'X-Weather-Provider',
@@ -150,30 +178,34 @@ export class WeatherController {
     name: 'X-Weather-Alerts',
     required: false,
     description:
-      'Set to include the official weather warnings in force, from MeteoAlarm (EUMETNET, no key ' +
-      'needed) and credited separately in `attribution`. Off by default, like the UV index: it ' +
-      'is another party in the request. Europe only — MeteoAlarm aggregates the European ' +
-      'national met offices, and a place outside their coverage comes back with no `alerts` at ' +
-      'all rather than an empty list. Narrow further with `safety` and `area`. The response says ' +
-      'in `alertScope` whether it managed to narrow the warnings to the cell (`area`) or is ' +
-      'handing back everything the country has (`country`).',
+      'Set to include the official weather warnings in force. Off by default. Where they come ' +
+      'from depends on the provider: Apple issues its own, for the coordinate asked about and ' +
+      'for most of the world, in the same request as the reading. Every other provider borrows ' +
+      "MeteoAlarm's (EUMETNET, no key needed), which is another party in the request and is " +
+      'credited separately in `attribution` — and which covers Europe only, so a place outside ' +
+      'it comes back with no `alerts` at all rather than an empty list. Narrow further with ' +
+      '`safety` and `area`. The response says in `alertScope` whether the warnings are narrowed ' +
+      'to the place (`area`) or are everything the country has (`country`).',
   })
   @ApiHeader({
     name: 'X-Weather-Forecast',
     required: false,
     description:
       'Set to `false`, `0` or `no` to skip the short forecast and the upstream call it costs. ' +
-      "On by default. It also carries the day's high and low — OpenWeather's own min/max on the " +
-      'current reading is the spread across reporting stations, a different quantity — so with ' +
-      'the forecast off, `current.high` and `current.low` collapse to the observed temperature.',
+      "On by default. With OpenWeather it also carries the day's high and low — that provider's " +
+      'own min/max on the current reading is the spread across reporting stations, a different ' +
+      'quantity — so with the forecast off, `current.high` and `current.low` collapse to the ' +
+      'observed temperature. Apple states the range outright and answers everything in one ' +
+      'request, so there the flag shapes the response without saving a call.',
   })
   @ApiHeader({
     name: 'X-Weather-Uv',
     required: false,
     description:
-      'Set to include the UV index, which comes from a second provider (Open-Meteo, no key ' +
-      'needed) and is credited separately in `attribution`. Off by default: it is a second ' +
-      'party in the request, and a caller who does not want one simply does not send this.',
+      'Set to include the UV index. Off by default: for most providers it is a second party in ' +
+      'the request — Open-Meteo, no key needed, credited separately in `attribution` — and a ' +
+      'caller who does not want one simply does not send this. Apple carries the index itself, ' +
+      'so asking Apple for it adds nobody and costs no extra call.',
   })
   @ApiResponse({
     status: 200,
@@ -188,8 +220,10 @@ export class WeatherController {
     @Query('units') units: WeatherUnits,
     @Query('safety') safety: string,
     @Query('area') area: string,
+    @Query('country') country: string,
     @Headers('X-Weather-Provider') provider: string,
     @Headers('X-Weather-Api-Key') apiKey: string,
+    @Headers('X-Weather-Client-Key') clientKey: string,
     @Headers('X-Weather-Uv') uv: string,
     @Headers('X-Weather-Alerts') alerts: string,
     @Headers('X-Weather-Forecast') forecast: string,
@@ -202,10 +236,12 @@ export class WeatherController {
       units,
       provider,
       apiKey,
+      clientKey,
       includeUv: enabled(uv),
       includeAlerts: enabled(alerts),
       safety,
       area,
+      country,
       includeForecast: enabledByDefault(forecast),
     });
   }

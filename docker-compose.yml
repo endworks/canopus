@@ -45,6 +45,19 @@ services:
     image: ghcr.io/endworks/canopus-weather
     ports:
       - 8880:3000
+    environment:
+      # All four or none. Absent, the service holds no credential and callers
+      # bring their own WeatherKit token; set, its own app can send nothing.
+      # The private key is the .p8 base64-encoded — see the README.
+      WEATHERKIT_TEAM_ID: ${WEATHERKIT_TEAM_ID:-}
+      WEATHERKIT_SERVICE_ID: ${WEATHERKIT_SERVICE_ID:-}
+      WEATHERKIT_KEY_ID: ${WEATHERKIT_KEY_ID:-}
+      WEATHERKIT_PRIVATE_KEY: ${WEATHERKIT_PRIVATE_KEY:-}
+      # Who may spend that credential. Left unset, one is derived from the
+      # private key above, and bumping the version rotates it. Set
+      # WEATHER_CLIENT_KEYS to take that over with your own comma-separated list.
+      WEATHER_CLIENT_KEY_VERSION: ${WEATHER_CLIENT_KEY_VERSION:-}
+      WEATHER_CLIENT_KEYS: ${WEATHER_CLIENT_KEYS:-}
     networks:
       - canopus
     depends_on:

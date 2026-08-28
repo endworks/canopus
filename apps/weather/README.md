@@ -283,15 +283,15 @@ request that names no language gets.
 Everything sensitive comes from the environment. There is no key, certificate or
 `.p8` in this repository, and there is not meant to be one.
 
-| Variable                     | Meaning                                                                           |
-| ---------------------------- | --------------------------------------------------------------------------------- |
-| `WEATHERKIT_TEAM_ID`         | The 10-character Apple Developer team identifier                                  |
-| `WEATHERKIT_SERVICE_ID`      | The Services ID registered for WeatherKit                                         |
-| `WEATHERKIT_KEY_ID`          | The 10-character identifier of the WeatherKit key                                 |
-| `WEATHERKIT_PRIVATE_KEY`     | The `.p8` itself, base64-encoded                                                  |
-| `WEATHER_CLIENT_KEY_VERSION` | Bump to rotate the derived client key                                             |
-| `WEATHER_CLIENT_KEYS`        | Optional: your own keys, instead of the derived one                               |
-| `WEATHER_ASSETS_URL`         | Where the gateway serves attribution marks, e.g. `https://api.example.com/assets` |
+| Variable                     | Meaning                                                                     |
+| ---------------------------- | --------------------------------------------------------------------------- |
+| `WEATHERKIT_TEAM_ID`         | The 10-character Apple Developer team identifier                            |
+| `WEATHERKIT_SERVICE_ID`      | The Services ID registered for WeatherKit                                   |
+| `WEATHERKIT_KEY_ID`          | The 10-character identifier of the WeatherKit key                           |
+| `WEATHERKIT_PRIVATE_KEY`     | The `.p8` itself, base64-encoded                                            |
+| `WEATHER_CLIENT_KEY_VERSION` | Bump to rotate the derived client key                                       |
+| `WEATHER_CLIENT_KEYS`        | Optional: your own keys, instead of the derived one                         |
+| `WEATHER_ASSETS_URL`         | Where the gateway serves attribution marks — `https://api.end.works/assets` |
 
 All four of the WeatherKit variables, or none. A deployment setting three of them is misconfigured rather
 than opted out, and the service refuses to start rather than answering 401 to

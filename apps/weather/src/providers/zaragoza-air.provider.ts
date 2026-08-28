@@ -20,7 +20,7 @@ import { upstreamGet } from './upstream';
  * and HTML in the body, which is a trap worth naming here so nobody
  * rediscovers it. `horaria.json` is the service.
  */
-const API_URL =
+export const API_URL =
   'https://www.zaragoza.es/sede/servicio/calidad-aire/estacion/horaria.json';
 
 /** Where a reader goes to see the network this answered from. */
@@ -48,7 +48,7 @@ const BOUNDS = { south: 41.45, north: 41.85, west: -1.3, east: -0.6 };
  * four kilometres upwind of a different neighbourhood is not a measurement of
  * your air, it is an anecdote about somebody else's.
  */
-const MAX_DISTANCE_KM = 5;
+export const MAX_DISTANCE_KM = 5;
 
 /** Mean earth radius, in kilometres. */
 const EARTH_RADIUS_KM = 6371;
@@ -63,7 +63,7 @@ const EARTH_RADIUS_KM = 6371;
  * changing at all. Normalising strips the accents, the case and the
  * punctuation, so every one of those collapses onto a single key.
  */
-const ALIASES: Record<keyof Concentrations, string[]> = {
+export const ALIASES: Record<keyof Concentrations, string[]> = {
   pm2_5: ['PM2.5', 'PM2,5', 'Partículas PM2,5'],
   pm10: ['PM10', 'Partículas PM10'],
   no2: ['NO2', 'Dióxido de nitrógeno'],
@@ -79,10 +79,10 @@ const ALIASES: Record<keyof Concentrations, string[]> = {
  * `{ id, estacion, titulo, valor }` and reading the wrong field grades the air
  * on a station number. A key that says what it holds removes the question.
  */
-const VALUE_KEYS = ['valor', 'value', 'medicion', 'dato', 'cantidad'];
+export const VALUE_KEYS = ['valor', 'value', 'medicion', 'dato', 'cantidad'];
 
 /** Case, accents and punctuation removed, so one pollutant has one key. */
-const normalise = (value: string): string =>
+export const normalise = (value: string): string =>
   value
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -111,7 +111,7 @@ const BY_ALIAS = new Map<string, keyof Concentrations>(
  * object whose `title` names it, rather than a loose string to be recognised
  * among its neighbours.
  */
-type Reading = {
+export type Reading = {
   estacion?: {
     id?: string | number;
     title?: string;
@@ -122,10 +122,10 @@ type Reading = {
 } & Record<string, unknown>;
 
 /** The RISP envelope, paginated like the rest of the portal's datasets. */
-type HourlyResponse = { result?: Reading[] };
+export type HourlyResponse = { result?: Reading[] };
 
 /** How far apart two coordinates are, in kilometres. */
-const distance = (
+export const distance = (
   fromLat: number,
   fromLon: number,
   toLat: number,
@@ -166,7 +166,7 @@ const numeric = (value: unknown): number | undefined => {
  * index people read as a health warning, and a plausible wrong value is worse
  * than the model answer it displaces.
  */
-const measurement = (
+export const measurement = (
   record: Reading,
 ): [keyof Concentrations, number] | undefined => {
   const named = record.contaminante?.title;
@@ -186,7 +186,7 @@ const measurement = (
  * Keyed by the station's own id rather than by its name, because two of the
  * network's stations share a street and a name is not a key.
  */
-interface Station {
+export interface Station {
   latitude: number;
   longitude: number;
   concentrations: Concentrations;
@@ -201,7 +201,7 @@ interface Station {
  * need converting here and would otherwise grade clean air as hazardous, which
  * is the one failure of this file worth watching for.
  */
-const stations = (readings: Reading[]): Station[] => {
+export const stations = (readings: Reading[]): Station[] => {
   const found = new Map<string, Station>();
 
   for (const record of readings) {

@@ -1,3 +1,16 @@
+# The local development stack. It deploys nothing.
+#
+# Worth saying at the top because the shape of this file invites the opposite
+# reading: it lists every service with its image, port, network and full
+# environment, so it looks like the production topology. Production is
+# .github/workflows/deploy.yml, which builds its own `docker run` and shares no
+# code with this file — a variable added here and not there reaches local
+# development and never the server, silently. That has happened once already
+# (WEATHER_ASSETS_URL) and `WEATHER_CLIENT_KEYS` below is still in that state.
+#
+# Adding a variable means editing both, until one of them is generated from the
+# other.
+
 services:
   canopus:
     build:

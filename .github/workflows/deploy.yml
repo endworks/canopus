@@ -19,6 +19,14 @@ on:
         default: all
         type: string
 
+# A second push to the same ref supersedes the first. Without this the older
+# run keeps going and can finish its deploy *after* the newer one, putting the
+# previous commit back on the server — and until then both are building,
+# pushing and restarting every container.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   REGISTRY: ghcr.io
   # Rotates the weather client key, which is derived from the WeatherKit
@@ -54,51 +62,33 @@ jobs:
         id: filter
         with:
           filters: |
+            common: &common
+              - 'packages/nest/**'
+              - 'packages/shared/**'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'turbo.json'
+              - 'tsconfig.base.json'
+              - 'package.json'
+              - 'Dockerfile'
             gateway:
+              - *common
               - 'apps/gateway/**'
-              - 'pnpm-lock.yaml'
-              - 'pnpm-workspace.yaml'
-              - 'turbo.json'
-              - 'tsconfig.base.json'
-              - 'package.json'
             zaragoza:
+              - *common
               - 'apps/zaragoza/**'
-              - 'packages/shared/**'
-              - 'pnpm-lock.yaml'
-              - 'pnpm-workspace.yaml'
-              - 'turbo.json'
-              - 'tsconfig.base.json'
-              - 'package.json'
             zine:
+              - *common
               - 'apps/zine/**'
-              - 'packages/shared/**'
-              - 'pnpm-lock.yaml'
-              - 'pnpm-workspace.yaml'
-              - 'turbo.json'
-              - 'tsconfig.base.json'
-              - 'package.json'
             weather:
+              - *common
               - 'apps/weather/**'
-              - 'packages/shared/**'
-              - 'pnpm-lock.yaml'
-              - 'pnpm-workspace.yaml'
-              - 'turbo.json'
-              - 'tsconfig.base.json'
-              - 'package.json'
             rae:
+              - *common
               - 'apps/rae/**'
-              - 'pnpm-lock.yaml'
-              - 'pnpm-workspace.yaml'
-              - 'turbo.json'
-              - 'tsconfig.base.json'
-              - 'package.json'
             twitter-downloader:
+              - *common
               - 'apps/twitter-downloader/**'
-              - 'pnpm-lock.yaml'
-              - 'pnpm-workspace.yaml'
-              - 'turbo.json'
-              - 'tsconfig.base.json'
-              - 'package.json'
 
       - name: Build deploy matrix from affected services
         id: set-matrix
@@ -121,12 +111,12 @@ jobs:
           fi
           MATRIX=$(jq -cn --argjson changed "$CHANGED" '
             {
-              gateway:  {service:"gateway",  image:"canopus",          container:"canopus",          port:"3000:3000", db:false},
-              zaragoza: {service:"zaragoza", image:"canopus-zaragoza", container:"canopus-zaragoza", port:"8877:3000", db:true},
-              zine:     {service:"zine",     image:"canopus-zine",     container:"canopus-zine",     port:"8878:3000", db:true},
-              weather:  {service:"weather",  image:"canopus-weather",  container:"canopus-weather",  port:"8880:3000", db:false},
-              rae:      {service:"rae",      image:"canopus-rae",      container:"canopus-rae",      port:"8879:3000", db:false},
-              "twitter-downloader": {service:"twitter-downloader", image:"canopus-twitter-downloader", container:"canopus-twitter-downloader", port:"8876:3000", db:false}
+              gateway:  {service:"gateway",  image:"canopus",          container:"canopus",          port:"3000:3000", db:false, dockerfile:"apps/gateway/Dockerfile"},
+              zaragoza: {service:"zaragoza", image:"canopus-zaragoza", container:"canopus-zaragoza", port:"8877:3000", db:true, dockerfile:"Dockerfile"},
+              zine:     {service:"zine",     image:"canopus-zine",     container:"canopus-zine",     port:"8878:3000", db:true, dockerfile:"Dockerfile"},
+              weather:  {service:"weather",  image:"canopus-weather",  container:"canopus-weather",  port:"8880:3000", db:false, dockerfile:"Dockerfile"},
+              rae:      {service:"rae",      image:"canopus-rae",      container:"canopus-rae",      port:"8879:3000", db:false, dockerfile:"Dockerfile"},
+              "twitter-downloader": {service:"twitter-downloader", image:"canopus-twitter-downloader", container:"canopus-twitter-downloader", port:"8876:3000", db:false, dockerfile:"Dockerfile"}
             } as $cfg
             | {include: [ $changed[] | select($cfg[.] != null) | $cfg[.] ]}
           ')
@@ -162,6 +152,10 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Load registry secret
+        # Its only consumer is the login step below, which is skipped on pull
+        # requests — so without this guard every PR made six 1Password round
+        # trips for a token it then discarded.
+        if: github.event_name != 'pull_request'
         uses: 1password/load-secrets-action@v2
         with:
           export-env: true
@@ -196,14 +190,23 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: apps/${{ matrix.service }}/Dockerfile
+          file: ${{ matrix.dockerfile }}
+          # One Dockerfile for every service but the gateway — see the note at
+          # the top of it. The gateway keeps its own only because it is the one
+          # app with a `.env` to copy, and a COPY whose glob matches nothing is
+          # a build error rather than a no-op.
+          build-args: |
+            SERVICE=${{ matrix.service }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.service }}
           # Caching is an optimization; a flaky GHA cache service (503s) must
           # not fail the build/push/deploy.
-          cache-to: type=gha,mode=max,scope=${{ matrix.service }},ignore-error=true
+          # Written only where it can be read back. A pull request's cache is
+          # visible to that PR alone, so six `mode=max` scopes from a PR return
+          # nothing next run and evict main's from the repo's 10 GB by LRU.
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=gha,mode=max,scope={0},ignore-error=true', matrix.service) || '' }}
 
       - name: Sign the published Docker image
         if: ${{ github.event_name != 'pull_request' }}
@@ -290,11 +293,15 @@ jobs:
           envs: IMAGE,CONTAINER,MONGODB_URI,TWITTER_CLIENT_TOKEN,THE_MOVIE_DB_API_KEY,WEATHERKIT_TEAM_ID,WEATHERKIT_SERVICE_ID,WEATHERKIT_KEY_ID,WEATHERKIT_PRIVATE_KEY,WEATHER_CLIENT_KEY_VERSION,WEATHER_ASSETS_URL
           script: |
             docker pull "$IMAGE"
-            docker stop "$CONTAINER" 2>/dev/null || true
+            # -t 1, because nothing here installs a SIGTERM handler: no app
+            # calls enableShutdownHooks, so the default 10s grace is ten
+            # seconds of the public API being down waiting for a signal that
+            # will be ignored and followed by SIGKILL regardless.
+            docker stop -t 1 "$CONTAINER" 2>/dev/null || true
             docker rm "$CONTAINER" 2>/dev/null || true
             if [ "$CONTAINER" = "canopus-zine" ]; then
               docker run --network canopus -p ${{ matrix.port }}/tcp -e MONGODB_URI="$MONGODB_URI" -e THE_MOVIE_DB_API_KEY="$THE_MOVIE_DB_API_KEY" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
-            elif [ -n "$MONGODB_URI" ]; then
+            elif [ "$CONTAINER" = "canopus-zaragoza" ]; then
               docker run --network canopus -p ${{ matrix.port }}/tcp -e MONGODB_URI="$MONGODB_URI" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
             elif [ "$CONTAINER" = "canopus-weather" ]; then
               docker run --network canopus -p ${{ matrix.port }}/tcp -e WEATHERKIT_TEAM_ID="$WEATHERKIT_TEAM_ID" -e WEATHERKIT_SERVICE_ID="$WEATHERKIT_SERVICE_ID" -e WEATHERKIT_KEY_ID="$WEATHERKIT_KEY_ID" -e WEATHERKIT_PRIVATE_KEY="$WEATHERKIT_PRIVATE_KEY" -e WEATHER_CLIENT_KEY_VERSION="$WEATHER_CLIENT_KEY_VERSION" -e WEATHER_ASSETS_URL="$WEATHER_ASSETS_URL" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"

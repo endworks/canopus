@@ -4,9 +4,9 @@
  * The provider is built to fail quietly: a city that cannot answer falls
  * through to Open-Meteo so the caller keeps their air, which is the right
  * behaviour in production and the wrong one at a terminal — "no grade" is the
- * same output whether the endpoint moved, the envelope changed, the station
- * coordinates went missing, the pollutant is spelled differently or the value
- * sits under a key this does not know. This separates those five.
+ * same output whether the endpoint moved, the envelope changed, a station lost
+ * its geometry, the pollutant is spelled differently, or the network simply
+ * stopped publishing. This separates those.
  *
  *   pnpm --filter @canopus/weather zaragoza-air
  *   pnpm --filter @canopus/weather zaragoza-air -- 41.6561 -0.8797
@@ -16,7 +16,7 @@
  *   curl -s "$URL" > body.json
  *   pnpm --filter @canopus/weather zaragoza-air -- body.json
  *
- * It imports the provider's own constants and its own grouping rather than
+ * It imports the provider's own constants and its own parsing rather than
  * repeating them: a diagnostic that agrees with a copy of the parser and
  * disagrees with the parser is worse than none.
  */
@@ -25,12 +25,14 @@ import {
   ALIASES,
   API_URL,
   distance,
-  HourlyResponse,
+  fromUtm,
+  ListadoResponse,
+  MAX_AGE_HOURS,
   MAX_DISTANCE_KM,
   normalise,
-  Reading,
+  readings,
+  StationRecord,
   stations,
-  VALUE_KEYS,
 } from '../src/providers/zaragoza-air.provider';
 import { europeanAqi } from '../src/providers/european-aqi';
 
@@ -73,6 +75,14 @@ const fetchBody = async (): Promise<string | undefined> => {
   const type = response.headers.get('content-type') ?? 'none';
   const text = await response.text();
   console.log(`  ${response.status}, ${type}, ${text.length} bytes`);
+  if (!response.ok) {
+    no(`the service refused: ${text.slice(0, 200)}`);
+    // The mistake this endpoint punishes. `estacion/horaria.json` looks like
+    // the network document and answers 400 without a station id.
+    note('a 400 here usually means the URL wants ?estacion=<id>, which means');
+    note('it is the per-station endpoint and not listado.json');
+    return undefined;
+  }
   return text;
 };
 
@@ -85,59 +95,58 @@ const main = async () => {
   const first = text.trimStart().slice(0, 1);
   if (first !== '{' && first !== '[') {
     no(`body starts '${first}', so this is a page and not the service`);
-    note('a portal path can answer 200 with a JSON content-type and HTML in');
-    note('the body — check the URL, not the header');
+    note('a portal path can answer 200 and HTML — check the URL, not the');
+    note('header: estacion/?estacion=40 is a page, listado.json is a service');
     return;
   }
   ok(`body starts '${first}'`);
 
   // ---- 2. The RISP envelope ----------------------------------------------
   stage(2, 'envelope');
-  let body: HourlyResponse & { totalCount?: number };
+  let body: ListadoResponse & { totalCount?: number };
   try {
-    body = JSON.parse(text) as HourlyResponse & { totalCount?: number };
+    body = JSON.parse(text) as ListadoResponse & { totalCount?: number };
   } catch (error) {
     no(`not parseable: ${(error as Error).message}`);
     return;
   }
-  const records: Reading[] = body.result ?? [];
+  const records: StationRecord[] = body.result ?? [];
   if (!records.length) {
     no('no `result` array, or it is empty');
     note(`top-level keys: ${Object.keys(body).join(', ')}`);
-    note('if this needs ?estacion=<id>, the provider needs a station registry');
     return;
   }
-  ok(`result[] with ${records.length} records, totalCount ${body.totalCount}`);
+  ok(`result[] with ${records.length} stations, totalCount ${body.totalCount}`);
+  note(
+    records
+      .map((record) => `${record.title ?? '?'} (${record.idSparql ?? '?'})`)
+      .join(', '),
+  );
 
-  // ---- 3. Stations, and whether they carry a position ---------------------
-  stage(3, 'stations');
-  const network = stations(records);
-  if (!network.length) {
-    no('no record carried estacion.id with a numeric latitud and longitud');
-    note(`first record: ${JSON.stringify(records[0], null, 2).slice(0, 600)}`);
+  // ---- 3. Does every station carry a position? ----------------------------
+  stage(3, 'geometry');
+  const positioned = records.filter(
+    (record) => (record.geometry?.coordinates?.length ?? 0) >= 2,
+  );
+  if (!positioned.length) {
+    no('no station carried geometry.coordinates');
+    note(`first station keys: ${Object.keys(records[0]).join(', ')}`);
+    note('the written latitud/longitud are ED50 and unreliable — if geometry');
+    note('is gone, x/y are the fallback and need the ED50 ellipsoid');
     return;
   }
-  const ranked = network
-    .map((station) => ({
-      station,
-      km: distance(latitude, longitude, station.latitude, station.longitude),
-    }))
-    .sort((a, b) => a.km - b.km);
-  ok(`${network.length} stations`);
-  for (const { station, km } of ranked.slice(0, 4)) {
-    const measured = Object.entries(station.concentrations)
-      .map(([pollutant, value]) => `${pollutant}=${value}`)
-      .join(' ');
+  ok(`${positioned.length}/${records.length} stations have geometry`);
+  for (const record of records) {
+    const [easting, northing] = record.geometry?.coordinates ?? [];
+    if (typeof easting !== 'number' || typeof northing !== 'number') {
+      no(`${record.title ?? '?'} has no geometry`);
+      continue;
+    }
+    const at = fromUtm(easting, northing);
     note(
-      `${km.toFixed(2)} km  ${station.latitude},${station.longitude}  ` +
-        `${measured || '(nothing measured)'}`,
+      `${(record.title ?? '?').padEnd(14)} ${at.latitude.toFixed(5)}, ` +
+        `${at.longitude.toFixed(5)}`,
     );
-  }
-  if (ranked[0].km > MAX_DISTANCE_KM) {
-    no(
-      `nearest is ${ranked[0].km.toFixed(2)} km, past the ${MAX_DISTANCE_KM} km limit`,
-    );
-    note('this coordinate is inside the box but not near a station');
   }
 
   // ---- 4. Are the pollutants named the way the aliases expect? ------------
@@ -145,13 +154,14 @@ const main = async () => {
   const named = [
     ...new Set(
       records
-        .map((record) => record.contaminante?.title)
-        .filter((title): title is string => Boolean(title)),
+        .flatMap((record) => record.observation ?? [])
+        .map((observed) => observed.magnitud)
+        .filter((magnitud): magnitud is string => Boolean(magnitud)),
     ),
   ];
   if (!named.length) {
-    no('no record carried contaminante.title');
-    note(`first record keys: ${Object.keys(records[0]).join(', ')}`);
+    no('no station carried observation[].magnitud');
+    note(`first station keys: ${Object.keys(records[0]).join(', ')}`);
   } else {
     const known = new Set(
       Object.values(ALIASES)
@@ -164,42 +174,75 @@ const main = async () => {
     else no('none of the names matched ALIASES');
     if (missed.length) {
       note(`not recognised: ${missed.join(', ')}`);
-      // Most of these are meant to be unrecognised: the feed publishes CO and
-      // benzene too, and the European index is not graded on either.
+      // Most of these are meant to be unrecognised: the feed publishes CO,
+      // NO, benzene and hydrogen sulphide too, and the European index is
+      // graded on none of them.
       note('only PM2.5, PM10, NO2, O3 and SO2 matter — if one of those is in');
       note('that list, its spelling belongs in ALIASES');
     }
   }
 
-  // ---- 5. Which key holds the number? ------------------------------------
-  stage(5, 'value field');
-  const withValue = records.filter((record) =>
-    Object.keys(record).some((key) => VALUE_KEYS.includes(normalise(key))),
-  );
-  if (withValue.length) {
-    ok(`${withValue.length}/${records.length} records have a known value key`);
-  } else {
-    no(`no record has any of: ${VALUE_KEYS.join(', ')}`);
-    // The whole point of the script: name the candidates so the fix is one
-    // entry in VALUE_KEYS rather than another round of guessing.
-    const numeric = Object.entries(records[0]).filter(
-      ([, value]) =>
-        typeof value === 'number' ||
-        (typeof value === 'string' &&
-          value.trim() !== '' &&
-          Number.isFinite(Number(value.trim().replace(',', '.')))),
-    );
+  // ---- 5. How old is what it is publishing? ------------------------------
+  stage(5, 'freshness');
+  const ages = records
+    .map((record) => readings(record.observation ?? []))
+    .filter((measured): measured is NonNullable<typeof measured> =>
+      Boolean(measured),
+    )
+    .map((measured) => (Date.now() - measured.observedAt) / (60 * 60 * 1000));
+  if (!ages.length) {
+    no('no station produced a timed reading of a graded pollutant');
     note(
-      `numeric-looking keys on the first record: ${
-        numeric.map(([key, value]) => `${key}=${value}`).join(', ') || 'none'
-      }`,
+      `first station's observations: ${JSON.stringify(
+        records[0].observation?.slice(0, 3),
+        null,
+        2,
+      )}`,
     );
-    note(`first record: ${JSON.stringify(records[0], null, 2).slice(0, 600)}`);
+  } else {
+    const newest = Math.min(...ages);
+    const line = `newest reading is ${newest.toFixed(1)} h old`;
+    if (newest <= MAX_AGE_HOURS) ok(line);
+    else {
+      no(`${line}, past the ${MAX_AGE_HOURS} h limit`);
+      note('the whole network would be refused as stale — either it stopped');
+      note('publishing, or publicationDate is not being read on Madrid time');
+    }
   }
 
-  // ---- 6. The grade the service would actually return ---------------------
-  stage(6, 'grade');
-  const nearest = ranked.find((entry) => entry.km <= MAX_DISTANCE_KM);
+  // ---- 6. The stations as the provider sees them --------------------------
+  stage(6, 'stations');
+  const network = stations(records);
+  if (!network.length) {
+    no('no station survived parsing');
+    return;
+  }
+  const ranked = network
+    .map((station) => ({
+      station,
+      km: distance(latitude, longitude, station.latitude, station.longitude),
+    }))
+    .sort((a, b) => a.km - b.km);
+  ok(`${network.length} stations parsed`);
+  for (const { station, km } of ranked.slice(0, 4)) {
+    const measured = Object.entries(station.concentrations)
+      .map(([pollutant, value]) => `${pollutant}=${value}`)
+      .join(' ');
+    note(`${km.toFixed(2)} km  ${measured || '(nothing measured)'}`);
+  }
+  if (ranked[0].km > MAX_DISTANCE_KM) {
+    no(
+      `nearest is ${ranked[0].km.toFixed(2)} km, past the ${MAX_DISTANCE_KM} km limit`,
+    );
+    note('this coordinate is inside the box but not near a station');
+  }
+
+  // ---- 7. The grade the service would actually return ---------------------
+  stage(7, 'grade');
+  const stale = Date.now() - MAX_AGE_HOURS * 60 * 60 * 1000;
+  const nearest = ranked.find(
+    (entry) => entry.km <= MAX_DISTANCE_KM && entry.station.observedAt >= stale,
+  );
   const grade = nearest
     ? europeanAqi(nearest.station.concentrations)
     : undefined;

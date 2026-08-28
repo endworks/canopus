@@ -363,6 +363,16 @@ export class WeatherAlert {
   certainty: string;
 
   /**
+   * When the office issued it, in unix seconds — CAP's `sent`.
+   *
+   * Required by MeteoAlarm's terms in any redistribution, and the only thing
+   * that says whether tonight's orange warning was written this morning or on
+   * Tuesday.
+   * @example 1756249200
+   */
+  issued?: number;
+
+  /**
    * When the warning starts, in unix seconds.
    * @example 1756263600
    */

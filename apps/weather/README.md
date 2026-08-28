@@ -60,12 +60,26 @@ the observed temperature rather than being invented from the wrong field.
 | `units`    | `metric` (default), `imperial` or `standard`                        |
 | `safety`   | Least band of warning worth returning. Absent returns them all      |
 | `area`     | Keep only warnings whose region matches. Ignores case and accents   |
-| `country`  | ISO alpha-2 the coordinates stand in. Only needed for warnings      |
+| `country`  | ISO alpha-2 the coordinates stand in. Rarely needed — see below     |
 
 `country` exists because warnings are scoped by one and a coordinate does not
-carry one. Asking by `location` works it out from the geocoded place; asking by
-`lat`/`lon` has no other way to know, and without it such a request comes back
-with no warnings.
+carry one. It is seldom worth sending: asking by `location` works it out from
+the geocoded place, and asking by `lat`/`lon` falls back to the region atlas,
+which holds the outlines of every warning region in the thirty-five countries
+MeteoAlarm covers and is therefore a map of those countries too. Send it for
+somewhere outside them, or to overrule a point the atlas places on the wrong
+side of a border.
+
+Getting this right matters more for Apple than it looks. WeatherKit returns no
+warnings **at all** unless the request names a country, and it does not say so
+— the call succeeds, the `weatherAlerts` dataset is simply absent, and the
+reading is indistinguishable from a place where nothing is in force. Apple also
+does no geocoding, so before the atlas was asked, every `lat`/`lon` question
+put to Apple came back with no warnings whatever the weather was doing.
+
+The parameter that carries it is `country`, which is not what Apple's own REST
+documentation calls it. That says `countryCode`, and `countryCode` is ignored
+in the same silent way.
 
 `location` works for every provider, including the ones that cannot geocode.
 A provider that can answers for itself, so the place it names and the reading
@@ -152,16 +166,29 @@ remembered to hard-code it:
 | `disclaimer` | A statement to publish alongside, wherever caveats go       |
 | `logo`       | A mark to draw, where words alone will not do               |
 
-- **Open-Meteo** asks for `Weather data by Open-Meteo.com` beside the data.
-- **Ayuntamiento de Zaragoza** asks for `Origen de los datos: Ayuntamiento de
-Zaragoza`, and for the date the source was last updated — which is
-  `lastUpdated`.
+- **Open-Meteo** asks for `Weather data by Open-Meteo.com` beside the data,
+  linked to `url`. Its licence names that string and no mark, so there is no
+  `logo` to draw.
+- **Ayuntamiento de Zaragoza** asks, under Ley 37/2007, for three things: the
+  citation `Origen de los datos: Ayuntamiento de Zaragoza`, which is `notice`;
+  a statement that the city neither sponsors nor endorses the reuse; and the
+  date the reused data was last updated. The last two share `disclaimer` —
+  `Datos actualizados el 28/8/26, 11:00. El Ayuntamiento de Zaragoza no
+participa, patrocina ni apoya esta reutilización de sus datos.` — because
+  they are one sentence a client draws in one place, and adding a field for a
+  date only one source in five needs would put an empty key on every other
+  attribution on the wire. The date is the hour the nearest station reported,
+  which is why this `disclaimer` is composed per reading rather than fixed on
+  the source. It is deliberately not `lastUpdated`: that is the weather
+  observation's time, from whichever provider answered the weather, on a
+  different clock and often hours from the station's.
 - **MeteoAlarm** asks for the national met office that issued a warning to be
   named rather than the aggregator that carried it, so `notice` is AEMET rather
-  than MeteoAlarm; and it requires every redistributor to publish its wording
-  about the delay between a copy of its warnings and the live site, which is
-  `disclaimer`. That is also why `TTL.alerts` is five minutes: their terms cap
-  the delay at ten.
+  than MeteoAlarm; for the time each warning was issued, which is `issued` on
+  the alert; for a link back to meteoalarm.org, which is `url`; and for every
+  redistributor to publish its wording about the delay between a copy of its
+  warnings and the live site, which is `disclaimer`. That last is also why
+  `TTL.alerts` is five minutes: their terms cap the delay at ten.
 - **Apple** asks for the Apple Weather wordmark, served per language, in `logo`.
 - **OpenWeather** asks for its own mark, from the free plan up, in the visible
   part of the application rather than on a legal page — also `logo`, and only

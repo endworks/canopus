@@ -84,6 +84,8 @@ type CapAlert = {
   identifier?: string;
   status?: string;
   scope?: string;
+  /** When the office issued this message. Required in any redistribution. */
+  sent?: string;
   /** Space-separated `sender,identifier,sent` triples this message replaces. */
   references?: string;
   info?: CapInfo[];
@@ -105,8 +107,15 @@ type WarningsResponse = { warnings?: { alert?: CapAlert }[] };
 export class MeteoAlarmProvider {
   readonly name = 'MeteoAlarm';
   readonly url = 'https://meteoalarm.org/';
-  /** EUMETNET asks that reuse of the feed points back at its terms. */
-  readonly licence = 'https://meteoalarm.org/en/live/page/disclaimer';
+  /**
+   * EUMETNET asks that reuse of the feed points back at its terms.
+   *
+   * The terms and not the disclaimer page: the disclaimer is one of the
+   * obligations, carried verbatim below, and the conditions a reuser is
+   * actually bound by — credit the right body, carry the issue time, link
+   * back, stay within ten minutes of live — are on this page.
+   */
+  readonly licence = 'https://meteoalarm.org/en/page/terms-and-conditions';
   /**
    * What to credit when the warnings shown span more than one country.
    *
@@ -224,6 +233,9 @@ export class MeteoAlarmProvider {
       ...this.awareness(info.parameter ?? []),
       urgency: info.urgency ?? 'Unknown',
       certainty: info.certainty ?? 'Unknown',
+      // The time of issue, which the terms require carried and which sits on
+      // the alert rather than on the localised info block.
+      ...this.issue(alert.sent),
       onset,
       ...this.expiry(info.expires),
       areas: (info.area ?? [])
@@ -273,6 +285,12 @@ export class MeteoAlarmProvider {
     const level = part('awareness_level', 1);
     const awareness = part('awareness_type', 1);
     return { ...(level ? { level } : {}), ...(awareness ? { awareness } : {}) };
+  }
+
+  /** The issue time, where the message states one. */
+  private issue(sent?: string): Pick<WeatherAlert, 'issued'> {
+    const issued = seconds(sent);
+    return issued === undefined ? {} : { issued };
   }
 
   private expiry(expires?: string): Pick<WeatherAlert, 'expires'> {

@@ -329,15 +329,26 @@ describe('getWeather', () => {
       'calidad-aire': {
         result: [
           {
-            estacion: {
-              id: '38',
-              title: 'Centro',
-              latitud: 41.6561,
-              longitud: -0.8797,
+            id: 10,
+            idSparql: 38,
+            title: 'Centro',
+            // The station's own projected position, as `listado.json` carries
+            // it: EPSG:25830, which is Calle Albareda once converted.
+            geometry: {
+              type: 'Point',
+              coordinates: [676330.4048585793, 4613449.25781236],
             },
-            contaminante: { id: 'PM10', title: 'PM10' },
-            fecha: '2026-08-28T09:00:00Z',
-            valor: 130,
+            observation: [
+              {
+                // Dated from now so the freshness rule sees a live document
+                // however long this suite lives.
+                publicationDate: new Date().toISOString(),
+                value: '130',
+                magnitud: 'PM10',
+                estado: 'Tiempo real',
+                periodo: 'Horario',
+              },
+            ],
           },
         ],
       },
@@ -364,9 +375,17 @@ describe('getWeather', () => {
       {
         name: 'Ayuntamiento de Zaragoza',
         url: 'https://www.zaragoza.es/sede/portal/medioambiente/calidad-aire/',
-        licence: 'https://www.zaragoza.es/ciudad/risp/decalogo.htm',
+        // The conditions themselves, not the decalogue that summarises them.
+        licence: 'https://www.zaragoza.es/sede/portal/aviso-legal#condiciones',
         // The wording the city's reuse terms name, in its own language.
         notice: 'Origen de los datos: Ayuntamiento de Zaragoza',
+        // And what the same terms require said beyond the credit: the date
+        // the data was last updated, and that the city does not endorse the
+        // reuse. Composed per reading, because the date is the station's own
+        // hour rather than the response's `lastUpdated`.
+        disclaimer: expect.stringContaining(
+          'no participa, patrocina ni apoya esta reutilización',
+        ) as unknown as string,
         provides: ['airQuality'],
       },
     ]);
@@ -671,7 +690,7 @@ describe('getWeather', () => {
     expect(reading.attribution).toContainEqual({
       name: 'MeteoAlarm',
       url: 'https://meteoalarm.org/',
-      licence: 'https://meteoalarm.org/en/live/page/disclaimer',
+      licence: 'https://meteoalarm.org/en/page/terms-and-conditions',
       // No warning is on show, so there is no met office to name and the
       // aggregator's own credit stands. The disclaimer travels regardless:
       // "nothing is in force here" is a claim about live data too.
@@ -1328,6 +1347,36 @@ describe('apple weather', () => {
     ]);
   });
 
+  it('finds the country itself when the caller sends only a coordinate', async () => {
+    // Apple does no geocoding, so a lat/lon question used to reach WeatherKit
+    // with no country on it — and WeatherKit answers no warnings at all
+    // without one, which looks exactly like fair weather. The atlas holds the
+    // outlines of every MeteoAlarm region, so it can say the coordinate is in
+    // Spain without anybody being asked.
+    const { service, calls } = build(appleWarnings);
+
+    const reading = await service.getWeather(ask({ includeAlerts: true }));
+
+    expect(asked(calls, 'weatherkit.apple.com')).toContain('country=ES');
+    expect(reading.alerts?.map((alert) => alert.id)).toEqual([
+      'rain-now',
+      'wind-now',
+    ]);
+  });
+
+  it('asks for no warnings where it cannot place the coordinate', async () => {
+    // Lima. The atlas covers the countries MeteoAlarm participates in and no
+    // others, and a guess here would be a whole country's warnings for the
+    // wrong country — so nothing is sent and the caller has to name their own.
+    const { service, calls } = build(appleWarnings);
+
+    await service.getWeather(
+      ask({ includeAlerts: true, latitude: -12.0464, longitude: -77.0428 }),
+    );
+
+    expect(asked(calls, 'weatherkit.apple.com')).not.toContain('country=');
+  });
+
   it('uses its own warnings and leaves MeteoAlarm out of it', async () => {
     const { service, calls } = build(appleWarnings);
 
@@ -1336,7 +1385,10 @@ describe('apple weather', () => {
     );
 
     expect(asked(calls, 'feeds.meteoalarm.org')).toBeUndefined();
-    expect(asked(calls, 'weatherkit.apple.com')).toContain('countryCode=ES');
+    // `country`, not the `countryCode` Apple's documentation names: that one
+    // is ignored and the warnings simply never arrive.
+    expect(asked(calls, 'weatherkit.apple.com')).toContain('country=ES');
+    expect(asked(calls, 'weatherkit.apple.com')).not.toContain('countryCode=');
     // Most severe first, and the one whose event has already ended is gone.
     expect(reading.alerts?.map((alert) => alert.id)).toEqual([
       'rain-now',

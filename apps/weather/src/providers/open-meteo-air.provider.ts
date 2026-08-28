@@ -3,7 +3,7 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Inject, Injectable } from '@nestjs/common';
 import { Cache } from 'cache-manager';
 import { TTL } from '../utils';
-import { AirSource } from './air-source';
+import { AirGrade, AirSource } from './air-source';
 import { europeanAqi } from './european-aqi';
 import { upstreamGet } from './upstream';
 
@@ -52,6 +52,7 @@ export class OpenMeteoAirProvider extends AirSource {
    * name this line as the form it should take.
    */
   readonly notice = 'Weather data by Open-Meteo.com';
+  /** CC BY asks for a credit and nothing else, so there is nothing else. */
   readonly measured = false;
 
   constructor(
@@ -69,7 +70,10 @@ export class OpenMeteoAirProvider extends AirSource {
     return true;
   }
 
-  async read(latitude: number, longitude: number): Promise<number | undefined> {
+  async read(
+    latitude: number,
+    longitude: number,
+  ): Promise<AirGrade | undefined> {
     const query = new URLSearchParams({
       latitude: String(latitude),
       longitude: String(longitude),
@@ -92,12 +96,15 @@ export class OpenMeteoAirProvider extends AirSource {
 
     // Renamed on the way in, because the index's table is keyed by the short
     // names every other source uses and Open-Meteo spells three of them out.
-    return europeanAqi({
+    const index = europeanAqi({
       pm2_5: current.pm2_5,
       pm10: current.pm10,
       no2: current.nitrogen_dioxide,
       o3: current.ozone,
       so2: current.sulphur_dioxide,
     });
+
+    // No disclaimer: CC BY asks to be credited and asks nothing else.
+    return index === undefined ? undefined : { index };
   }
 }

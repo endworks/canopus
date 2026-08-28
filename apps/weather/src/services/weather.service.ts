@@ -233,6 +233,7 @@ export class WeatherService {
           url: source.url,
           licence: source.licence,
           notice: source.notice,
+          disclaimer: borrowedAir.disclaimer,
           provides: ['airQuality'],
         });
     }
@@ -468,7 +469,16 @@ export class WeatherService {
         // `geocoded`, so it never overwrites what the reading says the place is
         // called; it only decides which national feed is worth asking, and
         // which country WeatherKit scopes its own warnings to.
-        country,
+        //
+        // Where they sent none, the atlas is asked. It holds the outlines of
+        // every warning region in the thirty-five countries MeteoAlarm covers,
+        // which is a map of those countries by another name, and it is already
+        // in memory to narrow warnings to a valley. Without this a caller who
+        // sends coordinates and no country gets no warnings at all from a
+        // provider that does not geocode: Apple names no country, so nothing
+        // was ever sent to WeatherKit and nothing was ever asked of MeteoAlarm,
+        // and both silences looked exactly like fair weather.
+        country: country ?? this.atlas.locate(latitude, longitude),
         geocoded: false,
       };
     }

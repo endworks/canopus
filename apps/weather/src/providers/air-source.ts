@@ -50,17 +50,38 @@ export abstract class AirSource {
    */
   abstract covers(latitude: number, longitude: number): boolean;
 
-  /** The index here, or nothing — which is not the same as clean air. */
+  /** The grade here, or nothing — which is not the same as clean air. */
   abstract read(
     latitude: number,
     longitude: number,
-  ): Promise<number | undefined>;
+  ): Promise<AirGrade | undefined>;
+}
+
+/** What a source answers: the number, and anything it owes alongside it. */
+export interface AirGrade {
+  /** European Air Quality Index, 1 (good) to 6 (extremely poor). */
+  index: number;
+  /**
+   * A statement this source requires published alongside this reading.
+   *
+   * Separate from `notice` because it is a separate obligation and a client
+   * places it differently — see `Attribution.disclaimer`. A credit says who the
+   * data came from; this says something about the arrangement that the source
+   * insists a reader be told.
+   *
+   * On the reading rather than on the source, which is the part worth pausing
+   * over: most of what a licence demands is fixed, but Ley 37/2007 asks a
+   * Spanish public body's reuser for two things at once — that the body be
+   * said not to endorse the reuse, and that the date the data was last updated
+   * be given. The second changes with every reading. A field that held only
+   * the fixed half would be a statement that satisfies half a licence, so the
+   * whole statement is composed where the date is known.
+   */
+  disclaimer?: string;
 }
 
 /** The grade, and who is owed the credit for it. */
-export interface AirReading {
-  /** European Air Quality Index, 1 (good) to 6 (extremely poor). */
-  index: number;
+export interface AirReading extends AirGrade {
   /** The source that actually answered, for its line in `attribution`. */
   source: AirSource;
 }

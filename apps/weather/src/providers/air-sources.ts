@@ -49,10 +49,10 @@ export class AirSources {
       // Swallowed per source rather than around the whole loop: a city's feed
       // being down is exactly the case where the model behind it should still
       // answer, and a `catch` outside the loop would lose that.
-      const index = await source
+      const grade = await source
         .read(latitude, longitude)
         .catch(() => undefined);
-      if (index !== undefined) return { index, source };
+      if (grade !== undefined) return { ...grade, source };
     }
     return undefined;
   }

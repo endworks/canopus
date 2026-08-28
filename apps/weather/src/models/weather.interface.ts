@@ -337,6 +337,15 @@ export interface WeatherAlert {
   urgency: string;
   /** CAP certainty: `Observed`, `Likely`, `Possible`, `Unlikely`. */
   certainty: string;
+  /**
+   * Unix seconds the office issued it — CAP's `sent`, not its `onset`.
+   *
+   * Carried because MeteoAlarm's terms require it: "the time of issue of the
+   * information being redistributed must be included in any redistribution".
+   * It is also the only field that tells a reader whether an orange warning
+   * for tonight was written this morning or four days ago.
+   */
+  issued?: number;
   /** Unix seconds the warning starts. */
   onset: number;
   /** Unix seconds it lapses; absent where the sender set no end. */

@@ -25,6 +25,16 @@ env:
   # private key rather than stored — bump this, redeploy, ship the clients.
   # `pnpm --filter @canopus/weather client-key` prints the current one.
   WEATHER_CLIENT_KEY_VERSION: "1"
+  # Where the gateway serves the marks some sources require shown, which the
+  # weather service has to name in `attribution` for a client to draw one.
+  #
+  # Here rather than in 1Password because it is a public address and not a
+  # secret, and here rather than only in docker-compose.yml because that file
+  # deploys nothing: the step at the bottom of this workflow is `docker run`
+  # with an explicit `-e` list, so a variable added to compose alone reaches
+  # local development and never the server. That is exactly what happened —
+  # the mark was served, correctly, at a URL nothing was ever told to build.
+  WEATHER_ASSETS_URL: "https://api.end.works/assets"
 
 jobs:
   # Work out which deployable services this change affects. A service is
@@ -277,7 +287,7 @@ jobs:
           port: ${{ env.PORT }}
           username: ${{ env.USERNAME }}
           key: ${{ env.KEY }}
-          envs: IMAGE,CONTAINER,MONGODB_URI,TWITTER_CLIENT_TOKEN,THE_MOVIE_DB_API_KEY,WEATHERKIT_TEAM_ID,WEATHERKIT_SERVICE_ID,WEATHERKIT_KEY_ID,WEATHERKIT_PRIVATE_KEY,WEATHER_CLIENT_KEY_VERSION
+          envs: IMAGE,CONTAINER,MONGODB_URI,TWITTER_CLIENT_TOKEN,THE_MOVIE_DB_API_KEY,WEATHERKIT_TEAM_ID,WEATHERKIT_SERVICE_ID,WEATHERKIT_KEY_ID,WEATHERKIT_PRIVATE_KEY,WEATHER_CLIENT_KEY_VERSION,WEATHER_ASSETS_URL
           script: |
             docker pull "$IMAGE"
             docker stop "$CONTAINER" 2>/dev/null || true
@@ -287,7 +297,7 @@ jobs:
             elif [ -n "$MONGODB_URI" ]; then
               docker run --network canopus -p ${{ matrix.port }}/tcp -e MONGODB_URI="$MONGODB_URI" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
             elif [ "$CONTAINER" = "canopus-weather" ]; then
-              docker run --network canopus -p ${{ matrix.port }}/tcp -e WEATHERKIT_TEAM_ID="$WEATHERKIT_TEAM_ID" -e WEATHERKIT_SERVICE_ID="$WEATHERKIT_SERVICE_ID" -e WEATHERKIT_KEY_ID="$WEATHERKIT_KEY_ID" -e WEATHERKIT_PRIVATE_KEY="$WEATHERKIT_PRIVATE_KEY" -e WEATHER_CLIENT_KEY_VERSION="$WEATHER_CLIENT_KEY_VERSION" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
+              docker run --network canopus -p ${{ matrix.port }}/tcp -e WEATHERKIT_TEAM_ID="$WEATHERKIT_TEAM_ID" -e WEATHERKIT_SERVICE_ID="$WEATHERKIT_SERVICE_ID" -e WEATHERKIT_KEY_ID="$WEATHERKIT_KEY_ID" -e WEATHERKIT_PRIVATE_KEY="$WEATHERKIT_PRIVATE_KEY" -e WEATHER_CLIENT_KEY_VERSION="$WEATHER_CLIENT_KEY_VERSION" -e WEATHER_ASSETS_URL="$WEATHER_ASSETS_URL" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
             elif [ "$CONTAINER" = "canopus-twitter-downloader" ]; then
               docker run --network canopus -p ${{ matrix.port }}/tcp -e TWITTER_CLIENT_TOKEN="$TWITTER_CLIENT_TOKEN" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
             else

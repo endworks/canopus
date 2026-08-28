@@ -55,16 +55,22 @@ export class Attribution {
   logo?: AttributionLogo;
 }
 
-/** One mark, in the three appearances a client may need to draw it in. */
+/**
+ * One mark, in whichever appearances its publisher ships it in. Only `light`
+ * is promised: Apple serves a light and a dark wordmark and a square mark,
+ * OpenWeather publishes a single master logo. Where `dark` is missing, draw
+ * the light mark on a light surface of your own rather than recolouring it —
+ * brand rules forbid the tint, not the plate.
+ */
 export class AttributionLogo {
-  /** For drawing on a light background. */
+  /** For drawing on a light background. The one every publisher ships. */
   light: AttributionImage;
 
-  /** For drawing on a dark background. */
-  dark: AttributionImage;
+  /** For drawing on a dark background, where the publisher draws one. */
+  dark?: AttributionImage;
 
-  /** The square mark, for where a wordmark will not fit. */
-  square: AttributionImage;
+  /** The square mark, for where a wordmark will not fit, where there is one. */
+  square?: AttributionImage;
 }
 
 /** One image at the three pixel densities its publisher ships it in. */
@@ -75,11 +81,11 @@ export class AttributionImage {
    */
   x1: string;
 
-  /** @2x */
-  x2: string;
+  /** @2x, where the publisher ships one. */
+  x2?: string;
 
-  /** @3x */
-  x3: string;
+  /** @3x, where the publisher ships one. */
+  x3?: string;
 }
 
 export class WeatherLocation {

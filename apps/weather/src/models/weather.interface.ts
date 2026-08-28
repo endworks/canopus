@@ -131,24 +131,46 @@ export interface Attribution {
   logo?: AttributionLogo;
 }
 
-/** One mark, in the three appearances a client may need to draw it in. */
+/**
+ * One mark, in whichever appearances its publisher ships it in.
+ *
+ * Only `light` is promised, because only Apple ships the full set. Its
+ * attribution endpoint serves a wordmark for light and for dark backgrounds
+ * and a square mark besides, which is where this shape came from; OpenWeather
+ * publishes a single master logo and nothing else.
+ *
+ * A missing `dark` is the one absence that matters, and it is not an
+ * invitation to improvise: brand rules forbid recolouring a mark, so a client
+ * that has only a dark-on-transparent wordmark and a dark surface must give it
+ * a light surface of its own — a chip, a plate, a footer — rather than tint it
+ * or drop the credit. Missing `square` simply means the wordmark is the only
+ * form there is, so a layout too narrow for it needs to find the room.
+ */
 export interface AttributionLogo {
-  /** For drawing on a light background. */
+  /** For drawing on a light background. The one every publisher ships. */
   light: AttributionImage;
-  /** For drawing on a dark background. */
-  dark: AttributionImage;
-  /** The square mark, for where a wordmark will not fit. */
-  square: AttributionImage;
+  /** For drawing on a dark background, where the publisher draws one. */
+  dark?: AttributionImage;
+  /** The square mark, for where a wordmark will not fit, where there is one. */
+  square?: AttributionImage;
 }
 
-/** One image at the three pixel densities its publisher ships it in. */
+/**
+ * One image, at whichever pixel densities its publisher ships it in.
+ *
+ * `x1` is the base asset and the only one promised: Apple serves all three,
+ * and a publisher that ships a single high-resolution file has it here for a
+ * client to scale. Read as "the largest of these that exists", not as "the one
+ * matching this screen" — a wordmark drawn a hundred points wide is legible
+ * downscaled from any of them and blurry upscaled from none.
+ */
 export interface AttributionImage {
-  /** @1x */
+  /** @1x, or the single asset where that is all there is. */
   x1: string;
   /** @2x */
-  x2: string;
+  x2?: string;
   /** @3x */
-  x3: string;
+  x3?: string;
 }
 
 /** Where the reading is for, as the provider itself names it. */

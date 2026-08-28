@@ -56,7 +56,7 @@ the observed temperature rather than being invented from the wrong field.
 | `location` | Place name, resolved by the provider. Ignored when lat/lon are sent |
 | `lat`      | Latitude, sent together with `lon`                                  |
 | `lon`      | Longitude, sent together with `lat`                                 |
-| `lang`     | Language for the provider's descriptions. Defaults to `en`          |
+| `lang`     | Language for the descriptions and the warnings. Defaults to `en`    |
 | `units`    | `metric` (default), `imperial` or `standard`                        |
 | `safety`   | Least band of warning worth returning. Absent returns them all      |
 | `area`     | Keep only warnings whose region matches. Ignores case and accents   |
@@ -169,6 +169,10 @@ remembered to hard-code it:
 - **Open-Meteo** asks for `Weather data by Open-Meteo.com` beside the data,
   linked to `url`. Its licence names that string and no mark, so there is no
   `logo` to draw.
+  A source is credited only for what it actually gave, which is what `provides`
+  is for — so a request that declines the air comes back with no line for whoever
+  would have measured it, rather than a credit for a field that is not there.
+
 - **Ayuntamiento de Zaragoza** asks, under Ley 37/2007, for three things: the
   citation `Origen de los datos: Ayuntamiento de Zaragoza`, which is `notice`;
   a statement that the city neither sponsors nor endorses the reuse; and the
@@ -299,6 +303,19 @@ expiry has passed are dropped, and an office that updates a warning issues a new
 message naming the one it replaces — both are in the feed, only the update comes
 back. A warning with no expiry at all is kept, since some offices issue those
 and an absent end is not a lapsed one.
+
+How much of a reading `lang` actually reaches depends on who answered.
+OpenWeather takes a language and describes the sky in it. WeatherKit does not:
+it sends a `conditionCode` enum — `MostlyClear`, `WintryMix` — and the
+`{language}` in its own URL localises the warnings and the attribution artwork
+and nothing else. So the words for an Apple reading are this service's, from
+the table in `apple-conditions.ts`, and a language with no row there falls back
+to English rather than to the code spelled out.
+
+That table lives here rather than in each client for two reasons: one table
+instead of one per app, and because only this file knows which of Apple's
+thirty-four codes collapse onto the same OpenWeather id. A client translating
+from `condition` alone cannot tell `Windy` from `Breezy` — both arrive as 771.
 
 Warnings are written in the language asked for where the office publishes it,
 and in English otherwise — matched on the language alone, since the same feed

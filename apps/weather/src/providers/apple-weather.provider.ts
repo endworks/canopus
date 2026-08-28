@@ -297,8 +297,8 @@ export class AppleWeatherProvider extends WeatherProvider {
         longitude,
         timezoneOffset: this.hoursEast(longitude) * 3600,
       },
-      current: this.current(body, day, hours, units, includeUv, now),
-      forecast: includeForecast ? this.steps(hours, units) : [],
+      current: this.current(body, day, hours, units, includeUv, now, language),
+      forecast: includeForecast ? this.steps(hours, units, language) : [],
       ...(alerts ? { alerts, alertScope: 'area' as const } : {}),
       credit: {
         ...credit,
@@ -447,14 +447,18 @@ export class AppleWeatherProvider extends WeatherProvider {
     });
   }
 
-  private steps(hours: AppleHour[], units: WeatherUnits): ForecastStep[] {
+  private steps(
+    hours: AppleHour[],
+    units: WeatherUnits,
+    language: string,
+  ): ForecastStep[] {
     return hours.slice(0, FORECAST_STEPS).map((hour) => {
       const temperature = hour.temperature ?? 0;
       return {
         time: seconds(hour.forecastStart) ?? 0,
         temperature: this.degrees(temperature, units),
         feelsLike: this.degrees(hour.temperatureApparent ?? temperature, units),
-        ...describe(hour.conditionCode, hour.daylight ?? true),
+        ...describe(hour.conditionCode, hour.daylight ?? true, language),
         precipitation: hour.precipitationChance ?? 0,
       };
     });
@@ -467,6 +471,7 @@ export class AppleWeatherProvider extends WeatherProvider {
     units: WeatherUnits,
     includeUv: boolean,
     now: number,
+    language: string,
   ): CurrentWeather {
     const observation = body.currentWeather ?? {};
     const temperature = observation.temperature ?? 0;
@@ -483,7 +488,15 @@ export class AppleWeatherProvider extends WeatherProvider {
       // the observation.
       high: this.degrees(day?.temperatureMax ?? temperature, units),
       low: this.degrees(day?.temperatureMin ?? temperature, units),
-      ...describe(observation.conditionCode, observation.daylight ?? true),
+      // The one field of the sky Apple leaves to us. WeatherKit sends a code
+      // and no words in any language, so the reader's own is applied here —
+      // see `describe`, and the note on why the client cannot do it from the
+      // condition id alone.
+      ...describe(
+        observation.conditionCode,
+        observation.daylight ?? true,
+        language,
+      ),
       // Apple reports both of these as a fraction; the response contract, and
       // every client already drawing OpenWeather, is in per cent.
       humidity: this.percent(observation.humidity),

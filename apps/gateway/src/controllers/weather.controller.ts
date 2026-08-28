@@ -36,8 +36,10 @@ const enabled = (value?: string): boolean => {
 /**
  * The same reading, for a row that is on until it is turned off.
  *
- * Only the forecast: it is the one part of the answer that was always there,
- * and a caller who has never heard of the header should keep getting it.
+ * The forecast and the air: both were part of the answer before there was a
+ * header for either, and a caller who has never heard of one should keep
+ * getting what they have always had. The sun and the warnings are the other
+ * way round — they arrived as headers and have always had to be asked for.
  */
 const enabledByDefault = (value?: string): boolean =>
   value === undefined || enabled(value);
@@ -199,6 +201,17 @@ export class WeatherController {
       'request, so there the flag shapes the response without saving a call.',
   })
   @ApiHeader({
+    name: 'X-Weather-Air',
+    required: false,
+    description:
+      'Set to `false`, `0` or `no` to skip the air quality and every call it costs. On by ' +
+      'default, because it was part of the answer before this header existed. Off, nobody is ' +
+      "asked: not the provider's own endpoint — OpenWeather's `/air_pollution` is a second " +
+      'request against your key — nor the city network, nor the model behind it. So a caller ' +
+      'who does not draw the index saves up to three parties in the request, and `airQuality` ' +
+      'is absent from `current` along with any source credited only for it.',
+  })
+  @ApiHeader({
     name: 'X-Weather-Uv',
     required: false,
     description:
@@ -227,6 +240,7 @@ export class WeatherController {
     @Headers('X-Weather-Uv') uv: string,
     @Headers('X-Weather-Alerts') alerts: string,
     @Headers('X-Weather-Forecast') forecast: string,
+    @Headers('X-Weather-Air') air: string,
   ) {
     return this.weatherService.getWeather({
       location,
@@ -243,6 +257,7 @@ export class WeatherController {
       area,
       country,
       includeForecast: enabledByDefault(forecast),
+      includeAirQuality: enabledByDefault(air),
     });
   }
 }

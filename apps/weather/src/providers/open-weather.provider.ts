@@ -188,8 +188,15 @@ export class OpenWeatherProvider extends WeatherProvider {
   }
 
   async read(request: WeatherRequest): Promise<ProviderReading> {
-    const { latitude, longitude, language, units, apiKey, includeForecast } =
-      request;
+    const {
+      latitude,
+      longitude,
+      language,
+      units,
+      apiKey,
+      includeForecast,
+      includeAirQuality,
+    } = request;
     const cell = `${latitude},${longitude}`;
     const params = {
       lat: String(latitude),
@@ -221,14 +228,18 @@ export class OpenWeatherProvider extends WeatherProvider {
         : undefined,
       // Swallowed rather than awaited with the rest: the air is one field, and
       // a key whose plan does not carry this endpoint should cost that field
-      // rather than the temperature.
-      this.fetch<AirResponse>(
-        `openweather/air/${cell}`,
-        `${API_URL}/air_pollution`,
-        apiKey,
-        { lat: params.lat, lon: params.lon },
-        TTL.airQuality,
-      ).catch(() => undefined),
+      // rather than the temperature. Skipped outright where the caller does not
+      // want it — this is a second call against their key for a field they have
+      // said they will not draw.
+      includeAirQuality
+        ? this.fetch<AirResponse>(
+            `openweather/air/${cell}`,
+            `${API_URL}/air_pollution`,
+            apiKey,
+            { lat: params.lat, lon: params.lon },
+            TTL.airQuality,
+          ).catch(() => undefined)
+        : undefined,
     ]);
 
     const steps = forecast ? this.steps(forecast) : [];

@@ -318,6 +318,29 @@ describe('getWeather', () => {
     expect(calls).toHaveLength(4);
   });
 
+  it("skips OpenWeather's own air endpoint when the air is refused", async () => {
+    // The provider carries concentrations itself, so this is a second request
+    // against the caller's own key for a field they have said they will not
+    // draw. Off, it is not made — and neither is the city network's.
+    const { service, calls } = build(routes);
+
+    const reading = await service.getWeather({
+      apiKey: 'key',
+      latitude: 41.6561,
+      longitude: -0.8797,
+      includeAirQuality: false,
+    });
+
+    expect(reading.current.airQuality).toBeUndefined();
+    expect(calls.some((url) => url.includes('air_pollution'))).toBe(false);
+    expect(calls.some((url) => url.includes('calidad-aire'))).toBe(false);
+    expect(
+      reading.attribution.some((source) =>
+        source.provides.includes('airQuality'),
+      ),
+    ).toBe(false);
+  });
+
   it('lets the city that measured the air overrule the provider that modelled it', async () => {
     // OpenWeather carries its own pollutants, and they are modelled off the
     // same continental runs as everyone else's. A station a few streets from
@@ -1309,6 +1332,64 @@ describe('apple weather', () => {
     // Night on the third step, which is what decides the icon's suffix.
     expect(reading.forecast[2].icon).toBe('04n');
     expect(reading.forecast[1].condition).toBe(211);
+  });
+
+  it('asks nobody for the air when the caller does not want it', async () => {
+    const { service, calls } = build(appleRoutes);
+
+    const reading = await service.getWeather(ask({ includeAirQuality: false }));
+
+    expect(reading.current.airQuality).toBeUndefined();
+    // Apple carries no pollutant, so the air would otherwise cost a call to
+    // the city network and one to the model behind it. Neither is made.
+    expect(calls.some((url) => url.includes('zaragoza.es'))).toBe(false);
+    expect(
+      calls.some((url) => url.includes('air-quality-api.open-meteo.com')),
+    ).toBe(false);
+    // And nobody is credited for a field that is not there.
+    expect(
+      reading.attribution.some((source) =>
+        source.provides.includes('airQuality'),
+      ),
+    ).toBe(false);
+  });
+
+  it('describes the sky in the language that was asked for', async () => {
+    // WeatherKit sends `conditionCode` and no words in any language — the
+    // `{language}` in its URL localises the warnings and the attribution
+    // artwork only. So an app drawing Apple's Spanish wordmark over an English
+    // "mostly clear" was half-translated, and this is the missing half.
+    const { service } = build(appleRoutes);
+
+    const reading = await service.getWeather(ask({ language: 'es' }));
+
+    expect(reading.current.description).toBe('mayormente despejado');
+    // The forecast steps too, which are described by the same table.
+    expect(reading.forecast[1].description).toBe('tormentas');
+    // And nothing else moves: the words are ours, the code and the icon are
+    // Apple's own reading of the sky.
+    expect(reading.current.condition).toBe(801);
+    expect(reading.current.icon).toBe('02d');
+  });
+
+  it('falls back to English for a language it has no words for', async () => {
+    // A reading somebody can still act on beats an empty string, and beats a
+    // condition code read out in leading caps.
+    const { service } = build(appleRoutes);
+
+    const reading = await service.getWeather(ask({ language: 'de' }));
+
+    expect(reading.current.description).toBe('mostly clear');
+  });
+
+  it('reads a regional tag as its base language', async () => {
+    // `es_ES`, `es-419`, `es`: the sky is not regional, and a Mexican caller
+    // should not lose the translation to a row that was never going to differ.
+    const { service } = build(appleRoutes);
+
+    const reading = await service.getWeather(ask({ language: 'es_MX' }));
+
+    expect(reading.current.description).toBe('mayormente despejado');
   });
 
   it("takes the day's range from the daily forecast, not from the steps", async () => {

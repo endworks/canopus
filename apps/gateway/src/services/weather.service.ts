@@ -16,6 +16,7 @@ export interface WeatherQuery {
   includeUv?: boolean;
   includeAlerts?: boolean;
   includeForecast?: boolean;
+  includeAirQuality?: boolean;
   safety?: string;
   area?: string;
   country?: string;

@@ -38,6 +38,15 @@ export interface WeatherPayload {
   country?: string;
   /** Defaults to true: the forecast is what the day's high and low come from. */
   includeForecast?: boolean;
+  /**
+   * Defaults to true: the air has always come back where a provider carried it.
+   *
+   * Off, nobody is asked for it — not the provider's own endpoint, and not the
+   * city network or the model behind it. Which is the point: a caller who does
+   * not draw the air was paying for a second and sometimes a third party in
+   * every request to be told something they threw away.
+   */
+  includeAirQuality?: boolean;
 }
 
 export type WeatherUnits = 'metric' | 'imperial' | 'standard';

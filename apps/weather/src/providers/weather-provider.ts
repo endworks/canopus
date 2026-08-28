@@ -31,6 +31,16 @@ export interface WeatherRequest {
    */
   includeUv: boolean;
   /**
+   * Whether the air is worth a call, and only meaningful to a provider that
+   * carries concentrations — see `ProviderInfo.airQuality`.
+   *
+   * On unless the caller said otherwise, because it always has been. Off, the
+   * provider skips its own endpoint for it: OpenWeather's `/air_pollution` is
+   * a second request against the caller's key, and paying for a field nobody
+   * draws is the whole thing this turns off.
+   */
+  includeAirQuality: boolean;
+  /**
    * ISO alpha-2 country of the cell, where it is known.
    *
    * WeatherKit wants it to scope its warnings, and it is not knowable from a

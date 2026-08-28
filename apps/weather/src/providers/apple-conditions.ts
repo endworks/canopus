@@ -20,7 +20,11 @@ export interface AppleCondition {
   id: number;
   /** The OpenWeather icon code without its day/night suffix. */
   icon: string;
-  /** English, because Apple sends no other. See the note on `describe`. */
+  /**
+   * English, because Apple sends no other and English is what this file was
+   * written in. Every other language is a row in `TRANSLATIONS` below, keyed by
+   * the same condition code — see `describe`.
+   */
   description: string;
 }
 
@@ -94,6 +98,86 @@ export const CONDITIONS: Record<string, AppleCondition> = {
 const UNKNOWN: AppleCondition = { id: 804, icon: '04', description: '' };
 
 /**
+ * The same table in every other language this service can answer in.
+ *
+ * WeatherKit sends `conditionCode` and nothing else about the sky: no icon, no
+ * number and, whatever the `{language}` in the URL says, no words. That path
+ * segment localises the warnings and the attribution artwork — which is how an
+ * app ends up drawing Apple's Spanish wordmark over an English "mostly cloudy"
+ * and looking half-translated, because it is.
+ *
+ * So the words are this service's, and being this service's they have to be
+ * written down once per language rather than left to the client. Doing it here
+ * rather than in each app is the difference between one table and one per
+ * client, and only this file knows which of Apple's thirty-four codes collapse
+ * onto the same OpenWeather id — a client translating from the id alone cannot
+ * tell `Windy` from `Breezy`, because both arrive as 771.
+ *
+ * Keyed by the base language, so `es`, `es_ES` and `es-419` all read the same
+ * row: these are descriptions of the sky, and the sky is not regional. A
+ * language with no row falls back to English, which is a reading somebody can
+ * still act on — unlike an empty string.
+ *
+ * OpenWeather needs none of this. It takes a language and answers in it, which
+ * is why this is the Apple provider's table and not a shared one.
+ */
+const TRANSLATIONS: Record<string, Record<string, string>> = {
+  es: {
+    Clear: 'cielo despejado',
+    MostlyClear: 'mayormente despejado',
+    PartlyCloudy: 'parcialmente nublado',
+    MostlyCloudy: 'mayormente nublado',
+    Cloudy: 'nublado',
+
+    Foggy: 'niebla',
+    Haze: 'bruma',
+    Smoky: 'humo',
+    BlowingDust: 'polvo en suspensión',
+
+    Breezy: 'brisa',
+    Windy: 'viento',
+
+    Drizzle: 'llovizna',
+    Rain: 'lluvia',
+    HeavyRain: 'lluvia intensa',
+    SunShowers: 'chubascos con sol',
+
+    IsolatedThunderstorms: 'tormentas aisladas',
+    ScatteredThunderstorms: 'tormentas dispersas',
+    Thunderstorms: 'tormentas',
+    StrongStorms: 'tormentas fuertes',
+    TropicalStorm: 'tormenta tropical',
+    Hurricane: 'huracán',
+
+    Hail: 'granizo',
+    Flurries: 'nevadas ligeras',
+    SunFlurries: 'nevadas ligeras con sol',
+    Snow: 'nieve',
+    HeavySnow: 'nieve intensa',
+    BlowingSnow: 'ventisca de nieve',
+    Blizzard: 'ventisca',
+    Sleet: 'aguanieve',
+    WintryMix: 'lluvia y nieve',
+    FreezingDrizzle: 'llovizna helada',
+    FreezingRain: 'lluvia helada',
+
+    Hot: 'calor',
+    Frigid: 'frío intenso',
+  },
+};
+
+/**
+ * The base of a language tag, which is the row `TRANSLATIONS` is keyed by.
+ *
+ * The service normalises to lower case with an underscore and WeatherKit is
+ * asked in BCP 47 with a hyphen, so both separators are cut. Everything before
+ * the first one is the language; everything after it is a region, and a region
+ * does not change what a cloud is called.
+ */
+const baseLanguage = (language: string): string =>
+  language.split(/[_-]/)[0].toLowerCase();
+
+/**
  * The three fields, from the one Apple sends.
  *
  * `daylight` decides the icon's suffix, and it comes off the reading rather
@@ -109,12 +193,20 @@ const UNKNOWN: AppleCondition = { id: 804, icon: '04', description: '' };
 export const describe = (
   conditionCode: string | undefined,
   daylight: boolean,
+  language = 'en',
 ): { condition: number; icon: string; description: string } => {
   const condition = (conditionCode && CONDITIONS[conditionCode]) || UNKNOWN;
+  const translated = conditionCode
+    ? TRANSLATIONS[baseLanguage(language)]?.[conditionCode]
+    : undefined;
   return {
     condition: condition.id,
     icon: `${condition.icon}${daylight ? 'd' : 'n'}`,
-    description: condition.description || spell(conditionCode ?? ''),
+    // The reader's language, then English, then the code spelled out. A code
+    // added by Apple after this shipped has no row in either table, and its own
+    // spelling read aloud is worse than a translation and better than nothing.
+    description:
+      translated || condition.description || spell(conditionCode ?? ''),
   };
 };
 

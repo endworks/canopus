@@ -119,18 +119,21 @@ export class WeatherService {
     // request to be told what is already in hand.
     const ownAlerts = Boolean(payload.includeAlerts && provider.info.alerts);
     const ownUv = Boolean(payload.includeUv && provider.info.uv);
-    // The air asks no permission the way the sun does. It has always come back
-    // with the reading where the provider carried it, and a caller who never
-    // sent a header for it should not lose it because their provider changed —
-    // so where the provider has no concentrations, somebody else is asked for
-    // them.
+    // The air asks the other way round from the sun: on unless refused, because
+    // it has always come back with the reading and a caller who never sent a
+    // header for it should not lose it because this service grew one.
     //
+    // Refused, nobody is asked at all — not the provider's own endpoint, not
+    // the city network, not the model behind it. That is three parties saved
+    // for a caller who told us they will not draw the field, which is the one
+    // shape of waste a header can fix from here.
+    const wantsAir = payload.includeAirQuality ?? true;
     // Unlike the sun, carrying it is no longer the end of the question. Every
     // provider's own air is modelled off the same continental runs, and a city
     // that measures its own is simply nearer the truth than any of them — so
     // this says who already answered rather than who gets asked, and
     // `AirSources` decides whether anyone can beat it. See `AirSources.read`.
-    const ownAir = provider.info.airQuality;
+    const ownAir = wantsAir && provider.info.airQuality;
 
     // Started here rather than inside the gather below so it flies alongside
     // the reading. Warnings are national, so the country picks the feed — and
@@ -156,6 +159,7 @@ export class WeatherService {
         includeForecast: payload.includeForecast ?? true,
         includeAlerts: ownAlerts,
         includeUv: ownUv,
+        includeAirQuality: wantsAir,
       }),
       // Swallowed rather than awaited with the rest: the sun is one field from
       // a second service, and that service being down should cost the field
@@ -167,9 +171,11 @@ export class WeatherService {
         : undefined,
       // Swallowed for the same reason: the air is one field, and a second
       // service being down should cost that field rather than the temperature.
-      this.air
-        .read(cell.latitude, cell.longitude, ownAir)
-        .catch(() => undefined),
+      wantsAir
+        ? this.air
+            .read(cell.latitude, cell.longitude, ownAir)
+            .catch(() => undefined)
+        : undefined,
     ]);
 
     const warnings = ownAlerts

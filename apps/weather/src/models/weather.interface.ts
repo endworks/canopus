@@ -73,14 +73,27 @@ export interface Attribution {
    * particular ones.
    *
    * Absent is the common case and means the source asks only to be credited,
-   * so a client draws `name`. Present, it is not a suggestion and not a
-   * translation target: Open-Meteo's licence asks for "Weather data by
-   * Open-Meteo.com" beside the data, Zaragoza's reuse terms ask for "Origen de
-   * los datos: Ayuntamiento de Zaragoza", and MeteoAlarm's require the
-   * national met office that issued a warning to be named rather than the
-   * aggregator that carried it. Rendering `name` instead of these is a licence
-   * breach, not a style choice — which is why they travel on the wire rather
-   * than living in whichever client remembered to hard-code them.
+   * so a client draws `name`. Present, it is not a suggestion: Open-Meteo's
+   * licence asks for "Weather data by Open-Meteo.com" beside the data,
+   * Zaragoza's reuse terms ask for "Origen de los datos: Ayuntamiento de
+   * Zaragoza", and MeteoAlarm's require the national met office that issued a
+   * warning to be named rather than the aggregator that carried it. Rendering
+   * `name` instead of these is a licence breach, not a style choice — which is
+   * why they travel on the wire rather than living in whichever client
+   * remembered to hard-code them.
+   *
+   * It is also not a translation target, which is the part that looks like a
+   * bug and is not. A licence names a string, so the string is what satisfies
+   * it: "Weather data by Open-Meteo.com" stays English in a Spanish client and
+   * "Origen de los datos: Ayuntamiento de Zaragoza" stays Spanish in an
+   * English one, because a translated credit names an entity the terms have
+   * never heard of. The three sources that do vary by language vary on their
+   * own, without this field being asked to: MeteoAlarm's is the met office's
+   * name read out of whichever CAP block matched the language, so it arrives
+   * already in it; Apple's is artwork rather than words and is fetched per
+   * language into `logo`; and OpenWeather's is a mark that carries no words to
+   * translate. A `notice` a client feels the urge to translate is one it has
+   * misread as UI copy.
    */
   notice?: string;
   /**
@@ -106,8 +119,14 @@ export interface Attribution {
    *
    * Apple is the reason this exists: WeatherKit's terms ask for the Apple
    * Weather wordmark beside the data, not merely the words, and the artwork is
-   * served per language. A source that asks only for a line of text has no
-   * `logo` and a client draws its `name` instead.
+   * served per language. OpenWeather asks for a mark too — its licence makes
+   * attribution obligatory from the free plan up, in the visible part of the
+   * application rather than on a legal page, and names its logo as the form it
+   * takes — so this is where that belongs when the assets are wired, not
+   * `notice`: there is no sentence it asks for.
+   *
+   * A source that asks only for a line of text has no `logo`, and one that
+   * asks only to be credited has neither, so a client draws its `name`.
    */
   logo?: AttributionLogo;
 }

@@ -79,6 +79,37 @@ export class RegionAtlas {
   }
 
   /**
+   * Which country a point is in, out of the ones the atlas holds.
+   *
+   * The same geometry as `covering`, asked the other way round: that one is
+   * given a country and narrows to regions, this one is given nothing and
+   * finds the country. Both are needed because a coordinate does not carry a
+   * country and two things downstream want one — MeteoAlarm, to pick a
+   * national feed, and WeatherKit, which returns no warnings at all unless it
+   * is told which government's warnings are wanted.
+   *
+   * The exact point only, with none of `covering`'s corner spreading. Widening
+   * a lookup for regions is the safe way to be wrong — an extra neighbouring
+   * warning — but widening this one means answering France for a cell in
+   * Spain, and that is a whole country's warnings for the wrong country. A
+   * point on the border resolves to whichever ring claims it, and both claim
+   * the border, so the first is as good as the second.
+   *
+   * `undefined` where the atlas cannot place it: at sea, or in one of the
+   * countries it does not hold. It covers the thirty-five MeteoAlarm
+   * participates in, so a caller in Peru gets nothing from this and has to say
+   * where they are — which is what `country` on the request is for.
+   */
+  locate(latitude: number, longitude: number): string | undefined {
+    for (const [country, regions] of Object.entries(this.load().regions)) {
+      if (regions.some((region) => this.inside(region, longitude, latitude))) {
+        return country;
+      }
+    }
+    return undefined;
+  }
+
+  /**
    * Whether the atlas speaks the same codes this country's feed does.
    *
    * It has to be asked, because holding regions for a country is not the same

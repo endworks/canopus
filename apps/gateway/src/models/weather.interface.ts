@@ -21,6 +21,23 @@ export class Attribution {
   provides: string[];
 
   /**
+   * The exact words this source requires shown, where it requires particular
+   * ones — draw these rather than `name`, and link them to `url`. Absent means
+   * the source asks only to be credited and `name` is enough. Not a
+   * translation target: it is the wording the licence names.
+   * @example 'Weather data by Open-Meteo.com'
+   */
+  notice?: string;
+
+  /**
+   * A statement the source requires published alongside its data, wherever
+   * caveats go. MeteoAlarm requires one about the delay between a copy of its
+   * warnings and the live site.
+   * @example 'Time delays between this website and the www.meteoalarm.org website are possible. For the most up-to-date awareness information as published by the participating National Meteorological and Hydrological Services, please refer to www.meteoalarm.org.'
+   */
+  disclaimer?: string;
+
+  /**
    * The licence or legal page the source requires linked alongside the credit.
    * Apple's is the page WeatherKit itself names; OpenWeather's free tier is
    * CC BY-SA 4.0; Open-Meteo's is CC BY 4.0.
@@ -38,16 +55,22 @@ export class Attribution {
   logo?: AttributionLogo;
 }
 
-/** One mark, in the three appearances a client may need to draw it in. */
+/**
+ * One mark, in whichever appearances its publisher ships it in. Only `light`
+ * is promised: Apple serves a light and a dark wordmark and a square mark,
+ * OpenWeather publishes a single master logo. Where `dark` is missing, draw
+ * the light mark on a light surface of your own rather than recolouring it —
+ * brand rules forbid the tint, not the plate.
+ */
 export class AttributionLogo {
-  /** For drawing on a light background. */
+  /** For drawing on a light background. The one every publisher ships. */
   light: AttributionImage;
 
-  /** For drawing on a dark background. */
-  dark: AttributionImage;
+  /** For drawing on a dark background, where the publisher draws one. */
+  dark?: AttributionImage;
 
-  /** The square mark, for where a wordmark will not fit. */
-  square: AttributionImage;
+  /** The square mark, for where a wordmark will not fit, where there is one. */
+  square?: AttributionImage;
 }
 
 /** One image at the three pixel densities its publisher ships it in. */
@@ -58,11 +81,11 @@ export class AttributionImage {
    */
   x1: string;
 
-  /** @2x */
-  x2: string;
+  /** @2x, where the publisher ships one. */
+  x2?: string;
 
-  /** @3x */
-  x3: string;
+  /** @3x, where the publisher ships one. */
+  x3?: string;
 }
 
 export class WeatherLocation {
@@ -338,6 +361,16 @@ export class WeatherAlert {
    * @example 'Observed'
    */
   certainty: string;
+
+  /**
+   * When the office issued it, in unix seconds — CAP's `sent`.
+   *
+   * Required by MeteoAlarm's terms in any redistribution, and the only thing
+   * that says whether tonight's orange warning was written this morning or on
+   * Tuesday.
+   * @example 1756249200
+   */
+  issued?: number;
 
   /**
    * When the warning starts, in unix seconds.

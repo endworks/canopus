@@ -25,7 +25,7 @@ import { ClientKeys } from '../providers/client-keys';
 import { MeteoAlarmProvider } from '../providers/meteoalarm.provider';
 import { OpenMeteoGeocoder } from '../providers/open-meteo-geocoder';
 import { RegionAtlas } from '../providers/region-atlas';
-import { OpenMeteoAirProvider } from '../providers/open-meteo-air.provider';
+import { AirSources } from '../providers/air-sources';
 import { OpenMeteoUvProvider } from '../providers/open-meteo-uv.provider';
 import { WEATHER_PROVIDERS } from '../providers/registry';
 import {
@@ -60,7 +60,7 @@ export class WeatherService {
     @Inject(WEATHER_PROVIDERS)
     private readonly providers: Map<string, WeatherProvider>,
     private readonly uvProvider: OpenMeteoUvProvider,
-    private readonly airProvider: OpenMeteoAirProvider,
+    private readonly air: AirSources,
     private readonly alertProvider: MeteoAlarmProvider,
     private readonly atlas: RegionAtlas,
     private readonly geocoder: OpenMeteoGeocoder,
@@ -122,8 +122,14 @@ export class WeatherService {
     // The air asks no permission the way the sun does. It has always come back
     // with the reading where the provider carried it, and a caller who never
     // sent a header for it should not lose it because their provider changed —
-    // so where the provider has no concentrations, Open-Meteo is asked for
-    // them. It is the party already standing in for the sun.
+    // so where the provider has no concentrations, somebody else is asked for
+    // them.
+    //
+    // Unlike the sun, carrying it is no longer the end of the question. Every
+    // provider's own air is modelled off the same continental runs, and a city
+    // that measures its own is simply nearer the truth than any of them — so
+    // this says who already answered rather than who gets asked, and
+    // `AirSources` decides whether anyone can beat it. See `AirSources.read`.
     const ownAir = provider.info.airQuality;
 
     // Started here rather than inside the gather below so it flies alongside
@@ -161,11 +167,9 @@ export class WeatherService {
         : undefined,
       // Swallowed for the same reason: the air is one field, and a second
       // service being down should cost that field rather than the temperature.
-      ownAir
-        ? undefined
-        : this.airProvider
-            .read(cell.latitude, cell.longitude)
-            .catch(() => undefined),
+      this.air
+        .read(cell.latitude, cell.longitude, ownAir)
+        .catch(() => undefined),
     ]);
 
     const warnings = ownAlerts
@@ -178,7 +182,12 @@ export class WeatherService {
         name: provider.info.name,
         url: provider.info.url,
         provides: [
-          ...reading.provides,
+          // Minus the air where somebody else's measurement displaced the
+          // provider's own: two sources credited for one field would have the
+          // reader believe the number came from whichever they looked at first.
+          ...reading.provides.filter(
+            (kind) => kind !== 'airQuality' || borrowedAir === undefined,
+          ),
           ...((cell.geocoded && !cell.borrowed
             ? ['geocoding']
             : []) as DataKind[]),
@@ -193,6 +202,7 @@ export class WeatherService {
         name: this.geocoder.name,
         url: this.geocoder.url,
         licence: this.geocoder.licence,
+        notice: this.geocoder.notice,
         provides: ['geocoding'],
       });
     }
@@ -201,23 +211,29 @@ export class WeatherService {
         name: this.uvProvider.name,
         url: this.uvProvider.url,
         licence: this.uvProvider.licence,
+        notice: this.uvProvider.notice,
         provides: ['uv'],
       });
     }
-    // The same service, and a line of its own rather than a second kind bolted
-    // onto the sun's: a reader is owed what each source gave, and the two are
-    // separate answers that happen to come from one company. Merged where both
-    // landed, so it is credited once.
+    // Whichever source actually answered, which is no longer knowable in
+    // advance: a city's own network speaks for its own few square kilometres
+    // and the model speaks for everywhere else, and the reader is owed the one
+    // that measured their air rather than the one that usually does.
+    //
+    // Merged where the sun came from the same place — Open-Meteo answers both,
+    // and they are two separate answers that happen to come from one company,
+    // so one line credited for both rather than the company named twice.
     if (borrowedAir !== undefined) {
-      const sun = attribution.find(
-        (source) => source.url === this.airProvider.url,
-      );
-      if (sun) sun.provides = [...sun.provides, 'airQuality'];
+      const { source } = borrowedAir;
+      const same = attribution.find((credited) => credited.url === source.url);
+      if (same) same.provides = [...same.provides, 'airQuality'];
       else
         attribution.push({
-          name: this.airProvider.name,
-          url: this.airProvider.url,
-          licence: this.airProvider.licence,
+          name: source.name,
+          url: source.url,
+          licence: source.licence,
+          notice: source.notice,
+          disclaimer: borrowedAir.disclaimer,
           provides: ['airQuality'],
         });
     }
@@ -227,10 +243,24 @@ export class WeatherService {
     // leaves `alerts` off the response entirely. A provider that issued the
     // warnings itself is already credited for them in its own line.
     if (warnings && !ownAlerts) {
+      // MeteoAlarm's terms split the credit by how far the warnings reach:
+      // information from a single country must name that country's own met
+      // office, and only information spanning more than one is credited to
+      // EUMETNET. One country's feed is asked at a time, so the offices that
+      // issued the warnings actually on show are the ones owed the line — and
+      // an empty list names nobody, because there is nothing of theirs being
+      // shown.
+      const senders = [
+        ...new Set(
+          warnings.alerts.map((alert) => alert.sender).filter(Boolean),
+        ),
+      ];
       attribution.push({
         name: this.alertProvider.name,
         url: this.alertProvider.url,
         licence: this.alertProvider.licence,
+        notice: senders.length ? senders.join(', ') : this.alertProvider.notice,
+        disclaimer: this.alertProvider.disclaimer,
         provides: ['alerts'],
       });
     }
@@ -248,9 +278,9 @@ export class WeatherService {
       current: {
         ...reading.current,
         ...(uv ?? {}),
-        // Only where the provider had none of its own: a reading that already
-        // carries a grade is not regraded from somebody else's air.
-        ...(borrowedAir !== undefined ? { airQuality: borrowedAir } : {}),
+        // Whichever grade won: the provider's own, or a measurement from a
+        // source near enough to overrule it.
+        ...(borrowedAir !== undefined ? { airQuality: borrowedAir.index } : {}),
       },
       forecast: reading.forecast,
       ...(warnings
@@ -439,7 +469,16 @@ export class WeatherService {
         // `geocoded`, so it never overwrites what the reading says the place is
         // called; it only decides which national feed is worth asking, and
         // which country WeatherKit scopes its own warnings to.
-        country,
+        //
+        // Where they sent none, the atlas is asked. It holds the outlines of
+        // every warning region in the thirty-five countries MeteoAlarm covers,
+        // which is a map of those countries by another name, and it is already
+        // in memory to narrow warnings to a valley. Without this a caller who
+        // sends coordinates and no country gets no warnings at all from a
+        // provider that does not geocode: Apple names no country, so nothing
+        // was ever sent to WeatherKit and nothing was ever asked of MeteoAlarm,
+        // and both silences looked exactly like fair weather.
+        country: country ?? this.atlas.locate(latitude, longitude),
         geocoded: false,
       };
     }

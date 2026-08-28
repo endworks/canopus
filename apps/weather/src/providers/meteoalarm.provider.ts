@@ -84,6 +84,8 @@ type CapAlert = {
   identifier?: string;
   status?: string;
   scope?: string;
+  /** When the office issued this message. Required in any redistribution. */
+  sent?: string;
   /** Space-separated `sender,identifier,sent` triples this message replaces. */
   references?: string;
   info?: CapInfo[];
@@ -105,8 +107,41 @@ type WarningsResponse = { warnings?: { alert?: CapAlert }[] };
 export class MeteoAlarmProvider {
   readonly name = 'MeteoAlarm';
   readonly url = 'https://meteoalarm.org/';
-  /** EUMETNET asks that reuse of the feed points back at its terms. */
-  readonly licence = 'https://meteoalarm.org/en/live/page/disclaimer';
+  /**
+   * EUMETNET asks that reuse of the feed points back at its terms.
+   *
+   * The terms and not the disclaimer page: the disclaimer is one of the
+   * obligations, carried verbatim below, and the conditions a reuser is
+   * actually bound by — credit the right body, carry the issue time, link
+   * back, stay within ten minutes of live — are on this page.
+   */
+  readonly licence = 'https://meteoalarm.org/en/page/terms-and-conditions';
+  /**
+   * What to credit when the warnings shown span more than one country.
+   *
+   * MeteoAlarm's terms split on exactly that: information spanning more than
+   * one country is credited to "EUMETNET – MeteoAlarm", and information from a
+   * single country must name that country's own met office instead. One
+   * country's feed is asked at a time here, so the offices that issued the
+   * warnings on show are the credit and this is the fallback for a list with
+   * nobody in it — a feed asked and holding nothing still owes the aggregator
+   * its line.
+   */
+  readonly notice = 'EUMETNET – MeteoAlarm';
+  /**
+   * The wording every redistributor is required to publish, verbatim.
+   *
+   * It is about staleness, which is the one risk this endpoint carries that
+   * the others do not: a cached orange warning that has since gone red is
+   * worse than no warning at all, and the terms answer it by insisting the
+   * live site is named as the authority. Hence `TTL.alerts` being five minutes
+   * where everything else here is measured in hours.
+   */
+  readonly disclaimer =
+    'Time delays between this website and the www.meteoalarm.org website are ' +
+    'possible. For the most up-to-date awareness information as published by ' +
+    'the participating National Meteorological and Hydrological Services, ' +
+    'please refer to www.meteoalarm.org.';
 
   constructor(
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
@@ -198,6 +233,9 @@ export class MeteoAlarmProvider {
       ...this.awareness(info.parameter ?? []),
       urgency: info.urgency ?? 'Unknown',
       certainty: info.certainty ?? 'Unknown',
+      // The time of issue, which the terms require carried and which sits on
+      // the alert rather than on the localised info block.
+      ...this.issue(alert.sent),
       onset,
       ...this.expiry(info.expires),
       areas: (info.area ?? [])
@@ -247,6 +285,12 @@ export class MeteoAlarmProvider {
     const level = part('awareness_level', 1);
     const awareness = part('awareness_type', 1);
     return { ...(level ? { level } : {}), ...(awareness ? { awareness } : {}) };
+  }
+
+  /** The issue time, where the message states one. */
+  private issue(sent?: string): Pick<WeatherAlert, 'issued'> {
+    const issued = seconds(sent);
+    return issued === undefined ? {} : { issued };
   }
 
   private expiry(expires?: string): Pick<WeatherAlert, 'expires'> {

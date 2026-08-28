@@ -61,8 +61,52 @@ export type DataKind =
  */
 export interface Attribution {
   name: string;
+  /**
+   * Where the credit points, which is also what any `notice` below must link
+   * to: every source here requires the same address for both, and a client
+   * that draws one link draws this one.
+   */
   url: string;
   provides: DataKind[];
+  /**
+   * The words this source requires shown, verbatim, where it requires
+   * particular ones.
+   *
+   * Absent is the common case and means the source asks only to be credited,
+   * so a client draws `name`. Present, it is not a suggestion: Open-Meteo's
+   * licence asks for "Weather data by Open-Meteo.com" beside the data,
+   * Zaragoza's reuse terms ask for "Origen de los datos: Ayuntamiento de
+   * Zaragoza", and MeteoAlarm's require the national met office that issued a
+   * warning to be named rather than the aggregator that carried it. Rendering
+   * `name` instead of these is a licence breach, not a style choice — which is
+   * why they travel on the wire rather than living in whichever client
+   * remembered to hard-code them.
+   *
+   * It is also not a translation target, which is the part that looks like a
+   * bug and is not. A licence names a string, so the string is what satisfies
+   * it: "Weather data by Open-Meteo.com" stays English in a Spanish client and
+   * "Origen de los datos: Ayuntamiento de Zaragoza" stays Spanish in an
+   * English one, because a translated credit names an entity the terms have
+   * never heard of. The three sources that do vary by language vary on their
+   * own, without this field being asked to: MeteoAlarm's is the met office's
+   * name read out of whichever CAP block matched the language, so it arrives
+   * already in it; Apple's is artwork rather than words and is fetched per
+   * language into `logo`; and OpenWeather's is a mark that carries no words to
+   * translate. A `notice` a client feels the urge to translate is one it has
+   * misread as UI copy.
+   */
+  notice?: string;
+  /**
+   * A statement the source requires published alongside its data.
+   *
+   * Separate from `notice` because it is a separate obligation and a client
+   * places it differently: the notice belongs beside the reading, and this
+   * belongs wherever the caveats go. MeteoAlarm is the reason it exists — every
+   * redistributor must carry its wording about the delay between their copy and
+   * the live site, because a stale severe-weather warning is the one thing on
+   * this endpoint that could get somebody hurt.
+   */
+  disclaimer?: string;
   /**
    * The licence or legal page the source requires linked, where it requires
    * one. Apple's is the attribution page named by the reading itself;
@@ -75,30 +119,58 @@ export interface Attribution {
    *
    * Apple is the reason this exists: WeatherKit's terms ask for the Apple
    * Weather wordmark beside the data, not merely the words, and the artwork is
-   * served per language. A source that asks only for a line of text has no
-   * `logo` and a client draws its `name` instead.
+   * served per language. OpenWeather asks for a mark too — its licence makes
+   * attribution obligatory from the free plan up, in the visible part of the
+   * application rather than on a legal page, and names its logo as the form it
+   * takes — so this is where that belongs when the assets are wired, not
+   * `notice`: there is no sentence it asks for.
+   *
+   * A source that asks only for a line of text has no `logo`, and one that
+   * asks only to be credited has neither, so a client draws its `name`.
    */
   logo?: AttributionLogo;
 }
 
-/** One mark, in the three appearances a client may need to draw it in. */
+/**
+ * One mark, in whichever appearances its publisher ships it in.
+ *
+ * Only `light` is promised, because only Apple ships the full set. Its
+ * attribution endpoint serves a wordmark for light and for dark backgrounds
+ * and a square mark besides, which is where this shape came from; OpenWeather
+ * publishes a single master logo and nothing else.
+ *
+ * A missing `dark` is the one absence that matters, and it is not an
+ * invitation to improvise: brand rules forbid recolouring a mark, so a client
+ * that has only a dark-on-transparent wordmark and a dark surface must give it
+ * a light surface of its own — a chip, a plate, a footer — rather than tint it
+ * or drop the credit. Missing `square` simply means the wordmark is the only
+ * form there is, so a layout too narrow for it needs to find the room.
+ */
 export interface AttributionLogo {
-  /** For drawing on a light background. */
+  /** For drawing on a light background. The one every publisher ships. */
   light: AttributionImage;
-  /** For drawing on a dark background. */
-  dark: AttributionImage;
-  /** The square mark, for where a wordmark will not fit. */
-  square: AttributionImage;
+  /** For drawing on a dark background, where the publisher draws one. */
+  dark?: AttributionImage;
+  /** The square mark, for where a wordmark will not fit, where there is one. */
+  square?: AttributionImage;
 }
 
-/** One image at the three pixel densities its publisher ships it in. */
+/**
+ * One image, at whichever pixel densities its publisher ships it in.
+ *
+ * `x1` is the base asset and the only one promised: Apple serves all three,
+ * and a publisher that ships a single high-resolution file has it here for a
+ * client to scale. Read as "the largest of these that exists", not as "the one
+ * matching this screen" — a wordmark drawn a hundred points wide is legible
+ * downscaled from any of them and blurry upscaled from none.
+ */
 export interface AttributionImage {
-  /** @1x */
+  /** @1x, or the single asset where that is all there is. */
   x1: string;
   /** @2x */
-  x2: string;
+  x2?: string;
   /** @3x */
-  x3: string;
+  x3?: string;
 }
 
 /** Where the reading is for, as the provider itself names it. */
@@ -265,6 +337,15 @@ export interface WeatherAlert {
   urgency: string;
   /** CAP certainty: `Observed`, `Likely`, `Possible`, `Unlikely`. */
   certainty: string;
+  /**
+   * Unix seconds the office issued it — CAP's `sent`, not its `onset`.
+   *
+   * Carried because MeteoAlarm's terms require it: "the time of issue of the
+   * information being redistributed must be included in any redistribution".
+   * It is also the only field that tells a reader whether an orange warning
+   * for tonight was written this morning or four days ago.
+   */
+  issued?: number;
   /** Unix seconds the warning starts. */
   onset: number;
   /** Unix seconds it lapses; absent where the sender set no end. */

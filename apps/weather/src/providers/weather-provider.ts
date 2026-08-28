@@ -85,7 +85,7 @@ export interface ProviderReading {
    * where the artwork lives; merged by the service into the source's line in
    * `attribution`.
    */
-  credit?: Pick<Attribution, 'licence' | 'logo'>;
+  credit?: Pick<Attribution, 'licence' | 'logo' | 'notice' | 'disclaimer'>;
   provides: DataKind[];
 }
 

@@ -232,7 +232,14 @@ export class AppleWeatherProvider extends WeatherProvider {
     const query = new URLSearchParams({
       dataSets: dataSets.join(','),
       timezone: this.zone(longitude),
-      ...(scope ? { countryCode: scope } : {}),
+      // `country`, which is not what Apple's own documentation for this
+      // endpoint calls it. It names the parameter `countryCode`, and
+      // `countryCode` is silently ignored: the request succeeds, the
+      // `weatherAlerts` dataset comes back absent, and the reading looks
+      // exactly like a place with no warnings in force. WeatherKit's engineers
+      // have said `country` on the forums and given a working URL with it, and
+      // it is what the availability endpoint takes as well.
+      ...(scope ? { country: scope } : {}),
     });
 
     const [body, credit] = await Promise.all([

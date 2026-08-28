@@ -5,7 +5,9 @@ import { createCache } from 'cache-manager';
 import { of, throwError } from 'rxjs';
 import { AppleWeatherProvider } from '../providers/apple-weather.provider';
 import { MeteoAlarmProvider } from '../providers/meteoalarm.provider';
+import { AirSources } from '../providers/air-sources';
 import { OpenMeteoAirProvider } from '../providers/open-meteo-air.provider';
+import { ZaragozaAirProvider } from '../providers/zaragoza-air.provider';
 import { OpenMeteoGeocoder } from '../providers/open-meteo-geocoder';
 import { OpenMeteoUvProvider } from '../providers/open-meteo-uv.provider';
 import { RegionAtlas } from '../providers/region-atlas';
@@ -13,6 +15,13 @@ import { OpenWeatherProvider } from '../providers/open-weather.provider';
 import { ClientKeys } from '../providers/client-keys';
 import { WeatherProvider } from '../providers/weather-provider';
 import { WeatherService } from './weather.service';
+
+/** The wording MeteoAlarm requires every redistributor to publish, verbatim. */
+const METEOALARM_DELAY =
+  'Time delays between this website and the www.meteoalarm.org website are ' +
+  'possible. For the most up-to-date awareness information as published by ' +
+  'the participating National Meteorological and Hydrological Services, ' +
+  'please refer to www.meteoalarm.org.';
 
 const HOUR = 3600;
 // Relative to the clock the test actually runs on: `uvProtectionUntil` is the
@@ -207,7 +216,10 @@ const build = (routes: Record<string, unknown>, keys: string[] = []) => {
   const provider = new OpenWeatherProvider(cache, http);
   const apple = new AppleWeatherProvider(cache, http);
   const uv = new OpenMeteoUvProvider(cache, http);
-  const air = new OpenMeteoAirProvider(cache, http);
+  const air = new AirSources(
+    new ZaragozaAirProvider(cache, http),
+    new OpenMeteoAirProvider(cache, http),
+  );
   const meteoalarm = new MeteoAlarmProvider(cache, http);
   const service = new WeatherService(
     new Map<string, WeatherProvider>([
@@ -231,7 +243,13 @@ const sentTo = (
   fragment: string,
 ) => headers[calls.findIndex((url) => url.includes(fragment))];
 
+// The city's own air network, answering with no stations — so the tests below
+// that are about something else keep the air they always had, from whoever the
+// provider is. The station that does answer has a test of its own.
+const noStations = { result: [] };
+
 const routes = {
+  'calidad-aire': noStations,
   '/data/2.5/weather': current(),
   '/data/2.5/forecast': forecast,
   '/air_pollution': air,
@@ -293,7 +311,136 @@ describe('getWeather', () => {
     await service.getWeather(question);
     await service.getWeather({ ...question, apiKey: 'someone-elses-key' });
 
-    expect(calls).toHaveLength(3);
+    // Four upstreams for a cell in Zaragoza: the weather, the forecast,
+    // OpenWeather's own air, and the city's network — which is asked because
+    // a station would beat all three, and which has nothing here. Asked once
+    // each: what the second caller costs is the point, and it is nothing.
+    expect(calls).toHaveLength(4);
+  });
+
+  it('lets the city that measured the air overrule the provider that modelled it', async () => {
+    // OpenWeather carries its own pollutants, and they are modelled off the
+    // same continental runs as everyone else's. A station a few streets from
+    // the cell is a different kind of answer, so it wins — and the credit
+    // moves with it, because the reader is owed the source that actually
+    // measured the number they are looking at.
+    const { service } = build({
+      ...routes,
+      'calidad-aire': {
+        result: [
+          {
+            id: 10,
+            idSparql: 38,
+            title: 'Centro',
+            // The station's own projected position, as `listado.json` carries
+            // it: EPSG:25830, which is Calle Albareda once converted.
+            geometry: {
+              type: 'Point',
+              coordinates: [676330.4048585793, 4613449.25781236],
+            },
+            observation: [
+              {
+                // Dated from now so the freshness rule sees a live document
+                // however long this suite lives.
+                publicationDate: new Date().toISOString(),
+                value: '130',
+                magnitud: 'PM10',
+                estado: 'Tiempo real',
+                periodo: 'Horario',
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    const reading = await service.getWeather({
+      apiKey: 'key',
+      latitude: 41.6561,
+      longitude: -0.8797,
+    });
+
+    // PM10 at 130 is band 4, against the band 2 OpenWeather's own fixture
+    // grades to — so this is the station's number, not the model's.
+    expect(reading.current.airQuality).toBe(4);
+    expect(reading.attribution).toEqual([
+      {
+        name: 'OpenWeather',
+        url: 'https://openweathermap.org/',
+        licence: 'https://creativecommons.org/licenses/by-sa/4.0/',
+        // No longer credited for the air it was asked for and did answer:
+        // somebody else's number is the one in the payload.
+        provides: ['weather', 'forecast'],
+      },
+      {
+        name: 'Ayuntamiento de Zaragoza',
+        url: 'https://www.zaragoza.es/sede/portal/medioambiente/calidad-aire/',
+        // The conditions themselves, not the decalogue that summarises them.
+        licence: 'https://www.zaragoza.es/sede/portal/aviso-legal#condiciones',
+        // The wording the city's reuse terms name, in its own language.
+        notice: 'Origen de los datos: Ayuntamiento de Zaragoza',
+        // And what the same terms require said beyond the credit: the date
+        // the data was last updated, and that the city does not endorse the
+        // reuse. Composed per reading, because the date is the station's own
+        // hour rather than the response's `lastUpdated`.
+        disclaimer: expect.stringContaining(
+          'no participa, patrocina ni apoya esta reutilización',
+        ) as unknown as string,
+        provides: ['airQuality'],
+      },
+    ]);
+  });
+
+  it('shows the mark OpenWeather requires, where this deployment serves one', async () => {
+    // Its licence asks for the logo, not for a line of text — so the credit is
+    // a file to point at, and it only exists once a deployment has been told
+    // its own public address. A URL built without one would 404, and a broken
+    // image is a worse credit than none.
+    process.env.WEATHER_ASSETS_URL = 'https://api.example.com/assets/';
+    try {
+      const { service } = build(routes);
+
+      const reading = await service.getWeather({
+        apiKey: 'key',
+        latitude: 41.6,
+        longitude: -0.9,
+      });
+
+      const openweather = reading.attribution.find(
+        (source) => source.name === 'OpenWeather',
+      );
+      // The trailing slash on the configured base is not doubled into the path.
+      expect(openweather?.logo).toEqual({
+        light: {
+          x1: 'https://api.example.com/assets/openweather/openweather-logo.png',
+          x2: 'https://api.example.com/assets/openweather/openweather-logo@2x.png',
+          x3: 'https://api.example.com/assets/openweather/openweather-logo@3x.png',
+        },
+      });
+      // One master mark, and its brand rules forbid deriving the others.
+      expect(openweather?.logo?.dark).toBeUndefined();
+      expect(openweather?.logo?.square).toBeUndefined();
+    } finally {
+      delete process.env.WEATHER_ASSETS_URL;
+    }
+  });
+
+  it('falls back to the name and the licence where no assets are served', async () => {
+    const { service } = build(routes);
+
+    const reading = await service.getWeather({
+      apiKey: 'key',
+      latitude: 41.6,
+      longitude: -0.9,
+    });
+
+    const openweather = reading.attribution.find(
+      (source) => source.name === 'OpenWeather',
+    );
+    expect(openweather?.logo).toBeUndefined();
+    expect(openweather?.licence).toBe(
+      'https://creativecommons.org/licenses/by-sa/4.0/',
+    );
   });
 
   it('resolves a place name and keeps the name it was asked about', async () => {
@@ -333,6 +480,7 @@ describe('getWeather', () => {
         name: 'Open-Meteo',
         url: 'https://open-meteo.com/',
         licence: 'https://creativecommons.org/licenses/by/4.0/',
+        notice: 'Weather data by Open-Meteo.com',
         provides: ['uv'],
       },
     ]);
@@ -410,6 +558,31 @@ describe('getWeather', () => {
       sender: 'AEMET. Agencia Estatal de Meteorologia',
       url: 'https://www.aemet.es/es/eltiempo/prediccion/avisos',
     });
+  });
+
+  it('names the met office that issued a warning, not the aggregator', async () => {
+    // MeteoAlarm's own terms: warnings from a single country must be credited
+    // to that country's National Meteorological and Hydrological Service by
+    // name, and only warnings spanning more than one are credited to EUMETNET.
+    // One country's feed is asked at a time, so the office on the warnings
+    // actually shown is the one owed the line — the aggregator keeps `name`,
+    // and the credit a client is required to draw is `notice`.
+    const { service } = build(routes);
+
+    const reading = await service.getWeather({
+      apiKey: 'key',
+      latitude: 41.6,
+      longitude: -0.9,
+      includeAlerts: true,
+    });
+
+    const meteoalarm = reading.attribution.find(
+      (source) => source.name === 'MeteoAlarm',
+    );
+    expect(meteoalarm?.notice).toBe('AEMET. Agencia Estatal de Meteorologia');
+    // And the delay wording travels with it, whether or not anything is in
+    // force: it is the reason the alerts cache is five minutes wide.
+    expect(meteoalarm?.disclaimer).toBe(METEOALARM_DELAY);
   });
 
   it('drops a warning that has already lapsed', async () => {
@@ -517,7 +690,12 @@ describe('getWeather', () => {
     expect(reading.attribution).toContainEqual({
       name: 'MeteoAlarm',
       url: 'https://meteoalarm.org/',
-      licence: 'https://meteoalarm.org/en/live/page/disclaimer',
+      licence: 'https://meteoalarm.org/en/page/terms-and-conditions',
+      // No warning is on show, so there is no met office to name and the
+      // aggregator's own credit stands. The disclaimer travels regardless:
+      // "nothing is in force here" is a claim about live data too.
+      notice: 'EUMETNET – MeteoAlarm',
+      disclaimer: METEOALARM_DELAY,
       provides: ['alerts'],
     });
   });
@@ -1169,6 +1347,36 @@ describe('apple weather', () => {
     ]);
   });
 
+  it('finds the country itself when the caller sends only a coordinate', async () => {
+    // Apple does no geocoding, so a lat/lon question used to reach WeatherKit
+    // with no country on it — and WeatherKit answers no warnings at all
+    // without one, which looks exactly like fair weather. The atlas holds the
+    // outlines of every MeteoAlarm region, so it can say the coordinate is in
+    // Spain without anybody being asked.
+    const { service, calls } = build(appleWarnings);
+
+    const reading = await service.getWeather(ask({ includeAlerts: true }));
+
+    expect(asked(calls, 'weatherkit.apple.com')).toContain('country=ES');
+    expect(reading.alerts?.map((alert) => alert.id)).toEqual([
+      'rain-now',
+      'wind-now',
+    ]);
+  });
+
+  it('asks for no warnings where it cannot place the coordinate', async () => {
+    // Lima. The atlas covers the countries MeteoAlarm participates in and no
+    // others, and a guess here would be a whole country's warnings for the
+    // wrong country — so nothing is sent and the caller has to name their own.
+    const { service, calls } = build(appleWarnings);
+
+    await service.getWeather(
+      ask({ includeAlerts: true, latitude: -12.0464, longitude: -77.0428 }),
+    );
+
+    expect(asked(calls, 'weatherkit.apple.com')).not.toContain('country=');
+  });
+
   it('uses its own warnings and leaves MeteoAlarm out of it', async () => {
     const { service, calls } = build(appleWarnings);
 
@@ -1177,7 +1385,10 @@ describe('apple weather', () => {
     );
 
     expect(asked(calls, 'feeds.meteoalarm.org')).toBeUndefined();
-    expect(asked(calls, 'weatherkit.apple.com')).toContain('countryCode=ES');
+    // `country`, not the `countryCode` Apple's documentation names: that one
+    // is ignored and the warnings simply never arrive.
+    expect(asked(calls, 'weatherkit.apple.com')).toContain('country=ES');
+    expect(asked(calls, 'weatherkit.apple.com')).not.toContain('countryCode=');
     // Most severe first, and the one whose event has already ended is gone.
     expect(reading.alerts?.map((alert) => alert.id)).toEqual([
       'rain-now',
@@ -1414,6 +1625,7 @@ describe('apple weather', () => {
       name: 'Open-Meteo',
       url: 'https://open-meteo.com/',
       licence: 'https://creativecommons.org/licenses/by/4.0/',
+      notice: 'Weather data by Open-Meteo.com',
       provides: ['geocoding'],
     });
   });

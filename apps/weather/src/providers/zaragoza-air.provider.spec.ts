@@ -9,22 +9,23 @@ import { ZaragozaAirProvider } from './zaragoza-air.provider';
 const CENTRE = { latitude: 41.66, longitude: -0.88 };
 
 /**
- * A station as the portal publishes it: the RISP envelope, a GeoJSON point
- * with longitude first, and the readings hanging off it in a list.
+ * One hourly reading as the portal publishes it: the RISP envelope, the
+ * station embedded in the record with its position in flat fields, and the
+ * pollutant named by a nested object.
  */
-const station = (
-  title: string,
-  coordinates: number[],
-  mediciones: Array<{ titulo: string; valor: number | string }>,
+const reading = (
+  station: { id: string; latitud: number; longitud: number },
+  contaminante: string,
+  valor: number | string,
 ) => ({
-  id: title,
-  title,
-  geometry: { type: 'Point', coordinates },
-  mediciones,
+  estacion: { title: `Estación ${station.id}`, ...station },
+  contaminante: { id: contaminante, title: contaminante },
+  fecha: '2026-08-28T09:00:00Z',
+  valor,
 });
 
-const centre = (readings: Array<{ titulo: string; valor: number | string }>) =>
-  station('Centro', [-0.8797, 41.6561], readings);
+const CENTRO = { id: '38', latitud: 41.6561, longitud: -0.8797 };
+const RENOVALES = { id: '36', latitud: 41.6437, longitud: -0.8869 };
 
 const fakeHttp = (routes: Record<string, unknown>) => {
   const calls: string[] = [];
@@ -62,17 +63,15 @@ const model = {
 
 describe('ZaragozaAirProvider', () => {
   it('grades the nearest station on the European table', async () => {
-    // NO2 at 62 is band 3 and the poorest of the four, so the grade is the
+    // NO2 at 55 is band 3 and the poorest of the four, so the grade is the
     // station's worst pollutant rather than an average of them.
     const { zaragoza } = build({
       'zaragoza.es': {
         result: [
-          centre([
-            { titulo: 'NO2', valor: 55 },
-            { titulo: 'PM10', valor: 20 },
-            { titulo: 'O3', valor: 41 },
-            { titulo: 'SO2', valor: 6 },
-          ]),
+          reading(CENTRO, 'NO2', 55),
+          reading(CENTRO, 'PM10', 20),
+          reading(CENTRO, 'O3', 41),
+          reading(CENTRO, 'SO2', 6),
         ],
       },
     });
@@ -81,15 +80,13 @@ describe('ZaragozaAirProvider', () => {
   });
 
   it('reads the pollutants the portal spells out in Spanish', async () => {
-    // The same five, named as the station detail names them, with a comma for
-    // the decimal point. PM2.5 at 16.4 is band 3.
+    // The same five, named as the feed names them, with a comma for the
+    // decimal point. PM2.5 at 16,4 is band 3.
     const { zaragoza } = build({
       'zaragoza.es': {
         result: [
-          centre([
-            { titulo: 'Partículas PM2,5', valor: '16,4' },
-            { titulo: 'Dióxido de nitrógeno', valor: '21' },
-          ]),
+          reading(CENTRO, 'Partículas PM2,5', '16,4'),
+          reading(CENTRO, 'Dióxido de nitrógeno', '21'),
         ],
       },
     });
@@ -97,24 +94,46 @@ describe('ZaragozaAirProvider', () => {
     expect(await zaragoza.read(CENTRE.latitude, CENTRE.longitude)).toBe(3);
   });
 
+  it('groups a document that speaks for the whole network by station', async () => {
+    // One call, every station, and the records interleaved as the feed sends
+    // them. Grouping by the station's own id is what makes the un-parameterised
+    // call worth making — and Renovales' PM10 must not land on Centro.
+    const { zaragoza } = build({
+      'zaragoza.es': {
+        result: [
+          reading(RENOVALES, 'PM10', 130),
+          reading(CENTRO, 'NO2', 21),
+          reading(RENOVALES, 'NO2', 12),
+        ],
+      },
+    });
+
+    // Centro is nearest and holds only its own NO2, which is band 2 — not the
+    // band 4 it would be if Renovales' PM10 had leaked into it.
+    expect(await zaragoza.read(CENTRE.latitude, CENTRE.longitude)).toBe(2);
+  });
+
   it('refuses a reading whose number it cannot identify', async () => {
-    // Two numbers and no field that says which is the measurement: the record
-    // names NO2 and could be read as 38 µg/m³ or as station 38. A plausible
-    // wrong number is worse than no number, so this answers nothing and the
-    // model behind it gets to speak instead.
+    // The pollutant is named but no field says which number is the measurement.
+    // A plausible wrong value is worse than none, so this answers nothing and
+    // the model behind it speaks instead.
     const { sources } = build({
       'zaragoza.es': {
-        result: [station('Centro', [-0.8797, 41.6561], [])].map((base) => ({
-          ...base,
-          mediciones: [{ titulo: 'NO2', estacion: 38, hora: 12 } as never],
-        })),
+        result: [
+          {
+            estacion: { title: 'Centro', ...CENTRO },
+            contaminante: { id: 'NO2', title: 'NO2' },
+            fecha: '2026-08-28T09:00:00Z',
+            altitud: 199,
+          },
+        ],
       },
       'air-quality-api.open-meteo.com': model,
     });
 
-    const reading = await sources.read(CENTRE.latitude, CENTRE.longitude);
-    expect(reading?.index).toBe(2);
-    expect(reading?.source.name).toBe('Open-Meteo');
+    const answer = await sources.read(CENTRE.latitude, CENTRE.longitude);
+    expect(answer?.index).toBe(2);
+    expect(answer?.source.name).toBe('Open-Meteo');
   });
 
   it('ignores a station too far away to be speaking about you', async () => {
@@ -122,27 +141,23 @@ describe('ZaragozaAirProvider', () => {
     // kilometres off. Inside the box, outside the range: the box is only a gate
     // and the distance is what actually decides.
     const { sources } = build({
-      'zaragoza.es': { result: [centre([{ titulo: 'NO2', valor: 55 }])] },
+      'zaragoza.es': { result: [reading(CENTRO, 'NO2', 55)] },
       'air-quality-api.open-meteo.com': model,
     });
 
-    const reading = await sources.read(41.71, -1.02);
-    expect(reading?.source.name).toBe('Open-Meteo');
+    const answer = await sources.read(41.71, -1.02);
+    expect(answer?.source.name).toBe('Open-Meteo');
   });
 
   it('skips a station that reported nothing for one that did', async () => {
     // The nearest station is offline — present, in range, measuring nothing —
-    // and the next one along is not. Ranked by distance and taken by whether
-    // it answered, so the hole does not shadow the reading behind it.
+    // and the next one along is not. Ranked by distance and taken by whether it
+    // graded, so the hole does not shadow the reading behind it.
     const { zaragoza } = build({
       'zaragoza.es': {
         result: [
-          centre([{ titulo: 'NO2', valor: 'S/D' }]),
-          station(
-            'Renovales',
-            [-0.8869, 41.6437],
-            [{ titulo: 'PM10', valor: 130 }],
-          ),
+          reading(CENTRO, 'NO2', 'S/D'),
+          reading(RENOVALES, 'PM10', 130),
         ],
       },
     });
@@ -154,7 +169,7 @@ describe('ZaragozaAirProvider', () => {
     const { zaragoza } = build({});
 
     expect(zaragoza.covers(41.66, -0.88)).toBe(true);
-    // Madrid, Barcelona, and a point that shares the latitude but not the city.
+    // Madrid, and a point that shares the latitude but not the city.
     expect(zaragoza.covers(40.4168, -3.7038)).toBe(false);
     expect(zaragoza.covers(41.3874, 2.1686)).toBe(false);
   });
@@ -165,11 +180,11 @@ describe('ZaragozaAirProvider', () => {
       'air-quality-api.open-meteo.com': model,
     });
 
-    const reading = await sources.read(CENTRE.latitude, CENTRE.longitude);
+    const answer = await sources.read(CENTRE.latitude, CENTRE.longitude);
     // The whole point of the fall-through: a city that cannot answer must not
-    // be able to take the air away from a caller who would have had it.
-    expect(reading?.index).toBe(2);
-    expect(reading?.source.name).toBe('Open-Meteo');
+    // take the air away from a caller who would have had it.
+    expect(answer?.index).toBe(2);
+    expect(answer?.source.name).toBe('Open-Meteo');
     expect(calls.some((url) => url.includes('zaragoza.es'))).toBe(true);
   });
 });
@@ -177,13 +192,13 @@ describe('ZaragozaAirProvider', () => {
 describe('AirSources', () => {
   it('prefers the city that measured it to the model that guessed', async () => {
     const { sources, calls } = build({
-      'zaragoza.es': { result: [centre([{ titulo: 'NO2', valor: 55 }])] },
+      'zaragoza.es': { result: [reading(CENTRO, 'NO2', 55)] },
       'air-quality-api.open-meteo.com': model,
     });
 
-    const reading = await sources.read(CENTRE.latitude, CENTRE.longitude);
-    expect(reading?.index).toBe(3);
-    expect(reading?.source.name).toBe('Ayuntamiento de Zaragoza');
+    const answer = await sources.read(CENTRE.latitude, CENTRE.longitude);
+    expect(answer?.index).toBe(3);
+    expect(answer?.source.name).toBe('Ayuntamiento de Zaragoza');
     // And the model is not asked at all, rather than asked and discarded.
     expect(calls.some((url) => url.includes('open-meteo'))).toBe(false);
   });
@@ -193,8 +208,8 @@ describe('AirSources', () => {
       'air-quality-api.open-meteo.com': model,
     });
 
-    const reading = await sources.read(40.4168, -3.7038);
-    expect(reading?.index).toBe(2);
+    const answer = await sources.read(40.4168, -3.7038);
+    expect(answer?.index).toBe(2);
     expect(calls.some((url) => url.includes('zaragoza.es'))).toBe(false);
   });
 });

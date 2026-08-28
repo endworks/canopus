@@ -10,12 +10,18 @@ import { upstreamGet } from './upstream';
 /**
  * The city's own network, published as open data under its RISP terms.
  *
- * One document for the whole network rather than one per station: the portal
- * serves the same shape for the bike docks, and asking it once an hour for
- * eight stations is cheaper for them and for us than asking it eight times.
+ * The hourly readings, asked for without naming a station, so one document
+ * covers the whole network: every record carries the station that made it, so
+ * a single call an hour answers for everyone in the city rather than one call
+ * per station per cell.
+ *
+ * The neighbouring path — `estacion/?estacion=40` — looks like the same thing
+ * and is not: it answers a portal page with `Content-Type: application/json`
+ * and HTML in the body, which is a trap worth naming here so nobody
+ * rediscovers it. `horaria.json` is the service.
  */
 const API_URL =
-  'https://www.zaragoza.es/sede/servicio/calidad-aire/estacion.json';
+  'https://www.zaragoza.es/sede/servicio/calidad-aire/estacion/horaria.json';
 
 /** Where a reader goes to see the network this answered from. */
 const PORTAL_URL =
@@ -93,27 +99,30 @@ const BY_ALIAS = new Map<string, keyof Concentrations>(
 );
 
 /**
- * One station as the portal publishes it.
+ * One hourly reading, as the portal publishes it.
  *
- * Loose on purpose, and the only place in this file that knows the feed's
- * shape. The portal serves its datasets through one templating layer and names
- * the same idea differently in each — the bike docks call a live reading
- * `bicisDisponibles`, and there is no reason to expect the air to have picked
- * the same conventions — so what is named here is only the part the RISP
- * envelope guarantees, `id`, `title` and `geometry`, and the readings are found
- * by the scan below rather than by a key this file has to be right about.
+ * The RISP envelope every zaragoza.es dataset comes in, with the reading's own
+ * station embedded in each record rather than listed once — which is what makes
+ * the un-parameterised call worth making: one document, every station, grouped
+ * back together here.
+ *
+ * The station's position is a pair of flat fields and not a GeoJSON point, so
+ * there is no coordinate order to get backwards; and the pollutant is a nested
+ * object whose `title` names it, rather than a loose string to be recognised
+ * among its neighbours.
  */
-type Station = {
-  id?: string | number;
-  title?: string;
-  geometry?: { coordinates?: number[] };
+type Reading = {
+  estacion?: {
+    id?: string | number;
+    title?: string;
+    latitud?: string | number;
+    longitud?: string | number;
+  };
+  contaminante?: { id?: string | number; title?: string };
 } & Record<string, unknown>;
 
-/** The RISP envelope every zaragoza.es dataset comes in. */
-type StationsResponse = { result?: Station[] };
-
-/** One reading, whichever of the portal's spellings it arrived under. */
-type Reading = Record<string, unknown>;
+/** The RISP envelope, paginated like the rest of the portal's datasets. */
+type HourlyResponse = { result?: Reading[] };
 
 /** How far apart two coordinates are, in kilometres. */
 const distance = (
@@ -147,43 +156,44 @@ const numeric = (value: unknown): number | undefined => {
 };
 
 /**
- * One pollutant out of one reading, or nothing where it is not certain.
+ * What one reading measured, or nothing where it is not certain.
  *
- * The record names its pollutant in one field and carries the number in
- * another, and only the second has a promised name — so the pollutant is
- * looked for among the strings, and the number is taken from a field that says
- * it is the value and from nowhere else.
- *
- * The tempting fallback is "the only number in the record", and it is a trap:
- * `{ titulo: 'NO2', estacion: 38, hora: 12 }` has exactly one number left once
- * the station is discounted, and it is the hour. This feeds an index people
- * read as a health warning, so a record that does not say which number it means
- * is refused, and the model behind it answers instead.
+ * The pollutant is `contaminante.title`, which is the one part of this the
+ * feed names unambiguously. The number is taken from a field that says it is
+ * the value and from nowhere else: a record carries a station id, an altitude
+ * and an hour besides, and reading the wrong one would grade the air on a
+ * street number. Refusing an ambiguous record is the point — this feeds an
+ * index people read as a health warning, and a plausible wrong value is worse
+ * than the model answer it displaces.
  */
 const measurement = (
   record: Reading,
 ): [keyof Concentrations, number] | undefined => {
-  const pollutant = Object.values(record)
-    .filter((value): value is string => typeof value === 'string')
-    .map((value) => BY_ALIAS.get(normalise(value)))
-    .find((match): match is keyof Concentrations => match !== undefined);
+  const named = record.contaminante?.title;
+  const pollutant = named ? BY_ALIAS.get(normalise(named)) : undefined;
   if (!pollutant) return undefined;
 
-  const named = Object.entries(record).find(([key]) =>
+  const value = Object.entries(record).find(([key]) =>
     VALUE_KEYS.includes(normalise(key)),
   );
-  const measured = named ? numeric(named[1]) : undefined;
+  const measured = value ? numeric(value[1]) : undefined;
   return measured === undefined ? undefined : [pollutant, measured];
 };
 
 /**
- * What a station is measuring, in µg/m³.
+ * The readings grouped back into the stations that made them.
  *
- * Two shapes are read, because the portal uses both across its datasets and
- * promises neither: the pollutants may be fields on the station itself
- * (`{ no2: 21 }`) or a list of readings hanging off it
- * (`[{ titulo: 'NO2', valor: 21 }]`). The list is read first, so a dated
- * reading wins over a summary field of the same name.
+ * Keyed by the station's own id rather than by its name, because two of the
+ * network's stations share a street and a name is not a key.
+ */
+interface Station {
+  latitude: number;
+  longitude: number;
+  concentrations: Concentrations;
+}
+
+/**
+ * Every station the document speaks for, and what each is measuring in µg/m³.
  *
  * The units are not converted. Spanish networks publish these five in µg/m³,
  * which is what the EEA's table is in — the exception is CO, published in
@@ -191,31 +201,33 @@ const measurement = (
  * need converting here and would otherwise grade clean air as hazardous, which
  * is the one failure of this file worth watching for.
  */
-const concentrations = (station: Station): Concentrations => {
-  const found: Concentrations = {};
-  const keep = (pollutant: keyof Concentrations, value: number) => {
-    if (found[pollutant] === undefined) found[pollutant] = value;
-  };
-
-  const readings = Object.values(station)
-    .filter((value): value is Reading[] => Array.isArray(value))
-    .flat()
-    .filter(
-      (entry): entry is Reading => typeof entry === 'object' && entry !== null,
-    );
+const stations = (readings: Reading[]): Station[] => {
+  const found = new Map<string, Station>();
 
   for (const record of readings) {
+    const id = record.estacion?.id;
+    const latitude = numeric(record.estacion?.latitud);
+    const longitude = numeric(record.estacion?.longitud);
+    if (id === undefined || latitude === undefined || longitude === undefined) {
+      continue;
+    }
+
+    const station = found.get(String(id)) ?? {
+      latitude,
+      longitude,
+      concentrations: {},
+    };
+    found.set(String(id), station);
+
     const measured = measurement(record);
-    if (measured) keep(...measured);
+    // First one wins: the document is an hour's worth and a station may report
+    // the same pollutant more than once in it.
+    if (measured && station.concentrations[measured[0]] === undefined) {
+      station.concentrations[measured[0]] = measured[1];
+    }
   }
 
-  for (const [key, value] of Object.entries(station)) {
-    const pollutant = BY_ALIAS.get(normalise(key));
-    const measured = numeric(value);
-    if (pollutant && measured !== undefined) keep(pollutant, measured);
-  }
-
-  return found;
+  return [...found.values()];
 };
 
 /**
@@ -282,49 +294,38 @@ export class ZaragozaAirProvider extends AirSource {
    */
   async read(latitude: number, longitude: number): Promise<number | undefined> {
     // One cache entry for the whole network, not one per cell. The document is
-    // the same for every caller in the city, and the stations publish hourly,
-    // so this is one upstream call an hour however many people ask.
+    // the same for every caller in the city and the stations publish hourly, so
+    // this is one upstream call an hour however many people ask.
     const body = await this.cacheManager.wrap(
-      'zaragoza/air/stations',
-      () => upstreamGet<StationsResponse>(this.httpService, API_URL, this.name),
+      'zaragoza/air/hourly',
+      () => upstreamGet<HourlyResponse>(this.httpService, API_URL, this.name),
       TTL.airQuality,
     );
 
-    const nearest = this.nearest(body?.result ?? [], latitude, longitude);
-    if (!nearest) return undefined;
-
-    return europeanAqi(concentrations(nearest));
+    return this.nearest(stations(body?.result ?? []), latitude, longitude);
   }
 
   /**
-   * The closest station within range, and only if it is measuring something.
+   * The closest station within range that is actually measuring something.
    *
-   * A station that is in range but reported nothing this hour — offline, or
+   * A station in range that reported nothing this hour — offline, or
    * mid-calibration — must not shadow one a little further away that did, so
-   * this ranks by distance and takes the first that actually answers rather
-   * than taking the first and hoping.
+   * this ranks by distance and takes the first that grades rather than taking
+   * the first and hoping.
    */
   private nearest(
-    stations: Station[],
+    network: Station[],
     latitude: number,
     longitude: number,
-  ): Station | undefined {
-    return stations
-      .map((station) => {
-        // GeoJSON order: longitude first. Getting this backwards puts every
-        // station in the Indian Ocean and quietly disables the whole provider,
-        // which is exactly the sort of failure the fall-through would hide.
-        const [lon, lat] = station.geometry?.coordinates ?? [];
-        if (typeof lat !== 'number' || typeof lon !== 'number')
-          return undefined;
-        return { station, km: distance(latitude, longitude, lat, lon) };
-      })
-      .filter(
-        (entry): entry is { station: Station; km: number } =>
-          entry !== undefined && entry.km <= MAX_DISTANCE_KM,
-      )
+  ): number | undefined {
+    return network
+      .map((station) => ({
+        station,
+        km: distance(latitude, longitude, station.latitude, station.longitude),
+      }))
+      .filter((entry) => entry.km <= MAX_DISTANCE_KM)
       .sort((a, b) => a.km - b.km)
-      .map((entry) => entry.station)
-      .find((station) => europeanAqi(concentrations(station)) !== undefined);
+      .map((entry) => europeanAqi(entry.station.concentrations))
+      .find((grade) => grade !== undefined);
   }
 }

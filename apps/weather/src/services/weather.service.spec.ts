@@ -249,7 +249,7 @@ const sentTo = (
 const noStations = { result: [] };
 
 const routes = {
-  'calidad-aire/estacion.json': noStations,
+  'calidad-aire': noStations,
   '/data/2.5/weather': current(),
   '/data/2.5/forecast': forecast,
   '/air_pollution': air,
@@ -326,13 +326,18 @@ describe('getWeather', () => {
     // measured the number they are looking at.
     const { service } = build({
       ...routes,
-      'calidad-aire/estacion.json': {
+      'calidad-aire': {
         result: [
           {
-            id: 'Centro',
-            title: 'Centro',
-            geometry: { type: 'Point', coordinates: [-0.8797, 41.6561] },
-            mediciones: [{ titulo: 'PM10', valor: 130 }],
+            estacion: {
+              id: '38',
+              title: 'Centro',
+              latitud: 41.6561,
+              longitud: -0.8797,
+            },
+            contaminante: { id: 'PM10', title: 'PM10' },
+            fecha: '2026-08-28T09:00:00Z',
+            valor: 130,
           },
         ],
       },

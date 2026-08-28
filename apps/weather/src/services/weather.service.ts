@@ -25,7 +25,7 @@ import { ClientKeys } from '../providers/client-keys';
 import { MeteoAlarmProvider } from '../providers/meteoalarm.provider';
 import { OpenMeteoGeocoder } from '../providers/open-meteo-geocoder';
 import { RegionAtlas } from '../providers/region-atlas';
-import { OpenMeteoAirProvider } from '../providers/open-meteo-air.provider';
+import { AirSources } from '../providers/air-sources';
 import { OpenMeteoUvProvider } from '../providers/open-meteo-uv.provider';
 import { WEATHER_PROVIDERS } from '../providers/registry';
 import {
@@ -60,7 +60,7 @@ export class WeatherService {
     @Inject(WEATHER_PROVIDERS)
     private readonly providers: Map<string, WeatherProvider>,
     private readonly uvProvider: OpenMeteoUvProvider,
-    private readonly airProvider: OpenMeteoAirProvider,
+    private readonly air: AirSources,
     private readonly alertProvider: MeteoAlarmProvider,
     private readonly atlas: RegionAtlas,
     private readonly geocoder: OpenMeteoGeocoder,
@@ -122,8 +122,14 @@ export class WeatherService {
     // The air asks no permission the way the sun does. It has always come back
     // with the reading where the provider carried it, and a caller who never
     // sent a header for it should not lose it because their provider changed —
-    // so where the provider has no concentrations, Open-Meteo is asked for
-    // them. It is the party already standing in for the sun.
+    // so where the provider has no concentrations, somebody else is asked for
+    // them.
+    //
+    // Unlike the sun, carrying it is no longer the end of the question. Every
+    // provider's own air is modelled off the same continental runs, and a city
+    // that measures its own is simply nearer the truth than any of them — so
+    // this says who already answered rather than who gets asked, and
+    // `AirSources` decides whether anyone can beat it. See `AirSources.read`.
     const ownAir = provider.info.airQuality;
 
     // Started here rather than inside the gather below so it flies alongside
@@ -161,11 +167,9 @@ export class WeatherService {
         : undefined,
       // Swallowed for the same reason: the air is one field, and a second
       // service being down should cost that field rather than the temperature.
-      ownAir
-        ? undefined
-        : this.airProvider
-            .read(cell.latitude, cell.longitude)
-            .catch(() => undefined),
+      this.air
+        .read(cell.latitude, cell.longitude, ownAir)
+        .catch(() => undefined),
     ]);
 
     const warnings = ownAlerts
@@ -178,7 +182,12 @@ export class WeatherService {
         name: provider.info.name,
         url: provider.info.url,
         provides: [
-          ...reading.provides,
+          // Minus the air where somebody else's measurement displaced the
+          // provider's own: two sources credited for one field would have the
+          // reader believe the number came from whichever they looked at first.
+          ...reading.provides.filter(
+            (kind) => kind !== 'airQuality' || borrowedAir === undefined,
+          ),
           ...((cell.geocoded && !cell.borrowed
             ? ['geocoding']
             : []) as DataKind[]),
@@ -204,20 +213,23 @@ export class WeatherService {
         provides: ['uv'],
       });
     }
-    // The same service, and a line of its own rather than a second kind bolted
-    // onto the sun's: a reader is owed what each source gave, and the two are
-    // separate answers that happen to come from one company. Merged where both
-    // landed, so it is credited once.
+    // Whichever source actually answered, which is no longer knowable in
+    // advance: a city's own network speaks for its own few square kilometres
+    // and the model speaks for everywhere else, and the reader is owed the one
+    // that measured their air rather than the one that usually does.
+    //
+    // Merged where the sun came from the same place — Open-Meteo answers both,
+    // and they are two separate answers that happen to come from one company,
+    // so one line credited for both rather than the company named twice.
     if (borrowedAir !== undefined) {
-      const sun = attribution.find(
-        (source) => source.url === this.airProvider.url,
-      );
-      if (sun) sun.provides = [...sun.provides, 'airQuality'];
+      const { source } = borrowedAir;
+      const same = attribution.find((credited) => credited.url === source.url);
+      if (same) same.provides = [...same.provides, 'airQuality'];
       else
         attribution.push({
-          name: this.airProvider.name,
-          url: this.airProvider.url,
-          licence: this.airProvider.licence,
+          name: source.name,
+          url: source.url,
+          licence: source.licence,
           provides: ['airQuality'],
         });
     }
@@ -248,9 +260,9 @@ export class WeatherService {
       current: {
         ...reading.current,
         ...(uv ?? {}),
-        // Only where the provider had none of its own: a reading that already
-        // carries a grade is not regraded from somebody else's air.
-        ...(borrowedAir !== undefined ? { airQuality: borrowedAir } : {}),
+        // Whichever grade won: the provider's own, or a measurement from a
+        // source near enough to overrule it.
+        ...(borrowedAir !== undefined ? { airQuality: borrowedAir.index } : {}),
       },
       forecast: reading.forecast,
       ...(warnings

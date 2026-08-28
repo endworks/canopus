@@ -3,6 +3,7 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Inject, Injectable } from '@nestjs/common';
 import { Cache } from 'cache-manager';
 import { TTL } from '../utils';
+import { AirSource } from './air-source';
 import { europeanAqi } from './european-aqi';
 import { upstreamGet } from './upstream';
 
@@ -34,18 +35,33 @@ type AirResponse = {
  * in one place is that OpenWeather's air and Apple's air are graded by the same
  * table, and taking a ready-made number from one of them would put that back to
  * two scales wearing one name.
+ *
+ * It is also the source of last resort — the one that covers everywhere, so
+ * that a city's own network can be tried first and cost nothing when it has
+ * nothing to say. See `AirSources`.
  */
 @Injectable()
-export class OpenMeteoAirProvider {
+export class OpenMeteoAirProvider extends AirSource {
   readonly name = 'Open-Meteo';
   readonly url = 'https://open-meteo.com/';
   /** Open-Meteo publishes under CC BY 4.0, which asks for the credit back. */
   readonly licence = 'https://creativecommons.org/licenses/by/4.0/';
+  readonly measured = false;
 
   constructor(
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
     private httpService: HttpService,
-  ) {}
+  ) {
+    super();
+  }
+
+  /**
+   * Everywhere. It is a global model, so there is no cell it has no answer
+   * for — which is what makes it the one every other source falls back to.
+   */
+  covers(): boolean {
+    return true;
+  }
 
   async read(latitude: number, longitude: number): Promise<number | undefined> {
     const query = new URLSearchParams({

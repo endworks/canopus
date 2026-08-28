@@ -5,7 +5,9 @@ import { createCache } from 'cache-manager';
 import { of, throwError } from 'rxjs';
 import { AppleWeatherProvider } from '../providers/apple-weather.provider';
 import { MeteoAlarmProvider } from '../providers/meteoalarm.provider';
+import { AirSources } from '../providers/air-sources';
 import { OpenMeteoAirProvider } from '../providers/open-meteo-air.provider';
+import { ZaragozaAirProvider } from '../providers/zaragoza-air.provider';
 import { OpenMeteoGeocoder } from '../providers/open-meteo-geocoder';
 import { OpenMeteoUvProvider } from '../providers/open-meteo-uv.provider';
 import { RegionAtlas } from '../providers/region-atlas';
@@ -207,7 +209,10 @@ const build = (routes: Record<string, unknown>, keys: string[] = []) => {
   const provider = new OpenWeatherProvider(cache, http);
   const apple = new AppleWeatherProvider(cache, http);
   const uv = new OpenMeteoUvProvider(cache, http);
-  const air = new OpenMeteoAirProvider(cache, http);
+  const air = new AirSources(
+    new ZaragozaAirProvider(cache, http),
+    new OpenMeteoAirProvider(cache, http),
+  );
   const meteoalarm = new MeteoAlarmProvider(cache, http);
   const service = new WeatherService(
     new Map<string, WeatherProvider>([
@@ -231,7 +236,13 @@ const sentTo = (
   fragment: string,
 ) => headers[calls.findIndex((url) => url.includes(fragment))];
 
+// The city's own air network, answering with no stations — so the tests below
+// that are about something else keep the air they always had, from whoever the
+// provider is. The station that does answer has a test of its own.
+const noStations = { result: [] };
+
 const routes = {
+  'calidad-aire/estacion.json': noStations,
   '/data/2.5/weather': current(),
   '/data/2.5/forecast': forecast,
   '/air_pollution': air,
@@ -293,7 +304,58 @@ describe('getWeather', () => {
     await service.getWeather(question);
     await service.getWeather({ ...question, apiKey: 'someone-elses-key' });
 
-    expect(calls).toHaveLength(3);
+    // Four upstreams for a cell in Zaragoza: the weather, the forecast,
+    // OpenWeather's own air, and the city's network — which is asked because
+    // a station would beat all three, and which has nothing here. Asked once
+    // each: what the second caller costs is the point, and it is nothing.
+    expect(calls).toHaveLength(4);
+  });
+
+  it('lets the city that measured the air overrule the provider that modelled it', async () => {
+    // OpenWeather carries its own pollutants, and they are modelled off the
+    // same continental runs as everyone else's. A station a few streets from
+    // the cell is a different kind of answer, so it wins — and the credit
+    // moves with it, because the reader is owed the source that actually
+    // measured the number they are looking at.
+    const { service } = build({
+      ...routes,
+      'calidad-aire/estacion.json': {
+        result: [
+          {
+            id: 'Centro',
+            title: 'Centro',
+            geometry: { type: 'Point', coordinates: [-0.8797, 41.6561] },
+            mediciones: [{ titulo: 'PM10', valor: 130 }],
+          },
+        ],
+      },
+    });
+
+    const reading = await service.getWeather({
+      apiKey: 'key',
+      latitude: 41.6561,
+      longitude: -0.8797,
+    });
+
+    // PM10 at 130 is band 4, against the band 2 OpenWeather's own fixture
+    // grades to — so this is the station's number, not the model's.
+    expect(reading.current.airQuality).toBe(4);
+    expect(reading.attribution).toEqual([
+      {
+        name: 'OpenWeather',
+        url: 'https://openweathermap.org/',
+        licence: 'https://creativecommons.org/licenses/by-sa/4.0/',
+        // No longer credited for the air it was asked for and did answer:
+        // somebody else's number is the one in the payload.
+        provides: ['weather', 'forecast'],
+      },
+      {
+        name: 'Ayuntamiento de Zaragoza',
+        url: 'https://www.zaragoza.es/sede/portal/medioambiente/calidad-aire/',
+        licence: 'https://www.zaragoza.es/ciudad/risp/decalogo.htm',
+        provides: ['airQuality'],
+      },
+    ]);
   });
 
   it('resolves a place name and keeps the name it was asked about', async () => {

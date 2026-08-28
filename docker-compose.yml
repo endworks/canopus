@@ -58,6 +58,12 @@ services:
       # WEATHER_CLIENT_KEYS to take that over with your own comma-separated list.
       WEATHER_CLIENT_KEY_VERSION: ${WEATHER_CLIENT_KEY_VERSION:-}
       WEATHER_CLIENT_KEYS: ${WEATHER_CLIENT_KEYS:-}
+      # Where the gateway serves the marks some sources require shown. This is
+      # the gateway's own public address plus /assets — it must be reachable by
+      # the client drawing the credit, not by this container, so it cannot be
+      # guessed from the network. Unset, those sources fall back to a name and
+      # a licence link.
+      WEATHER_ASSETS_URL: ${WEATHER_ASSETS_URL:-}
     networks:
       - canopus
     depends_on:

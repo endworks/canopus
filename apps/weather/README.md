@@ -24,14 +24,14 @@ GET /weather?lat=41.6488&lon=-0.8891&lang=es&units=metric
 GET /weather/providers
 ```
 
-| Header               | Required | Meaning                                                  |
-| -------------------- | -------- | -------------------------------------------------------- |
-| `X-Weather-Api-Key`  | usually  | The caller's own key or token. See `managed` below       |
-| `X-Weather-Client-Key` | sometimes | Leave to spend this deployment's own credential      |
-| `X-Weather-Provider` | no       | Which provider to ask. Defaults to `openweather`         |
-| `X-Weather-Uv`       | no       | Set to include the UV index                              |
-| `X-Weather-Alerts`   | no       | Set to include the official warnings in force            |
-| `X-Weather-Forecast` | no       | Set to `false`, `0` or `no` to skip it. On by default    |
+| Header                 | Required  | Meaning                                               |
+| ---------------------- | --------- | ----------------------------------------------------- |
+| `X-Weather-Api-Key`    | usually   | The caller's own key or token. See `managed` below    |
+| `X-Weather-Client-Key` | sometimes | Leave to spend this deployment's own credential       |
+| `X-Weather-Provider`   | no        | Which provider to ask. Defaults to `openweather`      |
+| `X-Weather-Uv`         | no        | Set to include the UV index                           |
+| `X-Weather-Alerts`     | no        | Set to include the official warnings in force         |
+| `X-Weather-Forecast`   | no        | Set to `false`, `0` or `no` to skip it. On by default |
 
 `GET /weather/providers` lists what this build can answer from, and what each
 one carries: `geocoding`, its own `alerts`, its own `uv`, and `managed` — which
@@ -116,8 +116,8 @@ needs it, and held for the life of the process. It is a map, not a reading.
 
 ## Attribution
 
-Every response carries an `attribution` array — `{ name, url, provides }` per
-source, listing only what actually came back:
+Every response carries an `attribution` array — one entry per source, listing
+only what actually came back:
 
 ```json
 [
@@ -138,6 +138,50 @@ source, listing only what actually came back:
   }
 ]
 ```
+
+### What a source requires shown
+
+`name` and `url` are the credit most sources ask for. Three ask for more, and
+because getting it wrong is a licence breach rather than a style slip, the
+requirement travels on the wire instead of living in whichever client
+remembered to hard-code it:
+
+| Field        | What it is                                                  |
+| ------------ | ----------------------------------------------------------- |
+| `notice`     | The exact words to draw, linked to `url`, instead of `name` |
+| `disclaimer` | A statement to publish alongside, wherever caveats go       |
+| `logo`       | A mark to draw, where words alone will not do               |
+
+- **Open-Meteo** asks for `Weather data by Open-Meteo.com` beside the data.
+- **Ayuntamiento de Zaragoza** asks for `Origen de los datos: Ayuntamiento de
+Zaragoza`, and for the date the source was last updated — which is
+  `lastUpdated`.
+- **MeteoAlarm** asks for the national met office that issued a warning to be
+  named rather than the aggregator that carried it, so `notice` is AEMET rather
+  than MeteoAlarm; and it requires every redistributor to publish its wording
+  about the delay between a copy of its warnings and the live site, which is
+  `disclaimer`. That is also why `TTL.alerts` is five minutes: their terms cap
+  the delay at ten.
+- **Apple** asks for the Apple Weather wordmark, served per language, in `logo`.
+- **OpenWeather** asks for its own mark, from the free plan up, in the visible
+  part of the application rather than on a legal page — also `logo`, and only
+  where `WEATHER_ASSETS_URL` says where this deployment serves it.
+
+A `notice` is not a translation target, which is the part that looks like a bug.
+A licence names a string, so the string is what satisfies it: Open-Meteo's stays
+English in a Spanish client and Zaragoza's stays Spanish in an English one,
+because a translated credit names an entity the terms have never heard of. The
+credits that do vary by language vary on their own — MeteoAlarm's is the met
+office's own name, read out of whichever CAP block matched, and Apple's is
+artwork fetched per language.
+
+Only `logo.light` is promised. Apple serves a light wordmark, a dark one and a
+square mark; OpenWeather publishes one master logo, and its brand rules forbid
+recolouring it or moving its symbol, so no dark variant is derived. A client
+with only a light mark and a dark surface owes it a light plate rather than a
+tint.
+
+### Why it is an array
 
 It is an array rather than one name because the UV index is not the weather
 provider's. OpenWeather's free plan carries no UV at all — it moved to One Call
@@ -239,14 +283,15 @@ request that names no language gets.
 Everything sensitive comes from the environment. There is no key, certificate or
 `.p8` in this repository, and there is not meant to be one.
 
-| Variable                 | Meaning                                            |
-| ------------------------ | -------------------------------------------------- |
-| `WEATHERKIT_TEAM_ID`     | The 10-character Apple Developer team identifier   |
-| `WEATHERKIT_SERVICE_ID`  | The Services ID registered for WeatherKit          |
-| `WEATHERKIT_KEY_ID`      | The 10-character identifier of the WeatherKit key  |
-| `WEATHERKIT_PRIVATE_KEY` | The `.p8` itself, base64-encoded                   |
-| `WEATHER_CLIENT_KEY_VERSION` | Bump to rotate the derived client key          |
-| `WEATHER_CLIENT_KEYS`    | Optional: your own keys, instead of the derived one |
+| Variable                     | Meaning                                                                           |
+| ---------------------------- | --------------------------------------------------------------------------------- |
+| `WEATHERKIT_TEAM_ID`         | The 10-character Apple Developer team identifier                                  |
+| `WEATHERKIT_SERVICE_ID`      | The Services ID registered for WeatherKit                                         |
+| `WEATHERKIT_KEY_ID`          | The 10-character identifier of the WeatherKit key                                 |
+| `WEATHERKIT_PRIVATE_KEY`     | The `.p8` itself, base64-encoded                                                  |
+| `WEATHER_CLIENT_KEY_VERSION` | Bump to rotate the derived client key                                             |
+| `WEATHER_CLIENT_KEYS`        | Optional: your own keys, instead of the derived one                               |
+| `WEATHER_ASSETS_URL`         | Where the gateway serves attribution marks, e.g. `https://api.example.com/assets` |
 
 All four of the WeatherKit variables, or none. A deployment setting three of them is misconfigured rather
 than opted out, and the service refuses to start rather than answering 401 to

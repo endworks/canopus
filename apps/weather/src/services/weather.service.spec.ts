@@ -367,6 +367,58 @@ describe('getWeather', () => {
     ]);
   });
 
+  it('shows the mark OpenWeather requires, where this deployment serves one', async () => {
+    // Its licence asks for the logo, not for a line of text — so the credit is
+    // a file to point at, and it only exists once a deployment has been told
+    // its own public address. A URL built without one would 404, and a broken
+    // image is a worse credit than none.
+    process.env.WEATHER_ASSETS_URL = 'https://api.example.com/assets/';
+    try {
+      const { service } = build(routes);
+
+      const reading = await service.getWeather({
+        apiKey: 'key',
+        latitude: 41.6,
+        longitude: -0.9,
+      });
+
+      const openweather = reading.attribution.find(
+        (source) => source.name === 'OpenWeather',
+      );
+      // The trailing slash on the configured base is not doubled into the path.
+      expect(openweather?.logo).toEqual({
+        light: {
+          x1: 'https://api.example.com/assets/openweather/openweather-logo.png',
+          x2: 'https://api.example.com/assets/openweather/openweather-logo@2x.png',
+          x3: 'https://api.example.com/assets/openweather/openweather-logo@3x.png',
+        },
+      });
+      // One master mark, and its brand rules forbid deriving the others.
+      expect(openweather?.logo?.dark).toBeUndefined();
+      expect(openweather?.logo?.square).toBeUndefined();
+    } finally {
+      delete process.env.WEATHER_ASSETS_URL;
+    }
+  });
+
+  it('falls back to the name and the licence where no assets are served', async () => {
+    const { service } = build(routes);
+
+    const reading = await service.getWeather({
+      apiKey: 'key',
+      latitude: 41.6,
+      longitude: -0.9,
+    });
+
+    const openweather = reading.attribution.find(
+      (source) => source.name === 'OpenWeather',
+    );
+    expect(openweather?.logo).toBeUndefined();
+    expect(openweather?.licence).toBe(
+      'https://creativecommons.org/licenses/by-sa/4.0/',
+    );
+  });
+
   it('resolves a place name and keeps the name it was asked about', async () => {
     const { service, calls } = build(routes);
 

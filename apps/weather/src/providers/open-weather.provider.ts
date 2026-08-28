@@ -3,6 +3,7 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Inject, Injectable } from '@nestjs/common';
 import { Cache } from 'cache-manager';
 import {
+  AttributionLogo,
   CurrentWeather,
   DataKind,
   ForecastStep,
@@ -76,6 +77,34 @@ type GeocodeResponse = {
   lon?: number;
 }[];
 
+/**
+ * The mark OpenWeather requires shown, where this deployment serves it.
+ *
+ * Its licence makes attribution obligatory from the free plan up, in the
+ * visible part of the application rather than on a legal page, and names the
+ * logo as the form it takes — so unlike Open-Meteo's line of text there is
+ * nothing to write, only a file to point at. The files are in the gateway,
+ * which is the only process here that speaks HTTP.
+ *
+ * Undefined where `WEATHER_ASSETS_URL` is unset, which is the case worth
+ * getting right: a deployment that has not been told its own public address
+ * cannot build a URL that resolves, and a broken image is a worse credit than
+ * none. It falls back to the name and the licence link, which is what it did
+ * before the assets existed.
+ *
+ * `light` alone, and no `square`: OpenWeather publishes one master mark. Its
+ * brand rules forbid recolouring it or moving its symbol, so the dark variant
+ * and the square one are not ours to derive — see `AttributionLogo`.
+ */
+const logo = (env: NodeJS.ProcessEnv): AttributionLogo | undefined => {
+  const base = env.WEATHER_ASSETS_URL?.trim().replace(/\/+$/, '');
+  if (!base) return undefined;
+
+  const file = (suffix = '') =>
+    `${base}/openweather/openweather-logo${suffix}.png`;
+  return { light: { x1: file(), x2: file('@2x'), x3: file('@3x') } };
+};
+
 @Injectable()
 export class OpenWeatherProvider extends WeatherProvider {
   readonly info: ProviderInfo = {
@@ -94,6 +123,9 @@ export class OpenWeatherProvider extends WeatherProvider {
     // against, so it stays the caller's to send.
     managed: false,
   };
+
+  /** Resolved once: the address a deployment serves from does not move. */
+  private readonly logo = logo(process.env);
 
   constructor(
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
@@ -214,8 +246,12 @@ export class OpenWeatherProvider extends WeatherProvider {
       forecast: steps,
       // The free plan is CC BY-SA 4.0, which asks for the credit and the
       // licence link back — so the link travels rather than being folded into
-      // the provider's home page.
-      credit: { licence: 'https://creativecommons.org/licenses/by-sa/4.0/' },
+      // the provider's home page. The mark travels with it where this
+      // deployment serves one: the licence asks for both, not either.
+      credit: {
+        licence: 'https://creativecommons.org/licenses/by-sa/4.0/',
+        ...(this.logo ? { logo: this.logo } : {}),
+      },
       provides: [
         'weather',
         ...((includeForecast ? ['forecast'] : []) as DataKind[]),

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { SwaggerTheme, SwaggerThemeNameEnum } from 'swagger-themes';
 import { RpcResponseInterceptor } from '@canopus/nest';
@@ -20,10 +21,28 @@ const pkg = JSON.parse(
 };
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bufferLogs: true,
+  });
   app.useLogger(app.get(Logger));
   app.enableCors();
   app.useGlobalInterceptors(new RpcResponseInterceptor());
+
+  // The marks some sources require shown beside their data. They are served
+  // from here because this is the only process in the monorepo that speaks
+  // HTTP — the services behind it answer over TCP and have nowhere to put a
+  // file — and because a licence satisfied by a logo is not satisfied by a URL
+  // that 404s.
+  //
+  // `dist/main.js` runs from `dist`, and `pnpm deploy` ships the directories
+  // named in `files`, so this resolves to the same place in the container as
+  // it does in a checkout. Cached hard: the artwork changes on the timescale
+  // of a rebrand.
+  app.useStaticAssets(join(__dirname, '..', 'assets'), {
+    prefix: '/assets/',
+    maxAge: '30d',
+    immutable: true,
+  });
 
   const config = new DocumentBuilder()
     .setTitle('Canopus API')

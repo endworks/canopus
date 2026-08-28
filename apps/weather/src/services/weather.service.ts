@@ -202,6 +202,7 @@ export class WeatherService {
         name: this.geocoder.name,
         url: this.geocoder.url,
         licence: this.geocoder.licence,
+        notice: this.geocoder.notice,
         provides: ['geocoding'],
       });
     }
@@ -210,6 +211,7 @@ export class WeatherService {
         name: this.uvProvider.name,
         url: this.uvProvider.url,
         licence: this.uvProvider.licence,
+        notice: this.uvProvider.notice,
         provides: ['uv'],
       });
     }
@@ -230,6 +232,7 @@ export class WeatherService {
           name: source.name,
           url: source.url,
           licence: source.licence,
+          notice: source.notice,
           provides: ['airQuality'],
         });
     }
@@ -239,10 +242,24 @@ export class WeatherService {
     // leaves `alerts` off the response entirely. A provider that issued the
     // warnings itself is already credited for them in its own line.
     if (warnings && !ownAlerts) {
+      // MeteoAlarm's terms split the credit by how far the warnings reach:
+      // information from a single country must name that country's own met
+      // office, and only information spanning more than one is credited to
+      // EUMETNET. One country's feed is asked at a time, so the offices that
+      // issued the warnings actually on show are the ones owed the line — and
+      // an empty list names nobody, because there is nothing of theirs being
+      // shown.
+      const senders = [
+        ...new Set(
+          warnings.alerts.map((alert) => alert.sender).filter(Boolean),
+        ),
+      ];
       attribution.push({
         name: this.alertProvider.name,
         url: this.alertProvider.url,
         licence: this.alertProvider.licence,
+        notice: senders.length ? senders.join(', ') : this.alertProvider.notice,
+        disclaimer: this.alertProvider.disclaimer,
         provides: ['alerts'],
       });
     }

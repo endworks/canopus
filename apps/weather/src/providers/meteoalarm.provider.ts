@@ -107,6 +107,32 @@ export class MeteoAlarmProvider {
   readonly url = 'https://meteoalarm.org/';
   /** EUMETNET asks that reuse of the feed points back at its terms. */
   readonly licence = 'https://meteoalarm.org/en/live/page/disclaimer';
+  /**
+   * What to credit when the warnings shown span more than one country.
+   *
+   * MeteoAlarm's terms split on exactly that: information spanning more than
+   * one country is credited to "EUMETNET – MeteoAlarm", and information from a
+   * single country must name that country's own met office instead. One
+   * country's feed is asked at a time here, so the offices that issued the
+   * warnings on show are the credit and this is the fallback for a list with
+   * nobody in it — a feed asked and holding nothing still owes the aggregator
+   * its line.
+   */
+  readonly notice = 'EUMETNET – MeteoAlarm';
+  /**
+   * The wording every redistributor is required to publish, verbatim.
+   *
+   * It is about staleness, which is the one risk this endpoint carries that
+   * the others do not: a cached orange warning that has since gone red is
+   * worse than no warning at all, and the terms answer it by insisting the
+   * live site is named as the authority. Hence `TTL.alerts` being five minutes
+   * where everything else here is measured in hours.
+   */
+  readonly disclaimer =
+    'Time delays between this website and the www.meteoalarm.org website are ' +
+    'possible. For the most up-to-date awareness information as published by ' +
+    'the participating National Meteorological and Hydrological Services, ' +
+    'please refer to www.meteoalarm.org.';
 
   constructor(
     @Inject(CACHE_MANAGER) private cacheManager: Cache,

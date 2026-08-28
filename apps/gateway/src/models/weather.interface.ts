@@ -21,6 +21,23 @@ export class Attribution {
   provides: string[];
 
   /**
+   * The exact words this source requires shown, where it requires particular
+   * ones — draw these rather than `name`, and link them to `url`. Absent means
+   * the source asks only to be credited and `name` is enough. Not a
+   * translation target: it is the wording the licence names.
+   * @example 'Weather data by Open-Meteo.com'
+   */
+  notice?: string;
+
+  /**
+   * A statement the source requires published alongside its data, wherever
+   * caveats go. MeteoAlarm requires one about the delay between a copy of its
+   * warnings and the live site.
+   * @example 'Time delays between this website and the www.meteoalarm.org website are possible. For the most up-to-date awareness information as published by the participating National Meteorological and Hydrological Services, please refer to www.meteoalarm.org.'
+   */
+  disclaimer?: string;
+
+  /**
    * The licence or legal page the source requires linked alongside the credit.
    * Apple's is the page WeatherKit itself names; OpenWeather's free tier is
    * CC BY-SA 4.0; Open-Meteo's is CC BY 4.0.

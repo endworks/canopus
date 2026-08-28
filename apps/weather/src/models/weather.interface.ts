@@ -61,8 +61,39 @@ export type DataKind =
  */
 export interface Attribution {
   name: string;
+  /**
+   * Where the credit points, which is also what any `notice` below must link
+   * to: every source here requires the same address for both, and a client
+   * that draws one link draws this one.
+   */
   url: string;
   provides: DataKind[];
+  /**
+   * The words this source requires shown, verbatim, where it requires
+   * particular ones.
+   *
+   * Absent is the common case and means the source asks only to be credited,
+   * so a client draws `name`. Present, it is not a suggestion and not a
+   * translation target: Open-Meteo's licence asks for "Weather data by
+   * Open-Meteo.com" beside the data, Zaragoza's reuse terms ask for "Origen de
+   * los datos: Ayuntamiento de Zaragoza", and MeteoAlarm's require the
+   * national met office that issued a warning to be named rather than the
+   * aggregator that carried it. Rendering `name` instead of these is a licence
+   * breach, not a style choice — which is why they travel on the wire rather
+   * than living in whichever client remembered to hard-code them.
+   */
+  notice?: string;
+  /**
+   * A statement the source requires published alongside its data.
+   *
+   * Separate from `notice` because it is a separate obligation and a client
+   * places it differently: the notice belongs beside the reading, and this
+   * belongs wherever the caveats go. MeteoAlarm is the reason it exists — every
+   * redistributor must carry its wording about the delay between their copy and
+   * the live site, because a stale severe-weather warning is the one thing on
+   * this endpoint that could get somebody hurt.
+   */
+  disclaimer?: string;
   /**
    * The licence or legal page the source requires linked, where it requires
    * one. Apple's is the attribution page named by the reading itself;

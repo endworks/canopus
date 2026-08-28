@@ -18,6 +18,11 @@ export abstract class AirSource {
   abstract readonly url: string;
   /** The licence or reuse terms the source asks be linked, where it asks. */
   abstract readonly licence?: string;
+  /**
+   * The words the source requires shown, where it requires particular ones.
+   * See `Attribution.notice`: absent means its `name` is credit enough.
+   */
+  abstract readonly notice?: string;
 
   /**
    * Whether an instrument stood where this reading is about.

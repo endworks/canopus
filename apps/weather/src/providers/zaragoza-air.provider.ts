@@ -244,6 +244,17 @@ export class ZaragozaAirProvider extends AirSource {
    * rather than a Creative Commons deed the portal does not actually claim.
    */
   readonly licence = 'https://www.zaragoza.es/ciudad/risp/decalogo.htm';
+  /**
+   * The citation those terms ask for, in the city's own words and its own
+   * language. Not translated on the way out: it is the wording the licence
+   * names, and a client that renders "Data from Zaragoza City Council" has
+   * credited somebody the licence has never heard of.
+   *
+   * The terms also ask for the date the source was last updated. That is
+   * `lastUpdated` on the response, which carries the observation's own time
+   * rather than the moment it was served.
+   */
+  readonly notice = 'Origen de los datos: Ayuntamiento de Zaragoza';
 
   constructor(
     @Inject(CACHE_MANAGER) private cacheManager: Cache,

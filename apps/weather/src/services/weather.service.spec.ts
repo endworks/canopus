@@ -16,6 +16,13 @@ import { ClientKeys } from '../providers/client-keys';
 import { WeatherProvider } from '../providers/weather-provider';
 import { WeatherService } from './weather.service';
 
+/** The wording MeteoAlarm requires every redistributor to publish, verbatim. */
+const METEOALARM_DELAY =
+  'Time delays between this website and the www.meteoalarm.org website are ' +
+  'possible. For the most up-to-date awareness information as published by ' +
+  'the participating National Meteorological and Hydrological Services, ' +
+  'please refer to www.meteoalarm.org.';
+
 const HOUR = 3600;
 // Relative to the clock the test actually runs on: `uvProtectionUntil` is the
 // first hour ahead of now, so a fixed timestamp would stop meaning "ahead".
@@ -353,6 +360,8 @@ describe('getWeather', () => {
         name: 'Ayuntamiento de Zaragoza',
         url: 'https://www.zaragoza.es/sede/portal/medioambiente/calidad-aire/',
         licence: 'https://www.zaragoza.es/ciudad/risp/decalogo.htm',
+        // The wording the city's reuse terms name, in its own language.
+        notice: 'Origen de los datos: Ayuntamiento de Zaragoza',
         provides: ['airQuality'],
       },
     ]);
@@ -395,6 +404,7 @@ describe('getWeather', () => {
         name: 'Open-Meteo',
         url: 'https://open-meteo.com/',
         licence: 'https://creativecommons.org/licenses/by/4.0/',
+        notice: 'Weather data by Open-Meteo.com',
         provides: ['uv'],
       },
     ]);
@@ -472,6 +482,31 @@ describe('getWeather', () => {
       sender: 'AEMET. Agencia Estatal de Meteorologia',
       url: 'https://www.aemet.es/es/eltiempo/prediccion/avisos',
     });
+  });
+
+  it('names the met office that issued a warning, not the aggregator', async () => {
+    // MeteoAlarm's own terms: warnings from a single country must be credited
+    // to that country's National Meteorological and Hydrological Service by
+    // name, and only warnings spanning more than one are credited to EUMETNET.
+    // One country's feed is asked at a time, so the office on the warnings
+    // actually shown is the one owed the line — the aggregator keeps `name`,
+    // and the credit a client is required to draw is `notice`.
+    const { service } = build(routes);
+
+    const reading = await service.getWeather({
+      apiKey: 'key',
+      latitude: 41.6,
+      longitude: -0.9,
+      includeAlerts: true,
+    });
+
+    const meteoalarm = reading.attribution.find(
+      (source) => source.name === 'MeteoAlarm',
+    );
+    expect(meteoalarm?.notice).toBe('AEMET. Agencia Estatal de Meteorologia');
+    // And the delay wording travels with it, whether or not anything is in
+    // force: it is the reason the alerts cache is five minutes wide.
+    expect(meteoalarm?.disclaimer).toBe(METEOALARM_DELAY);
   });
 
   it('drops a warning that has already lapsed', async () => {
@@ -580,6 +615,11 @@ describe('getWeather', () => {
       name: 'MeteoAlarm',
       url: 'https://meteoalarm.org/',
       licence: 'https://meteoalarm.org/en/live/page/disclaimer',
+      // No warning is on show, so there is no met office to name and the
+      // aggregator's own credit stands. The disclaimer travels regardless:
+      // "nothing is in force here" is a claim about live data too.
+      notice: 'EUMETNET – MeteoAlarm',
+      disclaimer: METEOALARM_DELAY,
       provides: ['alerts'],
     });
   });
@@ -1476,6 +1516,7 @@ describe('apple weather', () => {
       name: 'Open-Meteo',
       url: 'https://open-meteo.com/',
       licence: 'https://creativecommons.org/licenses/by/4.0/',
+      notice: 'Weather data by Open-Meteo.com',
       provides: ['geocoding'],
     });
   });

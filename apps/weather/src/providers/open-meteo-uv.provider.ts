@@ -28,6 +28,12 @@ export class OpenMeteoUvProvider {
   readonly url = 'https://open-meteo.com/';
   /** Open-Meteo publishes under CC BY 4.0, which asks for the credit back. */
   readonly licence = 'https://creativecommons.org/licenses/by/4.0/';
+  /**
+   * The words the licence asks for, which are these words: Open-Meteo's terms
+   * ask for a link "next to any location Open-Meteo data are displayed", and
+   * name this line as the form it should take.
+   */
+  readonly notice = 'Weather data by Open-Meteo.com';
 
   constructor(
     @Inject(CACHE_MANAGER) private cacheManager: Cache,

@@ -243,6 +243,11 @@ jobs:
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           THE_MOVIE_DB_API_KEY: op://end.works/The Movie DB API Key/credential
+          # The same Google Cloud key Arcturus uses for YouTube. Optional: with
+          # it, `updateAll` places the venues that have no coordinates on a map
+          # once each; without it that pass is skipped and billboards serve as
+          # they always did.
+          GOOGLE_MAPS_API_KEY: op://end.works/Polaris Config/google
 
       - name: Load weatherkit secrets
         if: ${{ github.event_name != 'pull_request' && (github.ref_name == 'main' || github.ref_type == 'tag') && matrix.service == 'weather' }}
@@ -280,7 +285,7 @@ jobs:
           port: ${{ env.PORT }}
           username: ${{ env.USERNAME }}
           key: ${{ env.KEY }}
-          envs: IMAGE,CONTAINER,MONGODB_URI,TWITTER_CLIENT_TOKEN,THE_MOVIE_DB_API_KEY,WEATHERKIT_TEAM_ID,WEATHERKIT_SERVICE_ID,WEATHERKIT_KEY_ID,WEATHERKIT_PRIVATE_KEY,WEATHER_CLIENT_KEY_VERSION
+          envs: IMAGE,CONTAINER,MONGODB_URI,TWITTER_CLIENT_TOKEN,THE_MOVIE_DB_API_KEY,GOOGLE_MAPS_API_KEY,WEATHERKIT_TEAM_ID,WEATHERKIT_SERVICE_ID,WEATHERKIT_KEY_ID,WEATHERKIT_PRIVATE_KEY,WEATHER_CLIENT_KEY_VERSION
           script: |
             docker pull "$IMAGE"
             # -t 1, because nothing here installs a SIGTERM handler: no app
@@ -290,7 +295,7 @@ jobs:
             docker stop -t 1 "$CONTAINER" 2>/dev/null || true
             docker rm "$CONTAINER" 2>/dev/null || true
             if [ "$CONTAINER" = "canopus-zine" ]; then
-              docker run --network canopus -p ${{ matrix.port }}/tcp -e MONGODB_URI="$MONGODB_URI" -e THE_MOVIE_DB_API_KEY="$THE_MOVIE_DB_API_KEY" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
+              docker run --network canopus -p ${{ matrix.port }}/tcp -e MONGODB_URI="$MONGODB_URI" -e THE_MOVIE_DB_API_KEY="$THE_MOVIE_DB_API_KEY" -e GOOGLE_MAPS_API_KEY="$GOOGLE_MAPS_API_KEY" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
             elif [ "$CONTAINER" = "canopus-zaragoza" ]; then
               docker run --network canopus -p ${{ matrix.port }}/tcp -e MONGODB_URI="$MONGODB_URI" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
             elif [ "$CONTAINER" = "canopus-weather" ]; then

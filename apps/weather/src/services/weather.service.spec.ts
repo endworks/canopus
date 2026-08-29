@@ -9,6 +9,7 @@ import { AirSources } from '../providers/air-sources';
 import { OpenMeteoAirProvider } from '../providers/open-meteo-air.provider';
 import { ZaragozaAirProvider } from '../providers/zaragoza-air.provider';
 import { OpenMeteoGeocoder } from '../providers/open-meteo-geocoder';
+import { OsmReverseGeocoder } from '../providers/osm-reverse-geocoder';
 import { OpenMeteoUvProvider } from '../providers/open-meteo-uv.provider';
 import { RegionAtlas } from '../providers/region-atlas';
 import { OpenWeatherProvider } from '../providers/open-weather.provider';
@@ -231,6 +232,7 @@ const build = (routes: Record<string, unknown>, keys: string[] = []) => {
     meteoalarm,
     new RegionAtlas(),
     new OpenMeteoGeocoder(cache, http),
+    new OsmReverseGeocoder(cache, http),
     new ClientKeys(keys),
   );
   return { service, calls, headers };
@@ -417,6 +419,27 @@ describe('getWeather', () => {
         provides: ['airQuality'],
       },
     ]);
+  });
+
+  it('asks no map for a provider that names the place itself', async () => {
+    // OpenWeather answers the nearest place on the reading itself, so a
+    // coordinate needs nobody else to say where it is about. The reverse
+    // geocoder exists for the providers that cannot, and adds a party to
+    // nobody else's request.
+    const { service, calls } = build(routes);
+
+    const reading = await service.getWeather({
+      apiKey: 'key',
+      latitude: 41.6,
+      longitude: -0.9,
+    });
+
+    expect(reading.location.name).toBe('Zaragoza');
+    expect(reading.location.country).toBe('ES');
+    expect(calls.some((url) => url.includes('nominatim'))).toBe(false);
+    expect(
+      reading.attribution.some((source) => source.name === 'OpenStreetMap'),
+    ).toBe(false);
   });
 
   it('credits OpenWeather in words rather than in artwork', async () => {
@@ -1190,9 +1213,29 @@ const geocoded = {
   ],
 };
 
+/** The line OpenStreetMap is owed wherever it named the place. */
+const OSM_CREDIT = {
+  name: 'OpenStreetMap',
+  url: 'https://www.openstreetmap.org/',
+  licence: 'https://www.openstreetmap.org/copyright',
+  notice: '© OpenStreetMap contributors',
+  provides: ['geocoding'],
+};
+
+/** What Nominatim answers, trimmed to the keys this reads. */
+const reversed = {
+  name: 'Zaragoza',
+  address: {
+    city: 'Zaragoza',
+    state: 'Aragón',
+    country_code: 'es',
+  },
+};
+
 const appleRoutes = {
   ...routes,
   'geocoding-api.open-meteo.com': geocoded,
+  'nominatim.openstreetmap.org': reversed,
   'weatherkit.apple.com/attribution': appleBranding,
   'weatherkit.apple.com': appleBody(),
 };
@@ -1400,7 +1443,77 @@ describe('apple weather', () => {
         logo,
         provides: ['weather', 'forecast', 'uv'],
       },
+      // The one party a coordinate does add to an Apple request: WeatherKit
+      // names no place, so somebody has to say where this reading is about.
+      OSM_CREDIT,
     ]);
+  });
+
+  it('names the place a coordinate stands in when the provider cannot', async () => {
+    // WeatherKit answers the weather at a point and nothing else, in either
+    // direction, so a lat/lon question used to come back with `name: ''` — a
+    // reading about a place the response could not say the name of. Asked of
+    // OpenStreetMap instead, alongside the reading rather than after it.
+    const { service, calls } = build(appleRoutes);
+
+    const reading = await service.getWeather(ask());
+
+    expect(reading.location.name).toBe('Zaragoza');
+    expect(reading.location.country).toBe('ES');
+    expect(asked(calls, 'nominatim.openstreetmap.org')).toContain(
+      'lat=41.65&lon=-0.89',
+    );
+    expect(reading.attribution).toContainEqual(OSM_CREDIT);
+  });
+
+  it('keeps the country it was given over the one the map returns', async () => {
+    // The country is what scoped the warnings — the caller's own, or where the
+    // atlas placed the coordinate — so a map that disagrees must not quietly
+    // move the response's account of which country this is. Only the name was
+    // missing, and only the name is filled.
+    const { service } = build({
+      ...appleRoutes,
+      'nominatim.openstreetmap.org': {
+        name: 'Somewhere',
+        address: { town: 'Somewhere', country_code: 'fr' },
+      },
+    });
+
+    const reading = await service.getWeather(ask({ country: 'ES' }));
+
+    expect(reading.location.name).toBe('Somewhere');
+    expect(reading.location.country).toBe('ES');
+  });
+
+  it('costs the name rather than the reading when the map is down', async () => {
+    const { service } = build({
+      ...appleRoutes,
+      'nominatim.openstreetmap.org': httpError(503),
+    });
+
+    const reading = await service.getWeather(ask());
+
+    expect(reading.current.temperature).toBe(24.3);
+    // Unnamed, exactly as it was before anybody was asked — and nobody is
+    // credited for a name that never arrived.
+    expect(reading.location.name).toBe('');
+    expect(
+      reading.attribution.some((source) => source.name === 'OpenStreetMap'),
+    ).toBe(false);
+  });
+
+  it('asks no map when the caller named the place themselves', async () => {
+    // Then the forward geocoder already answered, and the two are never both
+    // needed: a request either named a place or sent a coordinate.
+    const { service, calls } = build(appleRoutes);
+
+    const reading = await service.getWeather(
+      ask({ latitude: undefined, longitude: undefined, location: 'Zaragoza' }),
+    );
+
+    expect(reading.location.name).toBe('Zaragoza');
+    expect(asked(calls, 'geocoding-api.open-meteo.com')).toBeDefined();
+    expect(asked(calls, 'nominatim.openstreetmap.org')).toBeUndefined();
   });
 
   it('finds the country itself when the caller sends only a coordinate', async () => {

@@ -65,12 +65,14 @@ export class WeatherController {
   @ApiOperation({
     summary: 'Get the weather for a place',
     description:
-      'Ask by `location` or by `lat`/`lon`. Coordinates are rounded to a ~11 km cell before ' +
+      'Ask by `location` or by `lat`/`lon`. Coordinates are rounded to a ~1 km cell before ' +
       'anything is fetched, and readings are cached per cell for as long as their source stands ' +
-      'still — so every caller in the same town shares one upstream call. The key is the ' +
-      "caller's own: this endpoint holds none. The UV index and the official warnings come from " +
-      'other services, are opt-in behind their own headers, and are credited separately in ' +
-      '`attribution`.',
+      'still — so every caller in the same street shares one upstream call. The key is the ' +
+      "caller's own: this endpoint holds none. Either way the answer names the place in " +
+      '`location`: a coordinate sent to a provider that does no geocoding is named by ' +
+      'OpenStreetMap, credited in `attribution` like every other source. The UV index and the ' +
+      'official warnings come from other services, are opt-in behind their own headers, and are ' +
+      'credited separately there too.',
   })
   @ApiQuery({
     name: 'location',

@@ -96,11 +96,11 @@ would make this endpoint harder to use than calling the provider directly.
 
 ## Caching
 
-Coordinates are rounded to one decimal — about eleven kilometres, so a whole
-city is a cell or two — before anything is fetched, and the rounded pair is both
-the cache key and what comes back in `location`. That is what makes the cache
-worth having: every caller standing anywhere in town asks the same question, so
-they share one upstream call instead of minting one each.
+Coordinates are rounded to two decimals — a little over a kilometre, so a
+neighbourhood is a cell — before anything is fetched, and the rounded pair is
+both the cache key and what comes back in `location`. That is what makes the
+cache worth having: every caller standing in the same street asks the same
+question, so they share one upstream call instead of minting one each.
 
 The key carries no trace of the API key. Two callers in the same cell are asking
 the same question and the answer does not depend on whose quota paid for it, so
@@ -195,6 +195,10 @@ participa, patrocina ni apoya esta reutilización de sus datos.` — because
   redistributor to publish its wording about the delay between a copy of its
   warnings and the live site, which is `disclaimer`. That last is also why
   `TTL.alerts` is five minutes: their terms cap the delay at ten.
+- **OpenStreetMap** publishes under the ODbL, which asks for
+  `© OpenStreetMap contributors` and a link to its copyright page — `notice`
+  and `licence`. It is asked only to name a coordinate, and only for a provider
+  that cannot; see **Naming the place** below.
 - **Apple** asks for the Apple Weather wordmark, served per language, in `logo`.
   It is the only source that asks for a mark, and it hosts the artwork itself.
 - **OpenWeather** asks for attribution from the free plan up, in the visible
@@ -242,6 +246,39 @@ it stops claiming `alerts`.
 Absent `alerts` is the other case entirely, and the two should not be confused:
 that is nobody having been asked — a place outside Europe, or a feed that is
 down — and the response says nothing about the weather being safe.
+
+## Naming the place
+
+Every response says what place it is about, in `location.name`, whichever way
+it was asked. Three sources can answer, in this order:
+
+1. **The name the caller asked about.** `location=Zaragoza` comes back as
+   Zaragoza, beating whatever the provider's nearest station is called: a cell
+   is a kilometre across, and on its edge that station belongs to the next
+   village along.
+2. **The provider's own.** OpenWeather puts the nearest place on the reading
+   itself, so a `lat`/`lon` question to it needs nobody else.
+3. **[OpenStreetMap](https://www.openstreetmap.org/)**, for the coordinate a
+   provider will not name. Apple is the case that needs it: WeatherKit answers
+   the weather at a point and nothing else, in either direction, so a `lat`/
+   `lon` question to it used to come back with an empty `name` — a reading
+   about a place the response could not say the name of.
+
+The third is asked through Nominatim, without a key of any kind, so a caller
+who brought one provider's credential is not asked for a second. Whether it is
+needed is known before anything goes out — a coordinate was sent, and this
+provider does no geocoding — so the lookup flies alongside the reading and
+costs no round trip of its own. It is credited under `geocoding` in
+`attribution` exactly like the forward geocoder, and only where a name actually
+came back.
+
+Nominatim's usage policy caps callers at one request a second and asks to be
+told who is calling, so this sends an identifying `User-Agent` and spaces its
+calls. Cells are cached for a week, which is what keeps the real rate far below
+the cap. Where the queue does back up, the lookup is abandoned rather than
+waited on: the name is one field, and nobody should hold a temperature for it.
+Empty `name` still means what it always meant — nobody could name this place —
+and it costs nothing else in the response.
 
 ## Air quality
 
@@ -296,9 +333,9 @@ code with no geometry attached, so placing a warning takes a map the feed does
 not ship. `src/data/meteoalarm-regions.json` is that map — 2,003 regions, built
 by `pnpm build:regions` from the public MIT-licensed atlas in the [`meteoalarm`
 Python package](https://github.com/NiklasJordan/meteoalarm), reduced from 31 MB
-to 2 by keeping outer rings only at two decimals. A cell is eleven kilometres
-wide and the atlas is accurate to one, so it is an order of magnitude finer than
-the question it answers.
+to 2 by keeping outer rings only at two decimals — the same hundredth of a
+degree a cell is rounded to, so the atlas is exactly as fine as the question it
+answers.
 
 The cell's corners are tested along with its middle, and holes in a region are
 dropped rather than cut out. Both over-include rather than under-include, which

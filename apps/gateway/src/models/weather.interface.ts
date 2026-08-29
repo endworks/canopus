@@ -90,7 +90,12 @@ export class AttributionImage {
 
 export class WeatherLocation {
   /**
-   * The place, as the provider names it.
+   * The place this reading is about.
+   *
+   * The name asked about where `location` was sent; the provider's own
+   * otherwise; and for a coordinate sent to a provider that does no geocoding
+   * — Apple — the town OpenStreetMap places it in, credited in `attribution`
+   * under `geocoding`. Empty only where nobody could name it.
    * @example 'Zaragoza'
    */
   name: string;
@@ -102,14 +107,14 @@ export class WeatherLocation {
   country: string;
 
   /**
-   * Latitude actually asked about, rounded to a ~11 km cell.
-   * @example 41.6
+   * Latitude actually asked about, rounded to a ~1 km cell.
+   * @example 41.65
    */
   latitude: number;
 
   /**
-   * Longitude actually asked about, rounded to a ~11 km cell.
-   * @example -0.9
+   * Longitude actually asked about, rounded to a ~1 km cell.
+   * @example -0.89
    */
   longitude: number;
 

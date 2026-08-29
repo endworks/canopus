@@ -24,6 +24,7 @@ import {
 import { ClientKeys } from '../providers/client-keys';
 import { MeteoAlarmProvider } from '../providers/meteoalarm.provider';
 import { OpenMeteoGeocoder } from '../providers/open-meteo-geocoder';
+import { OsmReverseGeocoder } from '../providers/osm-reverse-geocoder';
 import { RegionAtlas } from '../providers/region-atlas';
 import { AirSources } from '../providers/air-sources';
 import { OpenMeteoUvProvider } from '../providers/open-meteo-uv.provider';
@@ -64,6 +65,7 @@ export class WeatherService {
     private readonly alertProvider: MeteoAlarmProvider,
     private readonly atlas: RegionAtlas,
     private readonly geocoder: OpenMeteoGeocoder,
+    private readonly reverseGeocoder: OsmReverseGeocoder,
     private readonly clients: ClientKeys,
   ) {
     // A credential the deployment pays for, reachable by anyone who finds the
@@ -163,7 +165,13 @@ export class WeatherService {
     // instrument answered — the case its model was always the fallback for.
     const askForAir = wantsAir && measured === undefined;
 
-    const [reading, uv, modelledAir] = await Promise.all([
+    // Whether the place will have a name is knowable before anything is asked:
+    // a coordinate was sent, and this provider does no geocoding, so nothing in
+    // the reading about to come back will say where it is about. Started here
+    // rather than after it, so naming the place costs no round trip of its own.
+    const unnamed = !cell.geocoded && !provider.info.geocoding;
+
+    const [reading, uv, modelledAir, place] = await Promise.all([
       provider.read({
         apiKey,
         latitude: cell.latitude,
@@ -195,6 +203,15 @@ export class WeatherService {
       askForAir && !provider.info.airQuality
         ? this.air
             .modelled(cell.latitude, cell.longitude)
+            .catch(() => undefined)
+        : undefined,
+      // Swallowed like the two above and for the same reason: a name is one
+      // field, and the service that answers it being down should cost the name
+      // rather than the temperature — which is exactly what came back before
+      // anybody was asked at all.
+      unnamed
+        ? this.reverseGeocoder
+            .reverse(cell.latitude, cell.longitude, language)
             .catch(() => undefined)
         : undefined,
     ]);
@@ -235,12 +252,21 @@ export class WeatherService {
         ...(reading.credit ?? {}),
       },
     ];
-    if (cell.borrowed) {
+    // Whoever placed this reading, where it was not the weather provider. The
+    // two directions are never both asked — a request either named a place or
+    // sent a coordinate — so this is one line either way, and there is none at
+    // all where nothing came back: a lookup that found sea owes nobody.
+    const placedBy = cell.borrowed
+      ? this.geocoder
+      : place
+        ? this.reverseGeocoder
+        : undefined;
+    if (placedBy) {
       attribution.push({
-        name: this.geocoder.name,
-        url: this.geocoder.url,
-        licence: this.geocoder.licence,
-        notice: this.geocoder.notice,
+        name: placedBy.name,
+        url: placedBy.url,
+        licence: placedBy.licence,
+        notice: placedBy.notice,
         provides: ['geocoding'],
       });
     }
@@ -305,9 +331,20 @@ export class WeatherService {
       location: {
         ...reading.location,
         // The name the caller asked about beats the one the provider's nearest
-        // station answers with: the cell is eleven kilometres wide, and on its
-        // edge that station belongs to the next village along.
+        // station answers with: a cell is a kilometre across, and on its edge
+        // that station belongs to the next village along.
         ...(cell.geocoded ? { name: cell.name, country: cell.country } : {}),
+        // And where nobody named it, whoever could. Only the name is taken:
+        // the country was already settled by what the caller sent or where the
+        // atlas placed them, and that is the one the warnings were scoped by —
+        // so a map that disagrees with it must not quietly move the response's
+        // account of which country this is. Filled where there was nothing.
+        ...(place
+          ? {
+              name: place.name,
+              country: reading.location.country || place.country,
+            }
+          : {}),
       },
       current: {
         ...reading.current,

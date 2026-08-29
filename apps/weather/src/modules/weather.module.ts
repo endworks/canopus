@@ -7,6 +7,7 @@ import { MeteoAlarmProvider } from '../providers/meteoalarm.provider';
 import { OpenMeteoAirProvider } from '../providers/open-meteo-air.provider';
 import { OpenMeteoGeocoder } from '../providers/open-meteo-geocoder';
 import { OpenMeteoUvProvider } from '../providers/open-meteo-uv.provider';
+import { OsmReverseGeocoder } from '../providers/osm-reverse-geocoder';
 import { RegionAtlas } from '../providers/region-atlas';
 import { ZaragozaAirProvider } from '../providers/zaragoza-air.provider';
 import { weatherProviders } from '../providers/registry';
@@ -19,6 +20,7 @@ import { WeatherService } from '../services/weather.service';
     ...weatherProviders,
     OpenMeteoUvProvider,
     OpenMeteoGeocoder,
+    OsmReverseGeocoder,
     OpenMeteoAirProvider,
     ZaragozaAirProvider,
     AirSources,

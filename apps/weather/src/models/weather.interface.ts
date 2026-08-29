@@ -179,6 +179,19 @@ export interface AttributionImage {
 
 /** Where the reading is for, as the provider itself names it. */
 export interface WeatherLocation {
+  /**
+   * The place this reading is about, named.
+   *
+   * Whichever of three answered, in that order: the name the caller asked
+   * about, which beats every other because it is the question; the name the
+   * provider put on the reading, which is its nearest station's town; and
+   * where neither exists — a coordinate sent to a provider that does no
+   * geocoding — the town OpenStreetMap places that coordinate in.
+   *
+   * Empty only where all three came up short: the sea, a desert, or a map that
+   * was down. It is a name that could not be found rather than a place without
+   * one, which is why it costs nothing else in the response.
+   */
   name: string;
   country: string;
   /** The coordinates actually asked about — rounded, so they name the cell. */

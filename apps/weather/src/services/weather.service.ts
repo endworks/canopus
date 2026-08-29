@@ -169,7 +169,16 @@ export class WeatherService {
     // a coordinate was sent, and this provider does no geocoding, so nothing in
     // the reading about to come back will say where it is about. Started here
     // rather than after it, so naming the place costs no round trip of its own.
-    const unnamed = !cell.geocoded && !provider.info.geocoding;
+    //
+    // And only where the caller says they cannot name it themselves. A phone
+    // reverses its own coordinates with the geocoder it already carries — no
+    // key, no credit, no request to anybody — so asking a map on its behalf
+    // would add a party and a line of attribution to every reading in order to
+    // answer a question that had already been answered for free.
+    const unnamed =
+      Boolean(payload.includeLocationName) &&
+      !cell.geocoded &&
+      !provider.info.geocoding;
 
     const [reading, uv, modelledAir, place] = await Promise.all([
       provider.read({

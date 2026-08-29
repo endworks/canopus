@@ -1443,10 +1443,26 @@ describe('apple weather', () => {
         logo,
         provides: ['weather', 'forecast', 'uv'],
       },
-      // The one party a coordinate does add to an Apple request: WeatherKit
-      // names no place, so somebody has to say where this reading is about.
-      OSM_CREDIT,
+      // And nobody else. An Apple request that asks for the sun is one company
+      // start to finish: the map that can name the coordinate is asked for
+      // only where the caller says they cannot name it themselves.
     ]);
+  });
+
+  it('asks no map unless the caller says they cannot name it', async () => {
+    // The default, and the case that matters: a phone reverses its own
+    // coordinates with the geocoder it already carries, so a request that
+    // never asks adds nobody to itself and shows the reader no credit for a
+    // source it did not use.
+    const { service, calls } = build(appleRoutes);
+
+    const reading = await service.getWeather(ask());
+
+    expect(asked(calls, 'nominatim.openstreetmap.org')).toBeUndefined();
+    expect(reading.location.name).toBe('');
+    expect(
+      reading.attribution.some((source) => source.name === 'OpenStreetMap'),
+    ).toBe(false);
   });
 
   it('names the place a coordinate stands in when the provider cannot', async () => {
@@ -1456,7 +1472,9 @@ describe('apple weather', () => {
     // OpenStreetMap instead, alongside the reading rather than after it.
     const { service, calls } = build(appleRoutes);
 
-    const reading = await service.getWeather(ask());
+    const reading = await service.getWeather(
+      ask({ includeLocationName: true }),
+    );
 
     expect(reading.location.name).toBe('Zaragoza');
     expect(reading.location.country).toBe('ES');
@@ -1479,7 +1497,9 @@ describe('apple weather', () => {
       },
     });
 
-    const reading = await service.getWeather(ask({ country: 'ES' }));
+    const reading = await service.getWeather(
+      ask({ country: 'ES', includeLocationName: true }),
+    );
 
     expect(reading.location.name).toBe('Somewhere');
     expect(reading.location.country).toBe('ES');
@@ -1491,7 +1511,9 @@ describe('apple weather', () => {
       'nominatim.openstreetmap.org': httpError(503),
     });
 
-    const reading = await service.getWeather(ask());
+    const reading = await service.getWeather(
+      ask({ includeLocationName: true }),
+    );
 
     expect(reading.current.temperature).toBe(24.3);
     // Unnamed, exactly as it was before anybody was asked — and nobody is
@@ -1508,7 +1530,12 @@ describe('apple weather', () => {
     const { service, calls } = build(appleRoutes);
 
     const reading = await service.getWeather(
-      ask({ latitude: undefined, longitude: undefined, location: 'Zaragoza' }),
+      ask({
+        latitude: undefined,
+        longitude: undefined,
+        location: 'Zaragoza',
+        includeLocationName: true,
+      }),
     );
 
     expect(reading.location.name).toBe('Zaragoza');

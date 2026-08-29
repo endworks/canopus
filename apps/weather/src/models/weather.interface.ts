@@ -39,6 +39,21 @@ export interface WeatherPayload {
   /** Defaults to true: the forecast is what the day's high and low come from. */
   includeForecast?: boolean;
   /**
+   * Off by default: name the coordinate, for a caller who cannot name it.
+   *
+   * No weather provider reverses a coordinate, so the name comes from a map —
+   * a party in the request and a line in `attribution` the caller is then
+   * obliged to draw. That is a fair price for a server, a browser or a script,
+   * and a poor one for anything running on a phone: every phone ships a
+   * geocoder that answers the same question with no key, no credit and no
+   * round trip through here.
+   *
+   * So it is asked for rather than assumed, and a caller who never sends it
+   * never adds the source. Asking by `location` names the place already, and so
+   * does a provider that geocodes; neither is affected by this.
+   */
+  includeLocationName?: boolean;
+  /**
    * Defaults to true: the air has always come back where a provider carried it.
    *
    * Off, nobody is asked for it — not the provider's own endpoint, and not the

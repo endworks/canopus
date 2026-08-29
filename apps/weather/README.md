@@ -33,6 +33,7 @@ GET /weather/providers
 | `X-Weather-Alerts`     | no        | Set to include the official warnings in force         |
 | `X-Weather-Forecast`   | no        | Set to `false`, `0` or `no` to skip it. On by default |
 | `X-Weather-Air`        | no        | Set to `false`, `0` or `no` to skip it. On by default |
+| `X-Weather-Place`      | no        | Set to have a coordinate named. Off by default        |
 
 `GET /weather/providers` lists what this build can answer from, and what each
 one carries: `geocoding`, its own `alerts`, its own `uv`, and `managed` — which
@@ -259,13 +260,20 @@ it was asked. Three sources can answer, in this order:
 2. **The provider's own.** OpenWeather puts the nearest place on the reading
    itself, so a `lat`/`lon` question to it needs nobody else.
 3. **[OpenStreetMap](https://www.openstreetmap.org/)**, for the coordinate a
-   provider will not name. Apple is the case that needs it: WeatherKit answers
-   the weather at a point and nothing else, in either direction, so a `lat`/
-   `lon` question to it used to come back with an empty `name` — a reading
-   about a place the response could not say the name of.
+   provider will not name, and only when `X-Weather-Place` asks. Apple is the
+   case that needs it: WeatherKit answers the weather at a point and nothing
+   else, in either direction, so a `lat`/`lon` question to it comes back with
+   an empty `name` unless somebody else is asked.
 
-The third is asked through Nominatim, without a key of any kind, so a caller
-who brought one provider's credential is not asked for a second. Whether it is
+The third is off by default, and worth leaving off on a phone. Every phone
+ships a geocoder — CoreLocation, Android's `Geocoder` — that answers the same
+question with no key, no credit and no round trip through here, so a client
+that has one names its own coordinates and shows its reader no third party.
+What the header is for is the callers with none: a server, a browser, a script,
+which pay one line of ODbL credit for a name they could not otherwise have.
+
+Asked, it goes through Nominatim without a key of any kind, so a caller who
+brought one provider's credential is not asked for a second. Whether it is
 needed is known before anything goes out — a coordinate was sent, and this
 provider does no geocoding — so the lookup flies alongside the reading and
 costs no round trip of its own. It is credited under `geocoding` in

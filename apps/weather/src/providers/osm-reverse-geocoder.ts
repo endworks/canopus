@@ -14,7 +14,8 @@ const API_URL = 'https://nominatim.openstreetmap.org/reverse';
  * operator with a problem has somebody to tell. A default axios agent is the
  * one thing the policy names as grounds for being blocked.
  */
-const USER_AGENT = 'canopus-weather/1.0 (https://github.com/endworks/canopus)';
+const USER_AGENT =
+  'canopus-weather/1.0 (https://github.com/endworks/canopus; hello@end.works)';
 
 /**
  * The shortest gap between two calls, in milliseconds.

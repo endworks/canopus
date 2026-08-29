@@ -226,6 +226,17 @@ export class WeatherController {
       'caller who does not want one simply does not send this. Apple carries the index itself, ' +
       'so asking Apple for it adds nobody and costs no extra call.',
   })
+  @ApiHeader({
+    name: 'X-Weather-Place',
+    required: false,
+    description:
+      'Set to have `location.name` filled in for a coordinate. Off by default, and worth ' +
+      'leaving off on a phone: no weather provider reverses a coordinate, so the name is asked ' +
+      'of OpenStreetMap — a party in your request and a line in `attribution` you are then ' +
+      'obliged to draw — while every phone carries a geocoder that answers the same question ' +
+      'with no key, no credit and no round trip. Asking by `location` names the place already, ' +
+      'and so does a provider that geocodes; neither sends anyone a second request.',
+  })
   @ApiResponse({
     status: 200,
     description: 'Return the weather',
@@ -247,6 +258,7 @@ export class WeatherController {
     @Headers('X-Weather-Alerts') alerts: string,
     @Headers('X-Weather-Forecast') forecast: string,
     @Headers('X-Weather-Air') air: string,
+    @Headers('X-Weather-Place') place: string,
   ) {
     return this.weatherService.getWeather({
       location,
@@ -264,6 +276,7 @@ export class WeatherController {
       country,
       includeForecast: enabledByDefault(forecast),
       includeAirQuality: enabledByDefault(air),
+      includeLocationName: enabled(place),
     });
   }
 }

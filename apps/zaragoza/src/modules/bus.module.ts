@@ -13,6 +13,7 @@ import {
   BusStationSchema,
 } from '../schemas/bus.schema';
 import { BusService } from '../services/bus.service';
+import { alertReader, AlertReader } from '../alert-reader';
 
 @Module({
   imports: [
@@ -25,7 +26,12 @@ import { BusService } from '../services/bus.service';
     CacheModule.register({ ttl: cacheTTL }),
   ],
   controllers: [BusController],
-  providers: [BusService],
+  providers: [
+    BusService,
+    // Without ANTHROPIC_API_KEY this reads nothing, and the alerts stay
+    // exactly as the listing publishes them.
+    { provide: AlertReader, useFactory: () => alertReader() },
+  ],
   exports: [BusService],
 })
 export class BusModule {}

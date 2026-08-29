@@ -9,8 +9,19 @@ export interface BusAlertResponse {
   id: string;
   title: string;
   url: string;
+  /** The day the alteration was announced. */
   date?: string;
+  /** When it runs, when the article says so. */
+  startDate?: string;
+  endDate?: string;
   lines: string[];
+  /** The stops the article names one by one; empty when it names none. */
+  stations: string[];
+  /**
+   * Only in a station's own alerts: the article names this stop, rather than
+   * just a line that serves it. Absent from the alert list.
+   */
+  direct?: boolean;
 }
 
 export interface BusStationResponse {

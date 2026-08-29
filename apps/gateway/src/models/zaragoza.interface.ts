@@ -39,11 +39,21 @@ export class ServiceAlert {
   url: string;
 
   /**
-   * The day it was announced. The operator publishes no end date, so an alert
-   * is dropped a week after this rather than when the alteration is over.
+   * The day it was announced. When the article gives no end date, the alert is
+   * dropped a week after this rather than when the alteration is over.
    * @example '2026-08-24'
    */
   date?: string;
+
+  /**
+   * When the alteration runs, as read from the article it links to. An alert
+   * with an `endDate` is shown until that day and no longer.
+   * @example '2026-08-24'
+   */
+  startDate?: string;
+
+  /** @example '2026-08-26' */
+  endDate?: string;
 
   /**
    * Lines the alert names. Ids the network does not list are kept as
@@ -51,6 +61,20 @@ export class ServiceAlert {
    * @example ['21', '52', '53']
    */
   lines: string[];
+
+  /**
+   * The stops the article names one by one, when it names any at all. Empty
+   * where the notice only describes the alteration in words.
+   * @example ['1234', '1235']
+   */
+  stations: string[];
+
+  /**
+   * Only in a station's own `alerts`: the notice names this stop, rather than
+   * just a line that serves it. Lead with these; the rest are the line's.
+   * @example true
+   */
+  direct?: boolean;
 }
 
 /** A bus or tram station (both services return the same shape). */

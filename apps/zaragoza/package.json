@@ -30,6 +30,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.122.0",
     "@canopus/nest": "workspace:*",
     "@canopus/shared": "workspace:*",
     "@nestjs/axios": "^4.0.1",
@@ -49,7 +50,8 @@
     "pino": "^10.3.1",
     "reflect-metadata": "^0.2.2",
     "rimraf": "^6.1.3",
-    "rxjs": "^7.8.2"
+    "rxjs": "^7.8.2",
+    "zod": "^4.5.1"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.24",

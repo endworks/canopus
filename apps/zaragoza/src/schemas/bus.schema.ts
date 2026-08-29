@@ -95,8 +95,39 @@ export class BusAlert {
   @Prop()
   date?: string;
 
+  /** Every line the alert names: the listing's, plus the article's. */
   @Prop({ type: [String], default: [] })
   lines: string[];
+
+  /** The stops the article names one by one, when it names any. */
+  @Prop({ type: [String], default: [] })
+  stations: string[];
+
+  /** When the alteration starts and ends, as the article gives them. */
+  @Prop()
+  startDate?: string;
+
+  @Prop()
+  endDate?: string;
+
+  /**
+   * What reading the article last found, kept apart from `lines` so that the
+   * union with the listing can be recomputed rather than accumulated, and so
+   * that a line the listing drops is actually dropped.
+   */
+  @Prop({ type: [String], default: [] })
+  articleLines?: string[];
+
+  /**
+   * The article as it read when it was last analysed, and when that was. An
+   * article whose text has not changed is not read again — the same words
+   * cannot yield different dates, and each reading costs a model call.
+   */
+  @Prop()
+  articleHash?: string;
+
+  @Prop()
+  analyzedAt?: string;
 
   /**
    * The first and last update run that saw the alert listed. The listing only

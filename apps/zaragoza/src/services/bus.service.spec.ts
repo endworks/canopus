@@ -12,6 +12,7 @@ import {
   BusStationDocument,
 } from '../schemas/bus.schema';
 import { BusService } from './bus.service';
+import { AlertDetails, AlertReader } from '../alert-reader';
 import { extraLineIds, KmlForLine } from '../utils';
 
 const dropdown = (lines: [string, string][], links: string[] = []) =>
@@ -158,6 +159,14 @@ class FakeModel<T extends { id: string }> {
   }
 }
 
+// The reader without a model behind it: the details are whatever the test
+// says the article turned out to say.
+const fakeReader = (details?: Record<string, AlertDetails>) =>
+  ({
+    enabled: !!details,
+    read: jest.fn(async (alert) => details?.[alert.id]),
+  }) as unknown as AlertReader & { read: jest.Mock };
+
 const build = (options: {
   lines?: [string, string][];
   kmls?: Record<string, [string, string][]>;
@@ -170,6 +179,9 @@ const build = (options: {
   storedLines?: Partial<BusLine>[];
   storedStations?: Partial<BusStation>[];
   storedAlerts?: Partial<BusAlert>[];
+  // What reading each alert's article yields, by alert id. Absent means no
+  // model is configured for this deployment.
+  articles?: Record<string, AlertDetails>;
 }) => {
   const lineModel = new FakeModel<BusLine>(
     (options.storedLines ?? []) as BusLine[],
@@ -202,15 +214,17 @@ const build = (options: {
     }),
   } as unknown as HttpService;
 
+  const reader = fakeReader(options.articles);
   const service = new BusService(
     createCache(),
     stationModel as unknown as Model<BusStationDocument>,
     lineModel as unknown as Model<BusLineDocument>,
     alertModel as unknown as Model<BusAlertDocument>,
     httpService,
+    reader,
   );
 
-  return { service, lineModel, stationModel, alertModel, httpService };
+  return { service, lineModel, stationModel, alertModel, httpService, reader };
 };
 
 describe('getLinesUpdate', () => {
@@ -612,6 +626,166 @@ describe('alerts', () => {
     const resp = await service.getStation('2', 'web');
 
     expect(resp).toMatchObject({ alerts: [] });
+  });
+});
+
+describe('alert articles', () => {
+  const article = (text: string) => `<article><p>${text}</p></article>`;
+  const articleUrl = 'https://zaragoza.avanzagrupo.com/fiestas-en-miralbueno/';
+  const listing = alerts([['fiestas-en-miralbueno', today(), '21']]);
+
+  const isoDay = (offset: number) =>
+    new Date(Date.now() + offset * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+
+  const read = {
+    'fiestas-en-miralbueno': {
+      startDate: isoDay(0),
+      endDate: isoDay(2),
+      // The article names a line the listing left out, and two stops.
+      lines: ['21', '52'],
+      stations: ['1', '2'],
+    },
+  };
+
+  const withArticle = (extra: Record<string, unknown> = {}) =>
+    build({
+      lines: [['21', 'BARRIO JESUS - OLIVER MIRALBUENO']],
+      kmls: {
+        [kmlUrl('21', 1)]: [
+          ['1', 'Av. de Navarra nº 71'],
+          ['2', 'Camino del Pilón nº 131'],
+        ],
+      },
+      pages: {
+        [homeUrl]: listing,
+        [articleUrl]: article('Del 24 al 26 de agosto, postes 1 y 2.'),
+      },
+      articles: read,
+      ...extra,
+    });
+
+  it('stores the dates, stops and lines the article gives', async () => {
+    const { service, alertModel } = withArticle();
+
+    await service.getLinesUpdate();
+
+    expect(alertModel.docs[0]).toMatchObject({
+      startDate: read['fiestas-en-miralbueno'].startDate,
+      endDate: read['fiestas-en-miralbueno'].endDate,
+      stations: ['1', '2'],
+      // What the listing named and what the article named, together.
+      lines: ['21', '52'],
+      articleLines: ['21', '52'],
+    });
+    expect(alertModel.docs[0].articleHash).toEqual(expect.any(String));
+  });
+
+  it('does not read the same article twice', async () => {
+    const { service, reader } = withArticle();
+
+    await service.getLinesUpdate();
+    await service.getLinesUpdate();
+
+    // The words did not change, so they cannot say anything new.
+    expect(reader.read).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads it again once the article is edited', async () => {
+    const { service, reader, httpService } = withArticle();
+    await service.getLinesUpdate();
+
+    // Only the article changes; every other page answers as it did.
+    const asBefore = (httpService.get as jest.Mock).getMockImplementation();
+    (httpService.get as jest.Mock).mockImplementation((url: string) =>
+      url === articleUrl
+        ? of({ data: article('Se amplía hasta el 30 de agosto.') })
+        : asBefore(url),
+    );
+    await service.getLinesUpdate();
+
+    expect(reader.read).toHaveBeenCalledTimes(2);
+  });
+
+  it('leaves the alert as published when no model is configured', async () => {
+    const { service, alertModel, reader } = withArticle({
+      articles: undefined,
+    });
+
+    await service.getLinesUpdate();
+
+    expect(reader.read).not.toHaveBeenCalled();
+    expect(alertModel.docs[0]).toMatchObject({ lines: ['21'], stations: [] });
+    expect(alertModel.docs[0].articleHash).toBeUndefined();
+  });
+
+  it('shows an alert until the day its article says it ends', async () => {
+    const stored = (id: string, endDate: string) => ({
+      id,
+      title: id,
+      url: `https://zaragoza.avanzagrupo.com/${id}/`,
+      // Announced long enough ago to have aged out on its own.
+      date: '2019-12-01',
+      lines: ['21'],
+      stations: [],
+      endDate,
+      firstSeen: '2019-12-01T04:00:00.000Z',
+      lastSeen: '2019-12-01T04:00:00.000Z',
+    });
+    const { service } = build({
+      storedAlerts: [stored('running', isoDay(3)), stored('over', isoDay(-1))],
+    });
+
+    // An end date outranks the announcement window in both directions.
+    expect((await service.getAlerts()).map((alert) => alert.id)).toEqual([
+      'running',
+    ]);
+  });
+
+  it('marks the stops the article names, without hiding the rest', async () => {
+    const { service } = withArticle({
+      pages: {
+        [homeUrl]: listing,
+        [articleUrl]: article('Del 24 al 26 de agosto, postes 1 y 2.'),
+        [pasobusUrl('1')]: pasobus([['21', 'BARRIO JESUS', '3 minutos']]),
+        [pasobusUrl('9')]: pasobus([['21', 'BARRIO JESUS', '6 minutos']]),
+      },
+    });
+    await service.getLinesUpdate();
+
+    const named = await service.getStation('1', 'web');
+    const alongTheLine = await service.getStation('9', 'web');
+
+    // Stop 1 is in the notice; stop 9 only has the line in common with it,
+    // and still gets told.
+    expect(named).toMatchObject({ alerts: [{ direct: true }] });
+    expect(alongTheLine).toMatchObject({ alerts: [{ direct: false }] });
+  });
+
+  it('shows a named stop the alert even when none of its lines are listed', async () => {
+    const { service } = build({
+      storedAlerts: [
+        {
+          id: 'obras',
+          title: 'Obras en Gran Vía',
+          url: 'https://zaragoza.avanzagrupo.com/obras/',
+          date: today(),
+          // A line that does not serve stop 3, and the stop itself.
+          lines: ['44'],
+          stations: ['3'],
+          firstSeen: new Date().toISOString(),
+          lastSeen: new Date().toISOString(),
+        },
+      ],
+      pages: {
+        [pasobusUrl('3')]: pasobus([['21', 'BARRIO JESUS', '3 minutos']]),
+      },
+    });
+
+    const resp = await service.getStation('3', 'web');
+
+    expect(resp).toMatchObject({ alerts: [{ id: 'obras', direct: true }] });
   });
 });
 

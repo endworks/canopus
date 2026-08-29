@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { HttpService } from '@nestjs/axios';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import {
@@ -34,6 +36,7 @@ import {
   BusStationDocument,
 } from '../schemas/bus.schema';
 import { mergeAlerts, parseAlerts, ScrapedAlert } from '../alerts';
+import { AlertDetails, AlertReader } from '../alert-reader';
 import {
   canonicalLineName,
   capitalize,
@@ -65,6 +68,13 @@ const busAlertsURL = 'https://zaragoza.avanzagrupo.com/';
  * short enough that August's fiestas are not still on a stop in September.
  */
 const alertMaxAgeDays = 7;
+
+// Articles are read one at a time from the same WordPress site as everything
+// else, and only the ones whose text changed are sent to the model. A run that
+// suddenly has dozens of new alerts is a listing that broke, not a city that
+// stopped running: the cap keeps that from becoming a bill.
+const maxConcurrentArticles = 3;
+const maxAnalyzedAlerts = 10;
 
 // avanzagrupo.com is a WordPress site: asking it for ~90 route files at once is
 // how a working update starts looking like an outage.
@@ -122,31 +132,48 @@ const toLineResponse = ({
   hidden: !!withdrawn || !line.stations?.length,
 });
 
-// `firstSeen`/`lastSeen` are how an undated alert is aged out; like
-// `withdrawn`, they are bookkeeping and stay out of the response.
-const toAlertResponse = ({
-  _id,
-  firstSeen,
-  lastSeen,
-  ...alert
-}: BusAlert & { _id?: unknown }): BusAlertResponse => ({ ...alert });
+// Everything else an alert carries — when it was first seen, what its article
+// hashed to, which lines came from that article — is how the record is kept up
+// to date, and stays out of the response.
+const toAlertResponse = (alert: BusAlert): BusAlertResponse => ({
+  id: alert.id,
+  title: alert.title,
+  url: alert.url,
+  date: alert.date ?? undefined,
+  startDate: alert.startDate ?? undefined,
+  endDate: alert.endDate ?? undefined,
+  lines: alert.lines ?? [],
+  stations: alert.stations ?? [],
+});
 
 const daysAgo = (days: number) =>
   new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
 /**
- * The alterations still worth showing, newest first. An alert the site dated
- * is aged by that date; one whose date could not be read is aged by the run
- * that first saw it, which is the closest thing to it we have.
+ * The alterations still in force, newest first.
+ *
+ * An alert whose article gave an end date is shown until that day and not one
+ * after it. Everything else is aged by the day it was announced — or, when
+ * even that could not be read, by the run that first saw it — because the
+ * listing itself never says when an alteration is over.
  */
 const activeAlerts = (alerts: BusAlert[]): BusAlert[] => {
+  const today = new Date().toISOString().slice(0, 10);
   const cutoff = daysAgo(alertMaxAgeDays).slice(0, 10);
   const announced = (alert: BusAlert) =>
     (alert.date ?? alert.firstSeen ?? '').slice(0, 10);
   return alerts
-    .filter((alert) => announced(alert) >= cutoff)
+    .filter((alert) =>
+      alert.endDate ? alert.endDate >= today : announced(alert) >= cutoff,
+    )
     .sort((a, b) => announced(b).localeCompare(announced(a)));
 };
+
+const articleHash = (article: string) =>
+  createHash('sha256').update(article).digest('hex');
+
+/** One reading of an article, with what identifies the text it read. */
+type AlertAnalysis = AlertDetails & { articleHash: string; analyzedAt: string };
 
 const sameList = (a: string[], b: string[]) =>
   a.length === b.length && a.every((item, index) => item === b[index]);
@@ -172,6 +199,7 @@ export class BusService {
     @InjectModel(BusAlert.name)
     private busAlertModel: Model<BusAlertDocument>,
     private httpService: HttpService,
+    private alertReader: AlertReader,
   ) {}
 
   // Stations
@@ -319,7 +347,7 @@ export class BusService {
           return {
             ...backup,
             source: 'backup',
-            alerts: await this.alertsForLines(backup.lines),
+            alerts: await this.alertsForStation(id, backup.lines),
           };
         } else {
           throw new NotFoundException(
@@ -347,7 +375,7 @@ export class BusService {
           return getWeight(normalize(a.time)) - getWeight(normalize(b.time));
         });
 
-        resp.alerts = await this.alertsForLines(resp.lines);
+        resp.alerts = await this.alertsForStation(id, resp.lines);
 
         await this.cacheManager.set(
           `bus/stations/${id}/${source ?? 'api'}`,
@@ -419,21 +447,26 @@ export class BusService {
   }
 
   /**
-   * The alerts that name any of these lines.
+   * The alerts a stop should show.
    *
-   * Line-level is as far as the source goes: it publishes which lines an
-   * alteration touches and leaves which stops to the prose of the article. So
-   * every stop of a named line carries the alert — over-showing rather than
-   * leaving somebody at a cut stop with nothing on screen.
+   * The listing only says which lines an alteration touches, so every stop of
+   * a named line carries the alert: over-showing beats leaving somebody at a
+   * cut stop with nothing on screen. Where reading the article did name stops,
+   * `direct` marks the ones it named — enough for a client to lead with those
+   * and fold the rest away, without any stop losing a notice it should see.
    */
-  private async alertsForLines(
+  private async alertsForStation(
+    id: string,
     lines: string[] = [],
   ): Promise<BusAlertResponse[]> {
-    if (!lines.length) return [];
     const alerts = await this.getAlerts();
-    return alerts.filter((alert) =>
-      alert.lines.some((line) => lines.includes(line)),
-    );
+    return alerts
+      .filter(
+        (alert) =>
+          alert.stations.includes(id) ||
+          alert.lines.some((line) => lines.includes(line)),
+      )
+      .map((alert) => ({ ...alert, direct: alert.stations.includes(id) }));
   }
 
   /**
@@ -710,15 +743,42 @@ export class BusService {
       const stored = new Map(
         (await this.getAllAlerts()).map((alert) => [alert.id, alert]),
       );
+      const analyses = await this.readArticles(scraped, stored);
       const now = new Date().toISOString();
+
       await this.busAlertModel.bulkWrite(
-        scraped.map((alert) =>
-          upsertById<BusAlert>(alert.id, {
+        scraped.map((alert) => {
+          const previous = stored.get(alert.id);
+          const analysis = analyses.get(alert.id);
+          // The listing is what an alert's lines are, plus whatever its
+          // article added when it was last read. Kept as a union computed on
+          // every run rather than accumulated, so a line the listing drops is
+          // dropped here too.
+          const articleLines = analysis?.lines ?? previous?.articleLines ?? [];
+          return upsertById<BusAlert>(alert.id, {
             ...alert,
-            firstSeen: stored.get(alert.id)?.firstSeen ?? now,
+            lines: [...new Set([...alert.lines, ...articleLines])].sort(
+              compareLineIds,
+            ),
+            // Written on every run rather than left to a schema default, so
+            // "the article named no stops" and "no article has been read" are
+            // the same empty list to a client either way.
+            stations: analysis?.stations ?? previous?.stations ?? [],
+            // A re-reading replaces what the last one found, nulls included:
+            // an article edited to drop its end date has no end date.
+            ...(analysis
+              ? {
+                  startDate: analysis.startDate ?? null,
+                  endDate: analysis.endDate ?? null,
+                  articleLines: analysis.lines,
+                  articleHash: analysis.articleHash,
+                  analyzedAt: analysis.analyzedAt,
+                }
+              : {}),
+            firstSeen: previous?.firstSeen ?? now,
             lastSeen: now,
-          }),
-        ),
+          });
+        }),
         { ordered: false },
       );
       this.logger.log(`Read ${scraped.length} service alerts`);
@@ -726,6 +786,75 @@ export class BusService {
       this.logger.warn(
         `Could not update the service alerts: ${exception.message}`,
       );
+    }
+  }
+
+  /**
+   * Reads the article behind each alert whose text has changed.
+   *
+   * The listing gives a headline and a line list; when an alteration ends and
+   * which stops it names are written in the prose of the article, differently
+   * by every author. A model reads that, and only for an article whose text is
+   * not the one already read — the same words cannot yield different dates.
+   *
+   * Nothing here can fail the run: with no model configured, or an article
+   * that will not load, or a reading that fails its checks, the alert keeps
+   * exactly what its listing said.
+   */
+  private async readArticles(
+    scraped: ScrapedAlert[],
+    stored: Map<string, BusAlert>,
+  ): Promise<Map<string, AlertAnalysis>> {
+    const analyses = new Map<string, AlertAnalysis>();
+    if (!this.alertReader.enabled) return analyses;
+
+    const articles = await mapWithLimit(
+      scraped,
+      maxConcurrentArticles,
+      async (alert) => ({
+        alert,
+        article: await this.fetchArticle(alert.url),
+      }),
+    );
+    const pending = articles
+      .filter(
+        ({ alert, article }) =>
+          article && articleHash(article) !== stored.get(alert.id)?.articleHash,
+      )
+      .slice(0, maxAnalyzedAlerts);
+    if (!pending.length) return analyses;
+
+    // A stop the article names has to be a stop the network has; this is what
+    // that is checked against.
+    const knownStations = new Set(
+      (await this.getAllStations()).map((station) => station.id),
+    );
+    const now = new Date().toISOString();
+    await mapWithLimit(pending, 1, async ({ alert, article }) => {
+      const details = await this.alertReader.read(
+        alert,
+        article,
+        knownStations,
+      );
+      if (details) {
+        analyses.set(alert.id, {
+          ...details,
+          articleHash: articleHash(article),
+          analyzedAt: now,
+        });
+      }
+    });
+    this.logger.log(`Read the article of ${analyses.size} service alerts`);
+    return analyses;
+  }
+
+  private async fetchArticle(url: string): Promise<string> {
+    try {
+      const html = await fetchWithTimeout<string>(this.httpService, url);
+      return AlertReader.articleText(html);
+    } catch (exception) {
+      this.logger.warn(`Could not read ${url}: ${exception.message}`);
+      return '';
     }
   }
 

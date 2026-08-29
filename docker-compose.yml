@@ -31,6 +31,9 @@ services:
       - 8877:3000
     environment:
       MONGODB_URI: ${MONGODB_URI:-}
+      # Optional: without it the service alerts are stored exactly as the
+      # operator lists them, with no article read for dates or stops.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     networks:
       - canopus
     depends_on:

@@ -5,6 +5,14 @@ export interface BusStationPayload extends IdPayload {
   source: string;
 }
 
+export interface BusAlertResponse {
+  id: string;
+  title: string;
+  url: string;
+  date?: string;
+  lines: string[];
+}
+
 export interface BusStationResponse {
   id: string;
   street: string;
@@ -15,6 +23,8 @@ export interface BusStationResponse {
   sourceUrl?: string;
   lastUpdated?: string;
   type?: string;
+  /** The alterations in force on the lines that serve this stop. */
+  alerts?: BusAlertResponse[];
 }
 
 export interface BusStationsResponse {

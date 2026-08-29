@@ -25,6 +25,10 @@ export class ZaragozaService {
     return lastValueFrom(this.client.send(ZARAGOZA_PATTERNS.busLine, { id }));
   }
 
+  getBusAlerts() {
+    return lastValueFrom(this.client.send(ZARAGOZA_PATTERNS.busAlerts, {}));
+  }
+
   getBusLinesUpdate() {
     return lastValueFrom(
       this.client.send(ZARAGOZA_PATTERNS.busLinesUpdate, {}),

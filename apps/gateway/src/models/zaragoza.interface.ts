@@ -18,6 +18,41 @@ export class StationTime {
   time: string;
 }
 
+/** A service alteration published by the operator. */
+export class ServiceAlert {
+  /**
+   * Alert id, the slug of the article it links to.
+   * @example 'fiestas-en-miralbueno-afecciones-en-el-bus-urbano'
+   */
+  id: string;
+
+  /**
+   * Headline as published.
+   * @example 'Fiestas en Miralbueno – Afecciones en el bus urbano'
+   */
+  title: string;
+
+  /**
+   * The article explaining the alteration.
+   * @example 'https://zaragoza.avanzagrupo.com/fiestas-en-miralbueno-afecciones-en-el-bus-urbano/'
+   */
+  url: string;
+
+  /**
+   * The day it was announced. The operator publishes no end date, so an alert
+   * is dropped a week after this rather than when the alteration is over.
+   * @example '2026-08-24'
+   */
+  date?: string;
+
+  /**
+   * Lines the alert names. Ids the network does not list are kept as
+   * published, so an event line still carries its alteration.
+   * @example ['21', '52', '53']
+   */
+  lines: string[];
+}
+
 /** A bus or tram station (both services return the same shape). */
 export class Station {
   /**
@@ -70,6 +105,12 @@ export class Station {
    * @example 'bus'
    */
   type?: string;
+
+  /**
+   * Alterations in force on the lines that serve this stop. Bus stops only:
+   * matching is by line, so an alert reaches every stop of a named line.
+   */
+  alerts?: ServiceAlert[];
 }
 
 export class BusLine {

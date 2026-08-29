@@ -5,6 +5,8 @@ import { cacheTTL } from '../utils';
 import { MongooseModule } from '@nestjs/mongoose';
 import { BusController } from '../controllers/bus.controller';
 import {
+  BusAlert,
+  BusAlertSchema,
   BusLine,
   BusLineSchema,
   BusStation,
@@ -17,6 +19,7 @@ import { BusService } from '../services/bus.service';
     MongooseModule.forFeature([
       { name: BusStation.name, schema: BusStationSchema },
       { name: BusLine.name, schema: BusLineSchema },
+      { name: BusAlert.name, schema: BusAlertSchema },
     ]),
     HttpModule,
     CacheModule.register({ ttl: cacheTTL }),

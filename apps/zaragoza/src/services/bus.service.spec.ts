@@ -4,6 +4,8 @@ import { createCache } from 'cache-manager';
 import { AnyBulkWriteOperation, Model } from 'mongoose';
 import { of, throwError } from 'rxjs';
 import {
+  BusAlert,
+  BusAlertDocument,
   BusLine,
   BusLineDocument,
   BusStation,
@@ -37,6 +39,55 @@ const kml = (stops: [string, string][]) =>
        .join('')}
    </Document></kml>`;
 
+// The "Últimas alteraciones del servicio" block, as the theme renders it.
+const alerts = (entries: [string, string, string][]) =>
+  `<section>${entries
+    .map(
+      ([slug, date, lines]) =>
+        `<article>
+           <h3><a href="https://zaragoza.avanzagrupo.com/${slug}/">${slug}</a></h3>
+           <p>${date}</p><p>Líneas: ${lines}</p>
+         </article>`,
+    )
+    .join('')}</section>`;
+
+const today = () => {
+  const now = new Date();
+  const months = [
+    'enero',
+    'febrero',
+    'marzo',
+    'abril',
+    'mayo',
+    'junio',
+    'julio',
+    'agosto',
+    'septiembre',
+    'octubre',
+    'noviembre',
+    'diciembre',
+  ];
+  return `${now.getUTCDate()} ${months[now.getUTCMonth()]}, ${now.getUTCFullYear()}`;
+};
+
+// What pasobus serves for one stop: the arrivals table is the second one.
+const pasobusUrl = (id: string) =>
+  `https://zaragoza-pasobus.avanzagrupo.com/frm_esquemaparadatime.php?poste=${id}`;
+
+const pasobus = (rows: [string, string, string][]) =>
+  `<table><tr><td>Poste 1</td></tr></table>
+   <table>
+     ${rows
+       .map(
+         ([line, destination, time]) =>
+           `<tr><td class="digital">${line}</td>
+                <td class="digital">${destination}</td>
+                <td class="digital">${time}</td></tr>`,
+       )
+       .join('')}
+   </table>`;
+
+const homeUrl = 'https://zaragoza.avanzagrupo.com/';
 const linesUrl = 'https://zaragoza.avanzagrupo.com/lineas-y-horarios/';
 const kmlUrl = (id: string, direction: number) => KmlForLine(id)[direction - 1];
 
@@ -118,12 +169,16 @@ const build = (options: {
   unreachable?: string[];
   storedLines?: Partial<BusLine>[];
   storedStations?: Partial<BusStation>[];
+  storedAlerts?: Partial<BusAlert>[];
 }) => {
   const lineModel = new FakeModel<BusLine>(
     (options.storedLines ?? []) as BusLine[],
   );
   const stationModel = new FakeModel<BusStation>(
     (options.storedStations ?? []) as BusStation[],
+  );
+  const alertModel = new FakeModel<BusAlert>(
+    (options.storedAlerts ?? []) as BusAlert[],
   );
 
   const bodies = new Map<string, string>();
@@ -151,10 +206,11 @@ const build = (options: {
     createCache(),
     stationModel as unknown as Model<BusStationDocument>,
     lineModel as unknown as Model<BusLineDocument>,
+    alertModel as unknown as Model<BusAlertDocument>,
     httpService,
   );
 
-  return { service, lineModel, stationModel, httpService };
+  return { service, lineModel, stationModel, alertModel, httpService };
 };
 
 describe('getLinesUpdate', () => {
@@ -387,22 +443,6 @@ describe('getLinesUpdate', () => {
 });
 
 describe('getStation', () => {
-  const pasobusUrl = (id: string) =>
-    `https://zaragoza-pasobus.avanzagrupo.com/frm_esquemaparadatime.php?poste=${id}`;
-
-  const pasobus = (rows: [string, string, string][]) =>
-    `<table><tr><td>Poste 1</td></tr></table>
-     <table>
-       ${rows
-         .map(
-           ([line, destination, time]) =>
-             `<tr><td class="digital">${line}</td>
-                  <td class="digital">${destination}</td>
-                  <td class="digital">${time}</td></tr>`,
-         )
-         .join('')}
-     </table>`;
-
   it('names a night line the way the network does', async () => {
     const { service } = build({
       pages: {
@@ -423,6 +463,155 @@ describe('getStation', () => {
         { line: 'N6', destination: 'La Cartuja', time: '7 min.' },
       ],
     });
+  });
+});
+
+describe('alerts', () => {
+  const listing = alerts([
+    ['fiestas-en-miralbueno', today(), '21, 52, 53'],
+    ['vive-latino', today(), '23, 34, ES7'],
+  ]);
+
+  const withAlerts = (extra: Record<string, unknown> = {}) =>
+    build({
+      lines: [['21', 'BARRIO JESUS - OLIVER MIRALBUENO']],
+      kmls: { [kmlUrl('21', 1)]: [['1', 'Av. de Navarra nº 71']] },
+      pages: { [homeUrl]: listing },
+      ...extra,
+    });
+
+  it('stores what the listing publishes, on a lines update', async () => {
+    const { service, alertModel } = withAlerts();
+
+    await service.getLinesUpdate();
+
+    expect(alertModel.docs).toEqual([
+      expect.objectContaining({
+        id: 'fiestas-en-miralbueno',
+        title: 'fiestas-en-miralbueno',
+        url: 'https://zaragoza.avanzagrupo.com/fiestas-en-miralbueno/',
+        lines: ['21', '52', '53'],
+      }),
+      expect.objectContaining({
+        id: 'vive-latino',
+        // An id the network does not run is kept as it was published.
+        lines: ['23', '34', 'ES7'],
+      }),
+    ]);
+    expect(await service.getAlerts()).toHaveLength(2);
+  });
+
+  it('keeps the day it first saw an alert across runs', async () => {
+    const { service, alertModel } = withAlerts({
+      storedAlerts: [
+        {
+          id: 'fiestas-en-miralbueno',
+          title: 'Fiestas en Miralbueno',
+          url: 'https://zaragoza.avanzagrupo.com/fiestas-en-miralbueno/',
+          lines: ['21'],
+          firstSeen: '2026-08-24T04:00:00.000Z',
+          lastSeen: '2026-08-24T04:00:00.000Z',
+        },
+      ],
+    });
+
+    await service.getLinesUpdate();
+
+    const stored = alertModel.docs.find(
+      (alert) => alert.id === 'fiestas-en-miralbueno',
+    );
+    expect(stored.firstSeen).toBe('2026-08-24T04:00:00.000Z');
+    expect(stored.lastSeen > stored.firstSeen).toBe(true);
+    // The listing is what the lines are, not the union with what we had.
+    expect(stored.lines).toEqual(['21', '52', '53']);
+  });
+
+  it('leaves the stored alerts alone when the listing cannot be read', async () => {
+    const stored = {
+      id: 'fiestas-en-miralbueno',
+      title: 'Fiestas en Miralbueno',
+      url: 'https://zaragoza.avanzagrupo.com/fiestas-en-miralbueno/',
+      date: today(),
+      lines: ['21'],
+      firstSeen: new Date().toISOString(),
+      lastSeen: new Date().toISOString(),
+    };
+    const { service, alertModel } = build({
+      lines: [['21', 'BARRIO JESUS - OLIVER MIRALBUENO']],
+      kmls: { [kmlUrl('21', 1)]: [['1', 'Av. de Navarra nº 71']] },
+      // The home page is a 500: an alteration nobody can read is not an
+      // alteration that ended, and it is never the lines update's problem.
+      unreachable: [homeUrl],
+      storedAlerts: [stored],
+    });
+
+    const resp = await service.getLinesUpdate();
+
+    expect(Object.keys(resp)).toContain('21');
+    expect(alertModel.docs).toEqual([stored]);
+  });
+
+  it('drops an alert a week after the day it was announced', async () => {
+    const old = '2019-12-01';
+    const { service } = build({
+      storedAlerts: [
+        {
+          id: 'old',
+          title: 'Fiestas del Pilar 2019',
+          url: 'https://zaragoza.avanzagrupo.com/old/',
+          date: old,
+          lines: ['21'],
+          firstSeen: `${old}T04:00:00.000Z`,
+          lastSeen: `${old}T04:00:00.000Z`,
+        },
+      ],
+    });
+
+    expect(await service.getAlerts()).toEqual([]);
+  });
+
+  it('shows a station only the alerts of the lines that serve it', async () => {
+    const { service } = build({
+      pages: {
+        [homeUrl]: listing,
+        [pasobusUrl('1')]: pasobus([['21', 'BARRIO JESUS', '3 minutos']]),
+      },
+      lines: [['21', 'BARRIO JESUS - OLIVER MIRALBUENO']],
+      kmls: { [kmlUrl('21', 1)]: [['1', 'Av. de Navarra nº 71']] },
+    });
+    await service.getLinesUpdate();
+
+    const resp = await service.getStation('1', 'web');
+
+    // Line 21 is altered; the alert for 23/34/ES7 is somebody else's stop.
+    expect(resp).toMatchObject({
+      lines: ['21'],
+      alerts: [
+        expect.objectContaining({
+          id: 'fiestas-en-miralbueno',
+          url: 'https://zaragoza.avanzagrupo.com/fiestas-en-miralbueno/',
+        }),
+      ],
+    });
+    // Bookkeeping stays off the wire.
+    expect(resp).toMatchObject({ alerts: [{}] });
+    expect(JSON.stringify(resp)).not.toContain('firstSeen');
+  });
+
+  it('leaves a station with no altered line without alerts', async () => {
+    const { service } = build({
+      pages: {
+        [homeUrl]: listing,
+        [pasobusUrl('2')]: pasobus([['44', 'ACTUR', '5 minutos']]),
+      },
+      lines: [['21', 'BARRIO JESUS - OLIVER MIRALBUENO']],
+      kmls: { [kmlUrl('21', 1)]: [['1', 'Av. de Navarra nº 71']] },
+    });
+    await service.getLinesUpdate();
+
+    const resp = await service.getStation('2', 'web');
+
+    expect(resp).toMatchObject({ alerts: [] });
   });
 });
 

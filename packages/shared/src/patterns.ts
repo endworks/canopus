@@ -11,6 +11,7 @@ export const ZARAGOZA_PATTERNS = {
   busLines: 'bus/lines',
   busLine: 'bus/line',
   busLinesUpdate: 'bus/lines/update',
+  busAlerts: 'bus/alerts',
   tramStations: 'tram/stations',
   tramStation: 'tram/station',
   biziStations: 'bizi/stations',

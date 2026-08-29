@@ -313,12 +313,26 @@ const paddedLineId = /^([A-Za-z]*)0+(\d.*)$/;
 
 const unpadLineId = (id: string): string => id.replace(paddedLineId, '$1$2');
 
+const cleanLineId = (id: string): string =>
+  unpadLineId(stripBom(fixMojibake(id ?? '')).trim());
+
 // Arrival feeds report line ids in upper case ("CI3", "EM1"), which plain
 // capitalize() would turn into "Ci3"/"Em1" — only the first is right.
 export const normalizeLineId = (id: string): string => {
-  const trimmed = unpadLineId(stripBom(fixMojibake(id ?? '')).trim());
+  const trimmed = cleanLineId(id);
   if (!trimmed) return capitalize(trimmed);
   return lineIdsByUppercase.get(trimmed.toUpperCase()) ?? capitalize(trimmed);
+};
+
+/**
+ * The same, for text that names lines the network does not run: a notice about
+ * an event line ("ES7") has to keep the id as it was written, where
+ * normalizeLineId would guess at "Es7" the way it has to for a shouting
+ * arrival feed. A line we do know still comes back in its own spelling.
+ */
+export const publishedLineId = (id: string): string => {
+  const trimmed = cleanLineId(id);
+  return lineIdsByUppercase.get(trimmed.toUpperCase()) ?? trimmed;
 };
 
 // Listings show the numbered lines first, the lettered ones (C, Ci, EM, TUR)

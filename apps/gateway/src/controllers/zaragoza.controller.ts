@@ -8,7 +8,12 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { ApiMapResponse } from '../swagger';
-import { BiziStation, BusLine, Station } from '../models/zaragoza.interface';
+import {
+  BiziStation,
+  BusLine,
+  ServiceAlert,
+  Station,
+} from '../models/zaragoza.interface';
 import { ErrorResponse } from '../models/error.interface';
 import { ZaragozaService } from '../services/zaragoza.service';
 
@@ -39,6 +44,18 @@ export class ZaragozaController {
     @Query('source') source: 'api' | 'web' | 'backup',
   ) {
     return this.zaragozaService.getBusStation(id, source);
+  }
+
+  @Get('bus/alerts')
+  @ApiOperation({ summary: 'Get bus service alerts' })
+  @ApiResponse({
+    status: 200,
+    description: 'Alterations in force, newest first',
+    type: ServiceAlert,
+    isArray: true,
+  })
+  async zaragozaBusAlerts() {
+    return this.zaragozaService.getBusAlerts();
   }
 
   @Get('bus/lines')

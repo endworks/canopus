@@ -35,6 +35,11 @@ export class BusController {
     return this.busService.getLine(data.id);
   }
 
+  @MessagePattern(ZARAGOZA_PATTERNS.busAlerts, Transport.TCP)
+  async busAlerts() {
+    return this.busService.getAlerts();
+  }
+
   @MessagePattern(ZARAGOZA_PATTERNS.busLinesUpdate, Transport.TCP)
   async busUpdateLines() {
     return this.busService.getLinesUpdate();

@@ -72,6 +72,46 @@ export class BusLine {
 
 export const BusLineSchema = SchemaFactory.createForClass(BusLine);
 
+export type BusAlertDocument = BusAlert & Document;
+
+/**
+ * A service alteration published by the operator, kept as the listing gives
+ * it: a headline, the article that explains it and the lines it names. An
+ * alert is stored whether or not its lines are ones we know — an event line
+ * the network never adds to its timetables still has an alteration to show.
+ */
+@Schema({ collection: 'bus_alerts' })
+export class BusAlert {
+  @Prop({ required: true, unique: true })
+  id: string;
+
+  @Prop({ required: true })
+  title: string;
+
+  @Prop({ required: true })
+  url: string;
+
+  /** The day it was announced, `YYYY-MM-DD`. The source publishes no end. */
+  @Prop()
+  date?: string;
+
+  @Prop({ type: [String], default: [] })
+  lines: string[];
+
+  /**
+   * The first and last update run that saw the alert listed. The listing only
+   * shows the latest few, so falling off it says nothing about an alteration
+   * being over; `firstSeen` stands in for a date that could not be read.
+   */
+  @Prop()
+  firstSeen: string;
+
+  @Prop()
+  lastSeen: string;
+}
+
+export const BusAlertSchema = SchemaFactory.createForClass(BusAlert);
+
 interface StationTime {
   destination: string;
   line: string;

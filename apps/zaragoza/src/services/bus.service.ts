@@ -16,6 +16,7 @@ import * as cheerio from 'cheerio';
 import { Model } from 'mongoose';
 
 import {
+  BusAlertResponse,
   BusLineResponse,
   BusLinesResponse,
   BusStationResponse,
@@ -25,11 +26,14 @@ import { ErrorResponse, mapWithLimit } from '@canopus/shared';
 import { fetchWithTimeout } from '@canopus/nest';
 import { StationBase, ValueLabel } from '../models/common.interface';
 import {
+  BusAlert,
+  BusAlertDocument,
   BusLine,
   BusLineDocument,
   BusStation,
   BusStationDocument,
 } from '../schemas/bus.schema';
+import { mergeAlerts, parseAlerts, ScrapedAlert } from '../alerts';
 import {
   canonicalLineName,
   capitalize,
@@ -49,6 +53,18 @@ const busApiURL =
 const busWebURL =
   'https://zaragoza-pasobus.avanzagrupo.com/frm_esquemaparadatime.php?poste=';
 const busLinesURL = 'https://zaragoza.avanzagrupo.com/lineas-y-horarios/';
+// Where "Últimas alteraciones del servicio" is published.
+const busAlertsURL = 'https://zaragoza.avanzagrupo.com/';
+
+/**
+ * How long an alteration stays in the responses.
+ *
+ * The site says when an alteration was announced and never when it is over,
+ * and the listing shows only the latest few, so an alert that has scrolled off
+ * it is not thereby finished. A week is long enough for a weekend of works and
+ * short enough that August's fiestas are not still on a stop in September.
+ */
+const alertMaxAgeDays = 7;
 
 // avanzagrupo.com is a WordPress site: asking it for ~90 route files at once is
 // how a working update starts looking like an outage.
@@ -70,6 +86,7 @@ type ActiveLines = Map<string, string | undefined>;
 interface PublishedLines {
   lines: ValueLabel[];
   routeFiles: Map<string, string[]>;
+  alerts: ScrapedAlert[];
 }
 
 const parseKmlStations = (xml: string): StationBase[] => {
@@ -105,6 +122,32 @@ const toLineResponse = ({
   hidden: !!withdrawn || !line.stations?.length,
 });
 
+// `firstSeen`/`lastSeen` are how an undated alert is aged out; like
+// `withdrawn`, they are bookkeeping and stay out of the response.
+const toAlertResponse = ({
+  _id,
+  firstSeen,
+  lastSeen,
+  ...alert
+}: BusAlert & { _id?: unknown }): BusAlertResponse => ({ ...alert });
+
+const daysAgo = (days: number) =>
+  new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+/**
+ * The alterations still worth showing, newest first. An alert the site dated
+ * is aged by that date; one whose date could not be read is aged by the run
+ * that first saw it, which is the closest thing to it we have.
+ */
+const activeAlerts = (alerts: BusAlert[]): BusAlert[] => {
+  const cutoff = daysAgo(alertMaxAgeDays).slice(0, 10);
+  const announced = (alert: BusAlert) =>
+    (alert.date ?? alert.firstSeen ?? '').slice(0, 10);
+  return alerts
+    .filter((alert) => announced(alert) >= cutoff)
+    .sort((a, b) => announced(b).localeCompare(announced(a)));
+};
+
 const sameList = (a: string[], b: string[]) =>
   a.length === b.length && a.every((item, index) => item === b[index]);
 
@@ -126,6 +169,8 @@ export class BusService {
     private busStationModel: Model<BusStationDocument>,
     @InjectModel(BusLine.name)
     private busLineModel: Model<BusLineDocument>,
+    @InjectModel(BusAlert.name)
+    private busAlertModel: Model<BusAlertDocument>,
     private httpService: HttpService,
   ) {}
 
@@ -271,7 +316,11 @@ export class BusService {
           resp.sourceUrl = url;
           resp.lastUpdated = new Date().toISOString();
         } else if (source === 'backup') {
-          return { ...backup, source: 'backup' };
+          return {
+            ...backup,
+            source: 'backup',
+            alerts: await this.alertsForLines(backup.lines),
+          };
         } else {
           throw new NotFoundException(
             {
@@ -297,6 +346,8 @@ export class BusService {
           };
           return getWeight(normalize(a.time)) - getWeight(normalize(b.time));
         });
+
+        resp.alerts = await this.alertsForLines(resp.lines);
 
         await this.cacheManager.set(
           `bus/stations/${id}/${source ?? 'api'}`,
@@ -360,6 +411,31 @@ export class BusService {
     });
   }
 
+  // Alerts
+  public async getAlerts(): Promise<BusAlertResponse[]> {
+    return this.cacheManager.wrap('bus/alerts', async () =>
+      activeAlerts(await this.getAllAlerts()).map(toAlertResponse),
+    );
+  }
+
+  /**
+   * The alerts that name any of these lines.
+   *
+   * Line-level is as far as the source goes: it publishes which lines an
+   * alteration touches and leaves which stops to the prose of the article. So
+   * every stop of a named line carries the alert — over-showing rather than
+   * leaving somebody at a cut stop with nothing on screen.
+   */
+  private async alertsForLines(
+    lines: string[] = [],
+  ): Promise<BusAlertResponse[]> {
+    if (!lines.length) return [];
+    const alerts = await this.getAlerts();
+    return alerts.filter((alert) =>
+      alert.lines.some((line) => lines.includes(line)),
+    );
+  }
+
   /**
    * Rebuilds every line and stop from the route files avanzagrupo publishes.
    * The whole update is worked out before anything is written, and then goes
@@ -403,6 +479,8 @@ export class BusService {
     this.logger.log(
       `Updated ${lineOps.length} lines and ${stationOps.length} stops`,
     );
+
+    await this.syncAlerts(published.alerts);
 
     await this.cacheManager.clear();
     return this.getLines();
@@ -609,6 +687,65 @@ export class BusService {
     ];
   }
 
+  /**
+   * Stores the alterations the site is publishing.
+   *
+   * An alert is an extra on top of the lines, so nothing it does can fail the
+   * run: a listing that cannot be read or parsed leaves the stored alerts
+   * alone, and they age out on their own from the day they were announced.
+   * Alerts are never deleted — one whose lines came back empty still has a
+   * headline and a link for the list.
+   */
+  private async syncAlerts(fromLinesPage: ScrapedAlert[]): Promise<void> {
+    try {
+      const scraped = mergeAlerts([
+        ...fromLinesPage,
+        ...(await this.fetchAlerts()),
+      ]);
+      if (!scraped.length) {
+        this.logger.warn('Zaragoza published no service alerts to read');
+        return;
+      }
+
+      const stored = new Map(
+        (await this.getAllAlerts()).map((alert) => [alert.id, alert]),
+      );
+      const now = new Date().toISOString();
+      await this.busAlertModel.bulkWrite(
+        scraped.map((alert) =>
+          upsertById<BusAlert>(alert.id, {
+            ...alert,
+            firstSeen: stored.get(alert.id)?.firstSeen ?? now,
+            lastSeen: now,
+          }),
+        ),
+        { ordered: false },
+      );
+      this.logger.log(`Read ${scraped.length} service alerts`);
+    } catch (exception) {
+      this.logger.warn(
+        `Could not update the service alerts: ${exception.message}`,
+      );
+    }
+  }
+
+  private async fetchAlerts(): Promise<ScrapedAlert[]> {
+    try {
+      const html = await fetchWithTimeout<string>(
+        this.httpService,
+        busAlertsURL,
+      );
+      return parseAlerts(html, busAlertsURL);
+    } catch (exception) {
+      // Whatever the page that is fetched for the lines carried is still
+      // worth storing, so a home page that is down costs only its own alerts.
+      this.logger.warn(
+        `Could not read the service alerts from ${busAlertsURL}: ${exception.message}`,
+      );
+      return [];
+    }
+  }
+
   async fetchZaragozaLines(): Promise<PublishedLines> {
     try {
       const html = await fetchWithTimeout<string>(
@@ -627,6 +764,10 @@ export class BusService {
           }))
           .filter((line) => line.value && line.value !== 'lineDefault'),
         routeFiles: kmlLinksByLine(html),
+        // The alterations block is part of the theme rather than of one page,
+        // so read it from the page that is fetched anyway as well as from the
+        // home page: whichever carries it, the alerts are found.
+        alerts: parseAlerts(html, busLinesURL),
       };
     } catch (exception) {
       if (exception instanceof HttpException) throw exception;
@@ -673,6 +814,10 @@ export class BusService {
 
   async getAllLines() {
     return this.busLineModel.find().sort({ id: 1 }).lean().exec();
+  }
+
+  async getAllAlerts() {
+    return this.busAlertModel.find().sort({ id: 1 }).lean().exec();
   }
 
   async getStationById(id: string) {

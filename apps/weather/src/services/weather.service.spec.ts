@@ -341,13 +341,15 @@ describe('getWeather', () => {
     ).toBe(false);
   });
 
-  it('lets the city that measured the air overrule the provider that modelled it', async () => {
+  it('asks the city that measures the air instead of the provider that models it', async () => {
     // OpenWeather carries its own pollutants, and they are modelled off the
     // same continental runs as everyone else's. A station a few streets from
-    // the cell is a different kind of answer, so it wins — and the credit
-    // moves with it, because the reader is owed the source that actually
-    // measured the number they are looking at.
-    const { service } = build({
+    // the cell is a different kind of answer, so it is asked first — and where
+    // it answers, the provider is not asked for air at all: that would be a
+    // second call against the caller's key for a number nobody would see. The
+    // credit moves with the measurement, because the reader is owed the source
+    // that actually measured what they are looking at.
+    const { service, calls } = build({
       ...routes,
       'calidad-aire': {
         result: [
@@ -386,13 +388,16 @@ describe('getWeather', () => {
     // PM10 at 130 is band 4, against the band 2 OpenWeather's own fixture
     // grades to — so this is the station's number, not the model's.
     expect(reading.current.airQuality).toBe(4);
+    // And the model was never asked: not OpenWeather's endpoint, not the one
+    // behind it.
+    expect(calls.some((url) => url.includes('air_pollution'))).toBe(false);
+    expect(calls.some((url) => url.includes('open-meteo'))).toBe(false);
     expect(reading.attribution).toEqual([
       {
         name: 'OpenWeather',
         url: 'https://openweathermap.org/',
         licence: 'https://creativecommons.org/licenses/by-sa/4.0/',
-        // No longer credited for the air it was asked for and did answer:
-        // somebody else's number is the one in the payload.
+        // Not credited for air it was never asked for.
         provides: ['weather', 'forecast'],
       },
       {
@@ -414,41 +419,11 @@ describe('getWeather', () => {
     ]);
   });
 
-  it('shows the mark OpenWeather requires, where this deployment serves one', async () => {
-    // Its licence asks for the logo, not for a line of text — so the credit is
-    // a file to point at, and it only exists once a deployment has been told
-    // its own public address. A URL built without one would 404, and a broken
-    // image is a worse credit than none.
-    process.env.WEATHER_ASSETS_URL = 'https://api.example.com/assets/';
-    try {
-      const { service } = build(routes);
-
-      const reading = await service.getWeather({
-        apiKey: 'key',
-        latitude: 41.6,
-        longitude: -0.9,
-      });
-
-      const openweather = reading.attribution.find(
-        (source) => source.name === 'OpenWeather',
-      );
-      // The trailing slash on the configured base is not doubled into the path.
-      expect(openweather?.logo).toEqual({
-        light: {
-          x1: 'https://api.example.com/assets/openweather/openweather-logo.png',
-          x2: 'https://api.example.com/assets/openweather/openweather-logo@2x.png',
-          x3: 'https://api.example.com/assets/openweather/openweather-logo@3x.png',
-        },
-      });
-      // One master mark, and its brand rules forbid deriving the others.
-      expect(openweather?.logo?.dark).toBeUndefined();
-      expect(openweather?.logo?.square).toBeUndefined();
-    } finally {
-      delete process.env.WEATHER_ASSETS_URL;
-    }
-  });
-
-  it('falls back to the name and the licence where no assets are served', async () => {
+  it('credits OpenWeather in words rather than in artwork', async () => {
+    // Its licence asks for attribution in the visible part of the application,
+    // and a name beside a licence link is attribution. No mark is served or
+    // named: a logo is a file to host, a URL to keep resolving and brand rules
+    // to keep honouring, and none of that is asked of a line of text.
     const { service } = build(routes);
 
     const reading = await service.getWeather({
@@ -464,6 +439,7 @@ describe('getWeather', () => {
     expect(openweather?.licence).toBe(
       'https://creativecommons.org/licenses/by-sa/4.0/',
     );
+    expect(openweather?.url).toBe('https://openweathermap.org/');
   });
 
   it('resolves a place name and keeps the name it was asked about', async () => {
@@ -696,7 +672,7 @@ describe('getWeather', () => {
     expect(calls.some((url) => url.includes('meteoalarm'))).toBe(false);
   });
 
-  it('credits MeteoAlarm for saying nothing is in force', async () => {
+  it('leaves MeteoAlarm out of the credits when nothing is in force', async () => {
     const { service } = build({
       ...routes,
       'feeds.meteoalarm.org': { warnings: [] },
@@ -709,18 +685,17 @@ describe('getWeather', () => {
       includeAlerts: true,
     });
 
+    // The feed answered, so the empty list is a fact and it travels. What does
+    // not travel is a credit for it: no warning of MeteoAlarm's is on show, so
+    // a line naming a met office, a licence and a delay disclaimer would have a
+    // client drawing an attribution beside nothing at all.
     expect(reading.alerts).toEqual([]);
-    expect(reading.attribution).toContainEqual({
-      name: 'MeteoAlarm',
-      url: 'https://meteoalarm.org/',
-      licence: 'https://meteoalarm.org/en/page/terms-and-conditions',
-      // No warning is on show, so there is no met office to name and the
-      // aggregator's own credit stands. The disclaimer travels regardless:
-      // "nothing is in force here" is a claim about live data too.
-      notice: 'EUMETNET – MeteoAlarm',
-      disclaimer: METEOALARM_DELAY,
-      provides: ['alerts'],
-    });
+    expect(
+      reading.attribution.some((source) => source.name === 'MeteoAlarm'),
+    ).toBe(false);
+    expect(
+      reading.attribution.some((source) => source.provides.includes('alerts')),
+    ).toBe(false);
   });
 
   it('costs the warnings rather than the temperature when the feed is down', async () => {
@@ -1507,6 +1482,22 @@ describe('apple weather', () => {
     );
 
     expect(reading.alerts?.map((alert) => alert.id)).toEqual(['rain-now']);
+  });
+
+  it('claims no warnings in its credit where none are in force', async () => {
+    // Apple answers the warnings in the document that carries the temperature,
+    // so an empty list is a real answer and it travels. The credit still does
+    // not claim it: `provides` is what the reader was actually shown, and the
+    // rule holds whoever issued the warnings — MeteoAlarm loses its whole line
+    // in the same case.
+    const { service } = build(appleRoutes);
+
+    const reading = await service.getWeather(
+      ask({ includeAlerts: true, country: 'ES' }),
+    );
+
+    expect(reading.alerts).toEqual([]);
+    expect(reading.attribution[0].provides).toEqual(['weather', 'forecast']);
   });
 
   it('serves every language from one document when no warnings are asked for', async () => {

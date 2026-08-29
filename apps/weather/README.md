@@ -32,6 +32,7 @@ GET /weather/providers
 | `X-Weather-Uv`         | no        | Set to include the UV index                           |
 | `X-Weather-Alerts`     | no        | Set to include the official warnings in force         |
 | `X-Weather-Forecast`   | no        | Set to `false`, `0` or `no` to skip it. On by default |
+| `X-Weather-Air`        | no        | Set to `false`, `0` or `no` to skip it. On by default |
 
 `GET /weather/providers` lists what this build can answer from, and what each
 one carries: `geocoding`, its own `alerts`, its own `uv`, and `managed` — which
@@ -43,13 +44,14 @@ Any value but a plain refusal — `false`, `0`, `no` — turns a header on. `1`,
 and a bare `X-Weather-Uv:` all mean the same thing, and refusing one on a
 technicality helps nobody.
 
-`X-Weather-Forecast` is the one row that is on until it is turned off: it is
-what was always there, and a caller who has never heard of the header should
-keep getting it. Turning it off also costs `current.high` and `current.low` —
-they are read off the forecast steps, because OpenWeather's own `temp_min` and
-`temp_max` on the current reading are the spread across reporting stations, a
-different quantity that happens to share the name — so the range collapses to
-the observed temperature rather than being invented from the wrong field.
+`X-Weather-Forecast` and `X-Weather-Air` are the rows that are on until they
+are turned off: they are what was always there, and a caller who has never
+heard of either header should keep getting them. Turning the forecast off also
+costs `current.high` and `current.low` — they are read off the forecast steps,
+because OpenWeather's own `temp_min` and `temp_max` on the current reading are
+the spread across reporting stations, a different quantity that happens to
+share the name — so the range collapses to the observed temperature rather than
+being invented from the wrong field.
 
 | Query      | Meaning                                                             |
 | ---------- | ------------------------------------------------------------------- |
@@ -194,9 +196,12 @@ participa, patrocina ni apoya esta reutilización de sus datos.` — because
   warnings and the live site, which is `disclaimer`. That last is also why
   `TTL.alerts` is five minutes: their terms cap the delay at ten.
 - **Apple** asks for the Apple Weather wordmark, served per language, in `logo`.
-- **OpenWeather** asks for its own mark, from the free plan up, in the visible
-  part of the application rather than on a legal page — also `logo`, and only
-  where `WEATHER_ASSETS_URL` says where this deployment serves it.
+  It is the only source that asks for a mark, and it hosts the artwork itself.
+- **OpenWeather** asks for attribution from the free plan up, in the visible
+  part of the application rather than on a legal page. Words satisfy that, so
+  it is credited in words: `name` and the `licence` link, and no `logo`. Its
+  mark would have to be hosted, kept resolving and kept within its brand rules,
+  which is a standing obligation a line of text does not carry.
 
 A `notice` is not a translation target, which is the part that looks like a bug.
 A licence names a string, so the string is what satisfies it: Open-Meteo's stays
@@ -207,10 +212,10 @@ office's own name, read out of whichever CAP block matched, and Apple's is
 artwork fetched per language.
 
 Only `logo.light` is promised. Apple serves a light wordmark, a dark one and a
-square mark; OpenWeather publishes one master logo, and its brand rules forbid
-recolouring it or moving its symbol, so no dark variant is derived. A client
-with only a light mark and a dark surface owes it a light plate rather than a
-tint.
+square mark, and a publisher shipping one master mark and nothing else is the
+ordinary case. Brand rules forbid recolouring a mark, so no dark variant is
+derived from a light one: a client with only a light mark and a dark surface
+owes it a light plate rather than a tint.
 
 ### Why it is an array
 
@@ -225,11 +230,51 @@ The same rule applies downwards. A key whose plan does not carry air quality
 loses that field and its credit, not the temperature; a second provider that is
 down loses the UV row and its credit, not the reading.
 
-MeteoAlarm is credited for an empty list too, unlike the fields above. "No
-warnings are in force here" is a claim, and it is theirs rather than ours. The
-case where nothing is owed is the feed not answering at all — a place outside
-Europe, or a feed that is down — and that leaves `alerts` off the response
-entirely rather than saying, on nobody's authority, that all is well.
+The warnings follow the same rule, and it is worth spelling out because the
+empty list looks like an exception and is not. `alerts: []` is a real answer —
+the feed was asked and nothing is in force — and it travels. What does not
+travel is a credit for it: no warning of MeteoAlarm's is on show, so a line
+naming a met office, a licence and a delay disclaimer would have a client
+drawing an attribution beside nothing at all. The same holds for a provider
+that issues its own: Apple's line stays, because it answered the weather, but
+it stops claiming `alerts`.
+
+Absent `alerts` is the other case entirely, and the two should not be confused:
+that is nobody having been asked — a place outside Europe, or a feed that is
+down — and the response says nothing about the weather being safe.
+
+## Air quality
+
+`current.airQuality` is a European Air Quality Index — 1 (good) to 6 (extremely
+poor) — and every source is graded from concentrations by the same table, so a
+station in Zaragoza and a model cell over Buenos Aires cannot disagree about
+what band 3 means.
+
+Who answers is decided in one order, and it is the only ranking here:
+
+1. **A city's own network**, where one covers the cell and has a station within
+   five kilometres of it. Measured beats modelled, so it is asked first and on
+   its own — and where it answers, nobody else is asked at all. In Zaragoza the
+   air is the city's whichever provider answered the weather, and OpenWeather's
+   `/air_pollution`, a second request against the caller's own key, is never
+   made.
+2. **The weather provider's own**, where it carries pollutants. OpenWeather
+   does. WeatherKit carries none of any kind.
+3. **Open-Meteo's model**, for everywhere and everyone else.
+
+Falling through is what makes that order safe: a network that does not reach
+the cell, has no station near enough, or is simply down costs the next source
+nothing. So adding a city can only improve the answer inside it, and can never
+take the air away from anyone outside it.
+
+The one thing the order costs is a round trip. The city is asked before the
+provider, because its answer decides whether the provider is asked for air at
+all — one request in sequence, on a document cached by the hour for the whole
+network, and only inside a city that has one.
+
+`X-Weather-Air: false` skips all of it — no city, no provider endpoint, no
+model — and `airQuality` is absent from `current`, along with any source
+credited only for it.
 
 ## Warnings
 
@@ -327,15 +372,14 @@ request that names no language gets.
 Everything sensitive comes from the environment. There is no key, certificate or
 `.p8` in this repository, and there is not meant to be one.
 
-| Variable                     | Meaning                                                                     |
-| ---------------------------- | --------------------------------------------------------------------------- |
-| `WEATHERKIT_TEAM_ID`         | The 10-character Apple Developer team identifier                            |
-| `WEATHERKIT_SERVICE_ID`      | The Services ID registered for WeatherKit                                   |
-| `WEATHERKIT_KEY_ID`          | The 10-character identifier of the WeatherKit key                           |
-| `WEATHERKIT_PRIVATE_KEY`     | The `.p8` itself, base64-encoded                                            |
-| `WEATHER_CLIENT_KEY_VERSION` | Bump to rotate the derived client key                                       |
-| `WEATHER_CLIENT_KEYS`        | Optional: your own keys, instead of the derived one                         |
-| `WEATHER_ASSETS_URL`         | Where the gateway serves attribution marks — `https://api.end.works/assets` |
+| Variable                     | Meaning                                             |
+| ---------------------------- | --------------------------------------------------- |
+| `WEATHERKIT_TEAM_ID`         | The 10-character Apple Developer team identifier    |
+| `WEATHERKIT_SERVICE_ID`      | The Services ID registered for WeatherKit           |
+| `WEATHERKIT_KEY_ID`          | The 10-character identifier of the WeatherKit key   |
+| `WEATHERKIT_PRIVATE_KEY`     | The `.p8` itself, base64-encoded                    |
+| `WEATHER_CLIENT_KEY_VERSION` | Bump to rotate the derived client key               |
+| `WEATHER_CLIENT_KEYS`        | Optional: your own keys, instead of the derived one |
 
 All four of the WeatherKit variables, or none. A deployment setting three of them is misconfigured rather
 than opted out, and the service refuses to start rather than answering 401 to

@@ -102,6 +102,16 @@ const build = (routes: Record<string, unknown>) => {
   return { zaragoza, sources: new AirSources(zaragoza, openMeteo), calls };
 };
 
+/**
+ * The air as the service takes it: what is measured here, else what is
+ * modelled. The two are asked separately in earnest, because the service has
+ * a weather provider to decide about in between — see `AirSources`.
+ */
+const best = (sources: AirSources, latitude: number, longitude: number) =>
+  sources
+    .measured(latitude, longitude)
+    .then((measured) => measured ?? sources.modelled(latitude, longitude));
+
 /** What Open-Meteo answers, in its own spelling. PM2.5 at 12 is band 2. */
 const model = {
   current: {
@@ -229,7 +239,7 @@ describe('ZaragozaAirProvider', () => {
       'air-quality-api.open-meteo.com': model,
     });
 
-    const answer = await sources.read(CENTRE.latitude, CENTRE.longitude);
+    const answer = await best(sources, CENTRE.latitude, CENTRE.longitude);
     expect(answer?.index).toBe(2);
     expect(answer?.source.name).toBe('Open-Meteo');
   });
@@ -246,7 +256,7 @@ describe('ZaragozaAirProvider', () => {
       'air-quality-api.open-meteo.com': model,
     });
 
-    const answer = await sources.read(CENTRE.latitude, CENTRE.longitude);
+    const answer = await best(sources, CENTRE.latitude, CENTRE.longitude);
     expect(answer?.source.name).toBe('Open-Meteo');
   });
 
@@ -263,7 +273,7 @@ describe('ZaragozaAirProvider', () => {
       'air-quality-api.open-meteo.com': model,
     });
 
-    const answer = await sources.read(CENTRE.latitude, CENTRE.longitude);
+    const answer = await best(sources, CENTRE.latitude, CENTRE.longitude);
     expect(answer?.index).toBe(2);
     expect(answer?.source.name).toBe('Open-Meteo');
   });
@@ -279,7 +289,7 @@ describe('ZaragozaAirProvider', () => {
       'air-quality-api.open-meteo.com': model,
     });
 
-    const answer = await sources.read(41.71, -1.02);
+    const answer = await best(sources, 41.71, -1.02);
     expect(answer?.source.name).toBe('Open-Meteo');
   });
 
@@ -341,7 +351,7 @@ describe('ZaragozaAirProvider', () => {
       'air-quality-api.open-meteo.com': model,
     });
 
-    const answer = await sources.read(CENTRE.latitude, CENTRE.longitude);
+    const answer = await best(sources, CENTRE.latitude, CENTRE.longitude);
     // The whole point of the fall-through: a city that cannot answer must not
     // take the air away from a caller who would have had it.
     expect(answer?.index).toBe(2);
@@ -366,7 +376,10 @@ describe('ZaragozaAirProvider', () => {
 });
 
 describe('AirSources', () => {
-  it('prefers the city that measured it to the model that guessed', async () => {
+  it('answers from the city that measured it, asking no model', async () => {
+    // The two halves are asked separately so a caller can act on the first:
+    // where an instrument answered, nobody else is worth asking, and that is
+    // what lets the service skip the weather provider's own air entirely.
     const { sources, calls } = build({
       'zaragoza.es': listado(
         station(CENTRO, CENTRO_UTM, [observation('NO2', 55)]),
@@ -374,7 +387,7 @@ describe('AirSources', () => {
       'air-quality-api.open-meteo.com': model,
     });
 
-    const answer = await sources.read(CENTRE.latitude, CENTRE.longitude);
+    const answer = await sources.measured(CENTRE.latitude, CENTRE.longitude);
     expect(answer?.index).toBe(3);
     expect(answer?.source.name).toBe('Ayuntamiento de Zaragoza');
     // And the model is not asked at all, rather than asked and discarded.
@@ -386,7 +399,12 @@ describe('AirSources', () => {
       'air-quality-api.open-meteo.com': model,
     });
 
-    const answer = await sources.read(40.4168, -3.7038);
+    // Nothing measured reaches Madrid, and finding that out costs no request:
+    // `covers` is a bounds check.
+    expect(await sources.measured(40.4168, -3.7038)).toBeUndefined();
+    expect(calls).toHaveLength(0);
+
+    const answer = await sources.modelled(40.4168, -3.7038);
     expect(answer?.index).toBe(2);
     expect(calls.some((url) => url.includes('zaragoza.es'))).toBe(false);
   });

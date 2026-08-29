@@ -128,12 +128,6 @@ export class WeatherService {
     // for a caller who told us they will not draw the field, which is the one
     // shape of waste a header can fix from here.
     const wantsAir = payload.includeAirQuality ?? true;
-    // Unlike the sun, carrying it is no longer the end of the question. Every
-    // provider's own air is modelled off the same continental runs, and a city
-    // that measures its own is simply nearer the truth than any of them — so
-    // this says who already answered rather than who gets asked, and
-    // `AirSources` decides whether anyone can beat it. See `AirSources.read`.
-    const ownAir = wantsAir && provider.info.airQuality;
 
     // Started here rather than inside the gather below so it flies alongside
     // the reading. Warnings are national, so the country picks the feed — and
@@ -145,7 +139,31 @@ export class WeatherService {
         ? undefined
         : this.alerts(payload, cell.country, language, cell);
 
-    const [reading, uv, borrowedAir] = await Promise.all([
+    // And the air, which unlike the sun is not settled by asking who carries
+    // it. Every provider's own is modelled off the same continental runs, and
+    // a city that measures its own is simply nearer the truth than any of them
+    // — so the instruments are asked first, alone, and before anyone else is
+    // asked anything. Where one answers, nobody else is asked at all: not the
+    // model, and not the weather provider, whose air is a second call against
+    // the caller's own key for a number this one would overrule before the
+    // reader ever saw it.
+    //
+    // The one thing paid for that is the order. It is awaited rather than
+    // gathered with the reading, so inside such a city a cold cache costs one
+    // request in sequence — one an hour, for a document covering the whole
+    // network — and the national feed above is already in flight across it.
+    // Everywhere else it costs nothing at all: `covers` is a bounds check, and
+    // answers without a request.
+    const measured = wantsAir
+      ? await this.air
+          .measured(cell.latitude, cell.longitude)
+          .catch(() => undefined)
+      : undefined;
+    // Which leaves the provider's own air worth asking for only where no
+    // instrument answered — the case its model was always the fallback for.
+    const askForAir = wantsAir && measured === undefined;
+
+    const [reading, uv, modelledAir] = await Promise.all([
       provider.read({
         apiKey,
         latitude: cell.latitude,
@@ -159,7 +177,7 @@ export class WeatherService {
         includeForecast: payload.includeForecast ?? true,
         includeAlerts: ownAlerts,
         includeUv: ownUv,
-        includeAirQuality: wantsAir,
+        includeAirQuality: askForAir,
       }),
       // Swallowed rather than awaited with the rest: the sun is one field from
       // a second service, and that service being down should cost the field
@@ -171,29 +189,43 @@ export class WeatherService {
         : undefined,
       // Swallowed for the same reason: the air is one field, and a second
       // service being down should cost that field rather than the temperature.
-      wantsAir
+      // Asked only where the provider carries no air of its own — a model has
+      // nothing to tell a model, and the measurement that would have outranked
+      // both was already asked for above.
+      askForAir && !provider.info.airQuality
         ? this.air
-            .read(cell.latitude, cell.longitude, ownAir)
+            .modelled(cell.latitude, cell.longitude)
             .catch(() => undefined)
         : undefined,
     ]);
+    // Whoever answered instead of the provider, in the order they rank.
+    const borrowedAir = measured ?? modelledAir;
 
     const warnings = ownAlerts
       ? this.issued(reading, payload)
       : await (feed ??
           this.alerts(payload, reading.location.country, language, cell));
+    // The warnings actually on show, or nothing. Nobody is credited for an
+    // empty list — not the feed that said so, not a provider that issued its
+    // own — because a credit beside no data has a client drawing a met office,
+    // a licence link and a delay disclaimer for a reader who was told nothing.
+    const shown = warnings?.alerts.length ? warnings.alerts : undefined;
+
+    // What the provider answered but the response does not show as its own: the
+    // air where somebody else's measurement displaced it, because two sources
+    // credited for one field would have the reader believe the number came from
+    // whichever they looked at first, and the warnings where none survived the
+    // narrowing.
+    const withheld = new Set<DataKind>();
+    if (borrowedAir !== undefined) withheld.add('airQuality');
+    if (shown === undefined) withheld.add('alerts');
 
     const attribution: Attribution[] = [
       {
         name: provider.info.name,
         url: provider.info.url,
         provides: [
-          // Minus the air where somebody else's measurement displaced the
-          // provider's own: two sources credited for one field would have the
-          // reader believe the number came from whichever they looked at first.
-          ...reading.provides.filter(
-            (kind) => kind !== 'airQuality' || borrowedAir === undefined,
-          ),
+          ...reading.provides.filter((kind) => !withheld.has(kind)),
           ...((cell.geocoded && !cell.borrowed
             ? ['geocoding']
             : []) as DataKind[]),
@@ -243,23 +275,19 @@ export class WeatherService {
           provides: ['airQuality'],
         });
     }
-    // Credited for an empty list too, unlike the fields above. "No warnings are
-    // in force here" is a claim, and it is MeteoAlarm's rather than ours; the
-    // case where nothing is owed is the feed not answering at all, and that
-    // leaves `alerts` off the response entirely. A provider that issued the
-    // warnings itself is already credited for them in its own line.
-    if (warnings && !ownAlerts) {
+    // Credited only for warnings actually on show, like every field above. An
+    // empty `alerts` is still an answer — the feed was asked and said nothing
+    // is in force — but it shows the reader nothing of MeteoAlarm's to credit.
+    // A provider that issued the warnings itself is already credited for them
+    // in its own line.
+    if (shown && !ownAlerts) {
       // MeteoAlarm's terms split the credit by how far the warnings reach:
       // information from a single country must name that country's own met
       // office, and only information spanning more than one is credited to
       // EUMETNET. One country's feed is asked at a time, so the offices that
-      // issued the warnings actually on show are the ones owed the line — and
-      // an empty list names nobody, because there is nothing of theirs being
-      // shown.
+      // issued the warnings actually on show are the ones owed the line.
       const senders = [
-        ...new Set(
-          warnings.alerts.map((alert) => alert.sender).filter(Boolean),
-        ),
+        ...new Set(shown.map((alert) => alert.sender).filter(Boolean)),
       ];
       attribution.push({
         name: this.alertProvider.name,

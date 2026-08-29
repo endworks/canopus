@@ -495,9 +495,10 @@ export class ZaragozaAirProvider extends AirSource {
    * The nearest station's grade, or nothing at all.
    *
    * Nothing is the ordinary answer for most of the box — the municipal term is
-   * mostly fields — and it is not a failure: `AirSources` falls through to the
-   * model, so the caller cannot tell that this was asked. That is what lets the
-   * bounds above be generous.
+   * mostly fields — and it is not a failure: the service falls back to
+   * whatever it would have used had this network never existed, so the caller
+   * cannot tell that this was asked. That is what lets the bounds above be
+   * generous.
    */
   async read(
     latitude: number,

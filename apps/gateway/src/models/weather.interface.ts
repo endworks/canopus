@@ -57,10 +57,10 @@ export class Attribution {
 
 /**
  * One mark, in whichever appearances its publisher ships it in. Only `light`
- * is promised: Apple serves a light and a dark wordmark and a square mark,
- * OpenWeather publishes a single master logo. Where `dark` is missing, draw
- * the light mark on a light surface of your own rather than recolouring it —
- * brand rules forbid the tint, not the plate.
+ * is promised: Apple serves a light and a dark wordmark and a square mark, and
+ * a publisher shipping one master mark and nothing else is the ordinary case.
+ * Where `dark` is missing, draw the light mark on a light surface of your own
+ * rather than recolouring it — brand rules forbid the tint, not the plate.
  */
 export class AttributionLogo {
   /** For drawing on a light background. The one every publisher ships. */

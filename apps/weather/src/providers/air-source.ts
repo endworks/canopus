@@ -31,8 +31,8 @@ export abstract class AirSource {
    * provider that carries pollutants carries modelled ones, off the same
    * continental runs Open-Meteo reads, so a second model has nothing to offer
    * one that already answered — but a station three streets away does, and it
-   * is worth both the extra call and overruling the provider for. See
-   * `AirSources.read`.
+   * is worth asking about before the provider is asked at all. See
+   * `AirSources.measured`.
    */
   abstract readonly measured: boolean;
 

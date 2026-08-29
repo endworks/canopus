@@ -16,6 +16,11 @@ import { ZaragozaAirProvider } from './zaragoza-air.provider';
  * nothing: its failure is swallowed here rather than raised, so adding a city
  * can only ever improve the answer inside that city and can never take the air
  * away from anyone outside it.
+ *
+ * The two halves are asked separately — `measured` then `modelled` — because
+ * the caller has something to do in between: a weather provider carrying air
+ * of its own is worth asking only once the instruments have come back empty.
+ * See `WeatherService.getWeather`.
  */
 @Injectable()
 export class AirSources {
@@ -26,24 +31,41 @@ export class AirSources {
   }
 
   /**
-   * The best air on offer here, or nothing.
+   * What an instrument standing here actually measured, or nothing.
    *
-   * `hasOwn` says the weather provider already answered with pollutants of its
-   * own, and it makes this a narrower question: not "who can tell us about this
-   * cell" but "can anyone do better than the model that already did". Only a
-   * measured source can, so the loop stops at the first modelled one — which,
-   * because the sources are ordered best first, costs no call at all anywhere a
-   * city network does not reach.
+   * The half worth asking first and on its own. Being measured is the one
+   * thing that ranks a source above a weather provider's own air — every
+   * provider that carries pollutants carries modelled ones, off the same
+   * continental runs the model here reads — so an answer from this outranks
+   * anything the provider could have said, and its absence is what makes
+   * asking the provider worthwhile.
+   *
+   * Costs nothing where no network reaches: `covers` is a bounds check, so
+   * outside the handful of cities with one this resolves without a request.
    */
-  async read(
+  measured(
     latitude: number,
     longitude: number,
-    hasOwn = false,
+  ): Promise<AirReading | undefined> {
+    return this.ask(true, latitude, longitude);
+  }
+
+  /** What the model says about here, or nothing. The source of last resort. */
+  modelled(
+    latitude: number,
+    longitude: number,
+  ): Promise<AirReading | undefined> {
+    return this.ask(false, latitude, longitude);
+  }
+
+  /** The first source of the given kind with something to say about the cell. */
+  private async ask(
+    measured: boolean,
+    latitude: number,
+    longitude: number,
   ): Promise<AirReading | undefined> {
     for (const source of this.sources) {
-      // Ordered best first, so the first modelled source is where the ranking
-      // stops being able to beat a provider's own modelled air.
-      if (hasOwn && !source.measured) return undefined;
+      if (source.measured !== measured) continue;
       if (!source.covers(latitude, longitude)) continue;
 
       // Swallowed per source rather than around the whole loop: a city's feed

@@ -184,8 +184,10 @@ export class WeatherController {
       'from depends on the provider: Apple issues its own, for the coordinate asked about and ' +
       'for most of the world, in the same request as the reading. Every other provider borrows ' +
       "MeteoAlarm's (EUMETNET, no key needed), which is another party in the request and is " +
-      'credited separately in `attribution` — and which covers Europe only, so a place outside ' +
-      'it comes back with no `alerts` at all rather than an empty list. Narrow further with ' +
+      'credited separately in `attribution` where a warning of theirs is on show — and which ' +
+      'covers Europe only, so a place outside it comes back with no `alerts` at all rather ' +
+      'than an empty list. An empty list is the feed answering that nothing is in force, and ' +
+      'carries no credit with it: there is nothing of theirs being shown. Narrow further with ' +
       '`safety` and `area`. The response says in `alertScope` whether the warnings are narrowed ' +
       'to the place (`area`) or are everything the country has (`country`).',
   })
@@ -206,10 +208,12 @@ export class WeatherController {
     description:
       'Set to `false`, `0` or `no` to skip the air quality and every call it costs. On by ' +
       'default, because it was part of the answer before this header existed. Off, nobody is ' +
-      "asked: not the provider's own endpoint — OpenWeather's `/air_pollution` is a second " +
-      'request against your key — nor the city network, nor the model behind it. So a caller ' +
-      'who does not draw the index saves up to three parties in the request, and `airQuality` ' +
-      'is absent from `current` along with any source credited only for it.',
+      "asked: not the city network, not the provider's own endpoint — OpenWeather's " +
+      '`/air_pollution` is a second request against your key — and not the model behind them. ' +
+      'On, the city that measures the cell is asked first and, where it answers, is the only ' +
+      'one asked: a station beats any model, so no provider is billed for one that would be ' +
+      'overruled. `airQuality` is absent from `current` when this is off, along with any ' +
+      'source credited only for it.',
   })
   @ApiHeader({
     name: 'X-Weather-Uv',

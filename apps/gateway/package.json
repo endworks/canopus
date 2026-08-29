@@ -83,7 +83,6 @@
     "testEnvironment": "node"
   },
   "files": [
-    "dist",
-    "assets"
+    "dist"
   ]
 }

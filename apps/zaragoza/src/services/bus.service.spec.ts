@@ -110,6 +110,8 @@ class FakeModel<T extends { id: string }> {
 const build = (options: {
   lines?: [string, string][];
   kmls?: Record<string, [string, string][]>;
+  // Any other page the site serves, by URL.
+  pages?: Record<string, string>;
   // Route files the lines page links, rather than leaving to the convention.
   links?: string[];
   // URLs the site answers with a server error: an outage, not a missing file.
@@ -130,6 +132,9 @@ const build = (options: {
   }
   Object.entries(options.kmls ?? {}).forEach(([url, stops]) =>
     bodies.set(url, kml(stops)),
+  );
+  Object.entries(options.pages ?? {}).forEach(([url, html]) =>
+    bodies.set(url, html),
   );
 
   const httpService = {
@@ -378,6 +383,46 @@ describe('getLinesUpdate', () => {
     expect(lineModel.docs).toEqual([
       { id: '21', name: 'Barrio Jesús', stations: ['1'] },
     ]);
+  });
+});
+
+describe('getStation', () => {
+  const pasobusUrl = (id: string) =>
+    `https://zaragoza-pasobus.avanzagrupo.com/frm_esquemaparadatime.php?poste=${id}`;
+
+  const pasobus = (rows: [string, string, string][]) =>
+    `<table><tr><td>Poste 1</td></tr></table>
+     <table>
+       ${rows
+         .map(
+           ([line, destination, time]) =>
+             `<tr><td class="digital">${line}</td>
+                  <td class="digital">${destination}</td>
+                  <td class="digital">${time}</td></tr>`,
+         )
+         .join('')}
+     </table>`;
+
+  it('names a night line the way the network does', async () => {
+    const { service } = build({
+      pages: {
+        [pasobusUrl('1')]: pasobus([
+          ['N06', 'LA CARTUJA', '7 minutos'],
+          ['21', 'BARRIO JESUS', '3 minutos'],
+        ]),
+      },
+    });
+
+    const resp = await service.getStation('1', 'web');
+
+    // The site pads the number ("N06"); the line is N6 everywhere else.
+    expect(resp).toMatchObject({
+      lines: ['21', 'N6'],
+      times: [
+        { line: '21', destination: 'Barrio Jesús', time: '3 min.' },
+        { line: 'N6', destination: 'La Cartuja', time: '7 min.' },
+      ],
+    });
   });
 });
 

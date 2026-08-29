@@ -306,10 +306,17 @@ const lineIdsByUppercase = new Map(
   knownLineIds.map((id) => [id.toUpperCase(), id]),
 );
 
+// pasobus pads the number of a line id to two digits ("N06", "C01"), but the
+// network — and everything else here — calls that line "N6". A leading zero is
+// never part of an id, so it is dropped wherever it comes from.
+const paddedLineId = /^([A-Za-z]*)0+(\d.*)$/;
+
+const unpadLineId = (id: string): string => id.replace(paddedLineId, '$1$2');
+
 // Arrival feeds report line ids in upper case ("CI3", "EM1"), which plain
 // capitalize() would turn into "Ci3"/"Em1" — only the first is right.
 export const normalizeLineId = (id: string): string => {
-  const trimmed = stripBom(fixMojibake(id ?? '')).trim();
+  const trimmed = unpadLineId(stripBom(fixMojibake(id ?? '')).trim());
   if (!trimmed) return capitalize(trimmed);
   return lineIdsByUppercase.get(trimmed.toUpperCase()) ?? capitalize(trimmed);
 };

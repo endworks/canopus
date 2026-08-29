@@ -102,6 +102,12 @@ describe('normalizeLineId', () => {
     ['TUR', 'TUR'],
     ['N1', 'N1'],
     ['21', '21'],
+    // pasobus pads the number to two digits; the line is not called "N06"
+    ['N06', 'N6'],
+    ['C01', 'C1'],
+    ['CI03', 'Ci3'],
+    // a zero that is part of the number stays put
+    ['60', '60'],
   ])('%s -> %s', (input, expected) => {
     expect(normalizeLineId(input)).toBe(expected);
   });

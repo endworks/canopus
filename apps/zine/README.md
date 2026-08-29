@@ -64,6 +64,7 @@ left with none drops off that cinema's billboard.
 | ---------------------- | -------- | ----------------------------- |
 | `MONGODB_URI`          | yes      | Connection string (db `zine`) |
 | `THE_MOVIE_DB_API_KEY` | yes      | TheMovieDB v3 API key         |
+| `GOOGLE_MAPS_API_KEY`  | no       | Geocoding, to place venues on a map |
 
 Both are validated at boot; the service refuses to start without them.
 

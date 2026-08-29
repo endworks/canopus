@@ -20,6 +20,7 @@ export const ZARAGOZA_PATTERNS = {
 
 export const ZINE_PATTERNS = {
   cinemas: 'cinemas',
+  locations: 'locations',
   cinema: 'cinema',
   cinemaBasic: 'cinema/basic',
   movies: 'movies',

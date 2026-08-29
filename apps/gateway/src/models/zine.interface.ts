@@ -64,6 +64,50 @@ export class Actor extends Crew {
   character?: string;
 }
 
+/**
+ * One place this service has cinemas for, and where it is.
+ *
+ * For a client that knows its own coordinates and not what the place it is
+ * standing in is called. A reverse-geocoded name cannot be matched against the
+ * catalogue's spelling — a phone says `València`, the catalogue says
+ * `Valencia`, and another platform names the autonomous community instead — so
+ * what travels is a point, and the caller picks whichever of these is nearest.
+ *
+ * `id` is the value to send back as `location`; `cinemas` is how many venues
+ * are actually held for it, and a location with none is not listed at all.
+ */
+export class CinemaLocation {
+  /**
+   * The `location` filter value for this place.
+   * @example 'zaragoza'
+   */
+  id: string;
+
+  /**
+   * What to call it on screen.
+   * @example 'Zaragoza'
+   */
+  name: string;
+
+  /**
+   * Latitude of the city the province is named after.
+   * @example 41.6488
+   */
+  latitude: number;
+
+  /**
+   * Longitude of the same.
+   * @example -0.8891
+   */
+  longitude: number;
+
+  /**
+   * How many cinemas are held for it.
+   * @example 3
+   */
+  cinemas: number;
+}
+
 export class Cinema {
   /**
    * Cinema id.
@@ -82,6 +126,18 @@ export class Cinema {
    * @example 'Av. de Juan Carlos I, 44'
    */
   address?: string;
+
+  /**
+   * Where the venue is, as `[longitude, latitude]` strings.
+   *
+   * Longitude first, which is the order the clients index rather than name.
+   * Absent for a venue nobody has placed yet: the listings carry no
+   * coordinates, so these are filled by the update run and only where a
+   * geocoding key is configured.
+   *
+   * @example ['-0.9033', '41.6407']
+   */
+  coordinates?: string[];
 
   /**
    * City / area.
@@ -348,6 +404,17 @@ export class UpdateReport {
    * @example 49
    */
   deleted: number;
+
+  /**
+   * Venues that had no coordinates and were placed on a map this run.
+   *
+   * The listings carry no coordinates, so a venue arrives unplaced and is
+   * geocoded once. Zero on every run after the first, and on a deployment with
+   * no geocoding key configured.
+   *
+   * @example 2
+   */
+  located: number;
 
   /**
    * Cinemas whose billboard was refreshed.

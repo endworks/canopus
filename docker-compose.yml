@@ -46,6 +46,7 @@ services:
     environment:
       MONGODB_URI: ${MONGODB_URI:-}
       THE_MOVIE_DB_API_KEY: ${THE_MOVIE_DB_API_KEY:-}
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
     networks:
       - canopus
     depends_on:

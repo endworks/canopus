@@ -15,6 +15,7 @@ import {
   Movie,
   PruneReport,
   UpdateReport,
+  CinemaLocation,
 } from '../models/zine.interface';
 import { ErrorResponse } from '../models/error.interface';
 import { ZineService } from '../services/zine.service';
@@ -24,6 +25,17 @@ import { ZineService } from '../services/zine.service';
 @Controller('zine')
 export class ZineController {
   constructor(private readonly zineService: ZineService) {}
+
+  @Get('locations')
+  @ApiOperation({ summary: 'Get the places this service has cinemas for' })
+  @ApiResponse({
+    status: 200,
+    description: 'Return the supported locations',
+    type: [CinemaLocation],
+  })
+  async zineLocations() {
+    return this.zineService.getLocations();
+  }
 
   @Get('cinema')
   @ApiOperation({ summary: 'Get cinemas' })

@@ -17,6 +17,11 @@ export class CinemaController {
     return this.cinemaService.getCinemas(data.location);
   }
 
+  @MessagePattern(ZINE_PATTERNS.locations, Transport.TCP)
+  async locations() {
+    return this.cinemaService.getLocations();
+  }
+
   @MessagePattern(ZINE_PATTERNS.cinema, Transport.TCP)
   async cinema(@Payload() data: IdPayload) {
     return this.cinemaService.getCinema(data.id);

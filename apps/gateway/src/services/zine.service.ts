@@ -11,6 +11,10 @@ export class ZineService {
     return lastValueFrom(this.client.send(ZINE_PATTERNS.cinemas, { location }));
   }
 
+  getLocations() {
+    return lastValueFrom(this.client.send(ZINE_PATTERNS.locations, {}));
+  }
+
   getCinema(id: string) {
     return lastValueFrom(this.client.send(ZINE_PATTERNS.cinema, { id }));
   }

@@ -3,11 +3,13 @@ import { ConfigModule } from '@nestjs/config';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { requireEnv, SERVICE_TOKENS, TCP_PORT } from '@canopus/shared';
 import { LoggingModule } from '@canopus/nest';
+import { CitiesController } from './controllers/cities.controller';
 import { RAEController } from './controllers/rae.controller';
 import { TwitterDownloaderController } from './controllers/twitter-downloader.controller';
 import { ZaragozaController } from './controllers/zaragoza.controller';
 import { WeatherController } from './controllers/weather.controller';
 import { ZineController } from './controllers/zine.controller';
+import { CitiesService } from './services/cities.service';
 import { RAEService } from './services/rae.service';
 import { TwitterDownloaderService } from './services/twitter-downloader.service';
 import { ZaragozaService } from './services/zaragoza.service';
@@ -40,6 +42,7 @@ import { HealthModule } from './health/health.module';
     ),
   ],
   controllers: [
+    CitiesController,
     ZaragozaController,
     ZineController,
     WeatherController,
@@ -47,6 +50,7 @@ import { HealthModule } from './health/health.module';
     TwitterDownloaderController,
   ],
   providers: [
+    CitiesService,
     ZaragozaService,
     ZineService,
     WeatherService,

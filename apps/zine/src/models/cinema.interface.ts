@@ -1,3 +1,18 @@
+/**
+ * One place this service has cinemas for.
+ *
+ * `cinemas` is what the database actually holds rather than what the catalogue
+ * seeds, so a location whose venues have all closed stops being offered as
+ * somewhere to look — nobody should be sent to an empty billboard. Where the
+ * place is belongs to the gateway's own catalogue, which is the thing that
+ * knows about more than films.
+ */
+export interface CinemaLocation {
+  id: string;
+  name: string;
+  cinemas: number;
+}
+
 export interface CinemaPayload {
   location?: string;
 }
@@ -25,6 +40,8 @@ export interface UpdateReport {
    * them were still in the database.
    */
   deleted: number;
+  /** Venues that had no coordinates and were placed on a map this run. */
+  located: number;
   /** Cinemas whose billboard was refreshed. */
   warmed: number;
   /** Cinemas whose billboard failed, by id. */
@@ -36,6 +53,8 @@ export interface UpdateReport {
 export interface BaseCinema {
   name: string;
   address?: string;
+  /** `[longitude, latitude]` as strings, once somebody has placed the venue. */
+  coordinates?: string[];
   location?: string;
   /** Postal code of the venue, when the listing states it. */
   postalCode?: string;

@@ -3,11 +3,13 @@ import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { AnyBulkWriteOperation, Model } from 'mongoose';
 import { cinemas as cinemaSeed } from '../data/cinemas';
+import { locations } from '../data/locations';
 import {
   CacheData,
   Cinema,
   CinemaDetails,
   CinemaDetailsBasic,
+  CinemaLocation,
   Crew,
   PruneReport,
   UpdateReport,
@@ -25,6 +27,7 @@ import { Movie as MovieSchema } from '../schemas/movie.schema';
 import { Match, pickBest, searchQueries, shortlist } from '../movie-matcher';
 import { minutesToString, venueKey } from '../utils';
 import { CinemaSources } from './cinema-source';
+import { GeocoderService } from './geocoder.service';
 import { TheMovieDBService } from './themoviedb.service';
 
 /** updateAll warms one city's billboards; this is the one it defaults to. */
@@ -97,8 +100,30 @@ export class CinemaService {
     @InjectModel(CinemaSchema.name) private cinemaModel: Model<CinemaSchema>,
     @InjectModel(MovieSchema.name) private movieModel: Model<MovieSchema>,
     private sources: CinemaSources,
+    private geocoder: GeocoderService,
     private theMovieDb: TheMovieDBService,
   ) {}
+
+  /**
+   * Everywhere this service actually has cinemas.
+   *
+   * Counted from the database rather than from the seed, and a location with
+   * none is dropped: being offered a city and then an empty billboard is worse
+   * than not being offered it. The gateway joins this to its own catalogue,
+   * which is what says where these places are.
+   */
+  public getLocations(): Promise<CinemaLocation[]> {
+    return this.cacheManager.wrap('locations', async () => {
+      const counts = new Map<string, number>();
+      for (const cinema of await this.cinemaModel.find({}, 'location').lean()) {
+        const id = cinema.location?.toLowerCase();
+        if (id) counts.set(id, (counts.get(id) ?? 0) + 1);
+      }
+      return locations
+        .map((place) => ({ ...place, cinemas: counts.get(place.id) ?? 0 }))
+        .filter((place) => place.cinemas > 0);
+    });
+  }
 
   public getCinemas(location?: string): Promise<Cinema[]> {
     const key = location ? `cinema/${location}` : 'cinema';
@@ -369,6 +394,9 @@ export class CinemaService {
     const catalogue = this.sources.dedupe(listed);
     await this.saveCinemas(catalogue);
     const deleted = await this.dropMergedVenues(listed, catalogue);
+    // Before the cache is cleared below, so the listings served from here on
+    // carry the pins rather than waiting for the next update to publish them.
+    const located = await this.locateVenues();
 
     // Cleared here rather than up front: the catalogue scrape above reads a
     // page per venue, and clearing before it leaves every cached listing cold
@@ -397,12 +425,14 @@ export class CinemaService {
       listed: listed.length,
       saved: catalogue.length,
       deleted,
+      located,
       warmed: cinemas.length - failed.length,
       failed,
       films: films.reduce((total, count) => total + count, 0),
     };
     this.logger.log(
-      `updated ${location}: ${report.warmed}/${cinemas.length} cinemas, ${report.films} films, ${report.saved} venues saved`,
+      `updated ${location}: ${report.warmed}/${cinemas.length} cinemas, ${report.films} films, ` +
+        `${report.saved} venues saved, ${report.located} placed on a map`,
     );
     return report;
   }
@@ -717,6 +747,60 @@ export class CinemaService {
    * The scraper returns every cinema in the country; `cinemas.ts` supplies the
    * address/website the listings don't carry. One round trip, not one per row.
    */
+  /**
+   * Put the unplaced venues on a map, once each.
+   *
+   * The listings these are scraped from print an address sometimes and a
+   * coordinate never, so a venue arrives as a name and a city — enough for a
+   * billboard, not enough for a pin. Asked at update time rather than per
+   * request, and written to the database, because the answer does not change:
+   * this costs one lookup the first time a venue is seen and nothing on every
+   * update after it.
+   *
+   * Only the venues actually missing a coordinate are asked about, and the
+   * address is filled at the same time only where the listing gave none — the
+   * scraped address is the venue's own words for where it is, and the
+   * geocoder's is a postal normalisation of it.
+   *
+   * One at a time rather than in parallel: this runs behind an update that
+   * already takes minutes, and a burst of lookups against a paid quota is the
+   * kind of thing that reads as a runaway loop from the other side.
+   */
+  private async locateVenues(): Promise<number> {
+    if (!this.geocoder.configured) return 0;
+
+    const unplaced = await this.cinemaModel
+      .find({ $or: [{ coordinates: { $exists: false } }, { coordinates: [] }] })
+      .lean();
+    if (!unplaced.length) return 0;
+
+    let located = 0;
+    for (const venue of unplaced) {
+      const found = await this.geocoder.locate(
+        venue.name,
+        venue.address,
+        venue.location,
+      );
+      if (!found) continue;
+      await this.cinemaModel.updateOne(
+        { id: venue.id },
+        {
+          $set: {
+            coordinates: found.coordinates,
+            ...(venue.address || !found.address
+              ? {}
+              : { address: found.address }),
+          },
+        },
+      );
+      located += 1;
+    }
+    if (located) {
+      this.logger.log(`placed ${located}/${unplaced.length} venues on a map`);
+    }
+    return located;
+  }
+
   private saveCinemas(cinemas: Cinema[]) {
     const operations = cinemas.map((cinema) => {
       const { address, website } = cinemaSeed[cinema.id] ?? {};
@@ -726,6 +810,9 @@ export class CinemaService {
           // The seed still wins, but the listings carry an address of their
           // own now, so an unseeded venue keeps the one it was scraped with.
           update: {
+            // `coordinates` is deliberately absent: it is filled by
+            // `locateVenues` and a scrape carries none, so spreading the
+            // scraped venue over the record must not blank what was found.
             $set: { ...cinema, address: address ?? cinema.address, website },
           },
           upsert: true,

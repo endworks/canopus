@@ -146,8 +146,20 @@ const toAlertResponse = (alert: BusAlert): BusAlertResponse => ({
   scope: alert.scope ?? 'line',
 });
 
-const daysAgo = (days: number) =>
-  new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+/** A day, `YYYY-MM-DD`, so many days from today. */
+const dayFrom = (days: number) =>
+  new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+/**
+ * An alert with nothing left for its article to tell us.
+ *
+ * It was read, and what it was read to say includes the day it ends: it will
+ * take itself out of the listings when that day passes, so re-reading it every
+ * morning buys nothing. Until the eve of that day, when the one edit that
+ * would matter — an alteration extended — is worth a look.
+ */
+const settled = (alert?: BusAlert): boolean =>
+  !!alert?.articleHash && !!alert.endDate && alert.endDate > dayFrom(1);
 
 /**
  * The alterations still in force, newest first.
@@ -158,8 +170,8 @@ const daysAgo = (days: number) =>
  * listing itself never says when an alteration is over.
  */
 const activeAlerts = (alerts: BusAlert[]): BusAlert[] => {
-  const today = new Date().toISOString().slice(0, 10);
-  const cutoff = daysAgo(alertMaxAgeDays).slice(0, 10);
+  const today = dayFrom(0);
+  const cutoff = dayFrom(-alertMaxAgeDays);
   const announced = (alert: BusAlert) =>
     (alert.date ?? alert.firstSeen ?? '').slice(0, 10);
   return alerts
@@ -837,8 +849,13 @@ export class BusService {
     const readings: ArticleReadings = new Map();
     if (!this.alertReader.enabled) return readings;
 
+    // Most mornings this is empty: the alerts on the listing are the ones read
+    // yesterday, and an alert whose end date is known is not fetched at all.
+    const unsettled = scraped.filter((alert) => !settled(stored.get(alert.id)));
+    if (!unsettled.length) return readings;
+
     const articles = await mapWithLimit(
-      scraped,
+      unsettled,
       maxConcurrentArticles,
       async (alert) => ({
         alert,

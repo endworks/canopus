@@ -678,18 +678,18 @@ describe('alert articles', () => {
     expect(alertModel.docs[0].articleHash).toEqual(expect.any(String));
   });
 
-  it('does not read the same article twice', async () => {
-    const { service, reader } = withArticle();
-
-    await service.getLinesUpdate();
-    await service.getLinesUpdate();
-
-    // The words did not change, so they cannot say anything new.
-    expect(reader.read).toHaveBeenCalledTimes(1);
-  });
-
-  it('reads it again once the article is edited', async () => {
-    const { service, reader, httpService } = withArticle();
+  it('reads it again once the article of an open-ended alert is edited', async () => {
+    // No end date, so this one is read again every run until it has one.
+    const { service, reader, httpService } = withArticle({
+      articles: {
+        'fiestas-en-miralbueno': {
+          startDate: isoDay(0),
+          endDate: undefined,
+          stations: [],
+          scope: 'line' as const,
+        },
+      },
+    });
     await service.getLinesUpdate();
 
     // Only the article changes; every other page answers as it did.
@@ -701,6 +701,49 @@ describe('alert articles', () => {
     );
     await service.getLinesUpdate();
 
+    expect(reader.read).toHaveBeenCalledTimes(2);
+  });
+
+  it('stops fetching the article of an alert that knows when it ends', async () => {
+    const { service, reader, httpService } = withArticle();
+    await service.getLinesUpdate();
+    (httpService.get as jest.Mock).mockClear();
+
+    await service.getLinesUpdate();
+
+    // Nothing an already-read notice can say changes when it ends, and it
+    // takes itself off the listings on that day.
+    expect(reader.read).toHaveBeenCalledTimes(1);
+    expect(
+      (httpService.get as jest.Mock).mock.calls.map(([url]) => url),
+    ).not.toContain(articleUrl);
+  });
+
+  it('looks once more on the eve of the day it ends', async () => {
+    // An alteration is sometimes extended by editing its own notice, and
+    // tomorrow is the last day that edit can still reach anybody.
+    const { service, reader, httpService } = withArticle({
+      articles: {
+        'fiestas-en-miralbueno': {
+          startDate: isoDay(0),
+          endDate: isoDay(1),
+          stations: [],
+          scope: 'line' as const,
+        },
+      },
+    });
+    await service.getLinesUpdate();
+
+    const asBefore = (httpService.get as jest.Mock).getMockImplementation();
+    (httpService.get as jest.Mock).mockImplementation((url: string) =>
+      url === articleUrl
+        ? of({ data: article('Se amplía hasta el 30 de agosto.') })
+        : asBefore(url),
+    );
+    await service.getLinesUpdate();
+
+    // Fetched because it ends tomorrow, read because it now says something
+    // else; an unedited notice would have been fetched and left alone.
     expect(reader.read).toHaveBeenCalledTimes(2);
   });
 

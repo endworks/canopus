@@ -780,6 +780,75 @@ describe('alert articles', () => {
     expect(await service.getAlerts()).toHaveLength(1);
   });
 
+  it('falls back to the whole line when the reading fails', async () => {
+    const { service, alertModel, reader } = withArticle({ articles: {} });
+
+    await service.getLinesUpdate();
+
+    // The key is configured, the call is not answered: the alert is what the
+    // listing said it was, on every stop of the line.
+    expect(reader.read).toHaveBeenCalled();
+    expect(alertModel.docs[0]).toMatchObject({
+      lines: ['21'],
+      stations: [],
+      scope: 'line',
+    });
+    expect(alertModel.docs[0].articleHash).toBeUndefined();
+  });
+
+  it('stops narrowing a notice whose article changed under a failed reading', async () => {
+    const narrowed = {
+      'fiestas-en-miralbueno': {
+        startDate: undefined,
+        endDate: undefined,
+        lines: ['21'],
+        stations: ['1'],
+        scope: 'stations' as const,
+      },
+    };
+    const { service, alertModel, httpService, reader } = withArticle({
+      articles: narrowed,
+    });
+    await service.getLinesUpdate();
+    expect(alertModel.docs[0]).toMatchObject({ scope: 'stations' });
+
+    // The notice is rewritten and this run cannot read what it now says.
+    const asBefore = (httpService.get as jest.Mock).getMockImplementation();
+    (httpService.get as jest.Mock).mockImplementation((url: string) =>
+      url === articleUrl
+        ? of({ data: article('Se amplía a toda la línea.') })
+        : asBefore(url),
+    );
+    reader.read.mockResolvedValueOnce(undefined);
+    await service.getLinesUpdate();
+
+    // Nothing stands behind the narrowing any more, so it goes.
+    expect(alertModel.docs[0]).toMatchObject({ scope: 'line' });
+  });
+
+  it('keeps a reading that still matches the article it was taken from', async () => {
+    const { service, alertModel } = withArticle({
+      articles: {
+        'fiestas-en-miralbueno': {
+          startDate: undefined,
+          endDate: undefined,
+          lines: ['21'],
+          stations: ['1'],
+          scope: 'stations' as const,
+        },
+      },
+    });
+
+    await service.getLinesUpdate();
+    await service.getLinesUpdate();
+
+    // Unchanged words, so the second run reads nothing and changes nothing.
+    expect(alertModel.docs[0]).toMatchObject({
+      scope: 'stations',
+      stations: ['1'],
+    });
+  });
+
   it('shows an alert until the day its article says it ends', async () => {
     const stored = (id: string, endDate: string) => ({
       id,

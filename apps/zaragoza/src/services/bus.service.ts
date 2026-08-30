@@ -199,6 +199,12 @@ const articleHash = (article: string) =>
 /** One reading of an article, with what identifies the text it read. */
 type AlertAnalysis = AlertDetails & { articleHash: string; analyzedAt: string };
 
+/** What a run's reading pass came back with, and what it never got to read. */
+interface ArticleReadings {
+  analyses: Map<string, AlertAnalysis>;
+  unread: Set<string>;
+}
+
 const sameList = (a: string[], b: string[]) =>
   a.length === b.length && a.every((item, index) => item === b[index]);
 
@@ -772,7 +778,7 @@ export class BusService {
       const stored = new Map(
         (await this.getAllAlerts()).map((alert) => [alert.id, alert]),
       );
-      const analyses = await this.readArticles(scraped, stored);
+      const { analyses, unread } = await this.readArticles(scraped, stored);
       const now = new Date().toISOString();
 
       await this.busAlertModel.bulkWrite(
@@ -793,7 +799,14 @@ export class BusService {
             // "the article named no stops" and "no article has been read" are
             // the same empty list to a client either way.
             stations: analysis?.stations ?? previous?.stations ?? [],
-            scope: analysis?.scope ?? previous?.scope ?? 'line',
+            // A notice is narrowed to stops only while a reading of the text
+            // it currently has says so. With no key, an article that would not
+            // load, a call that failed or an edit nobody has read yet, it goes
+            // back to being the whole line's — which is where it started, and
+            // the side of the judgement that does not leave a stop silent.
+            scope:
+              analysis?.scope ??
+              (unread.has(alert.id) ? 'line' : (previous?.scope ?? 'line')),
             // A re-reading replaces what the last one found, nulls included:
             // an article edited to drop its end date has no end date.
             ...(analysis
@@ -834,9 +847,12 @@ export class BusService {
   private async readArticles(
     scraped: ScrapedAlert[],
     stored: Map<string, BusAlert>,
-  ): Promise<Map<string, AlertAnalysis>> {
+  ): Promise<ArticleReadings> {
     const analyses = new Map<string, AlertAnalysis>();
-    if (!this.alertReader.enabled) return analyses;
+    // The alerts whose article is not the one the stored reading was taken
+    // from — because it changed, or because reading it failed.
+    const unread = new Set(scraped.map((alert) => alert.id));
+    if (!this.alertReader.enabled) return { analyses, unread };
 
     const articles = await mapWithLimit(
       scraped,
@@ -846,13 +862,19 @@ export class BusService {
         article: await this.fetchArticle(alert.url),
       }),
     );
+    articles.forEach(({ alert, article }) => {
+      if (
+        article &&
+        articleHash(article) === stored.get(alert.id)?.articleHash
+      ) {
+        unread.delete(alert.id);
+      }
+    });
     const pending = articles
-      .filter(
-        ({ alert, article }) =>
-          article && articleHash(article) !== stored.get(alert.id)?.articleHash,
-      )
+      .filter(({ alert }) => unread.has(alert.id))
+      .filter(({ article }) => article)
       .slice(0, maxAnalyzedAlerts);
-    if (!pending.length) return analyses;
+    if (!pending.length) return { analyses, unread };
 
     // What the article's words are resolved against: the stops of each line it
     // affects, in the order the route runs them, so that "entre Gran Vía y
@@ -879,10 +901,11 @@ export class BusService {
           articleHash: articleHash(article),
           analyzedAt: now,
         });
+        unread.delete(alert.id);
       }
     });
     this.logger.log(`Read the article of ${analyses.size} service alerts`);
-    return analyses;
+    return { analyses, unread };
   }
 
   private async fetchArticle(url: string): Promise<string> {

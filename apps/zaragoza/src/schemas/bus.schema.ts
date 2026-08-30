@@ -119,15 +119,12 @@ export class BusAlert {
   endDate?: string;
 
   /**
-   * The article as it read when it was last analysed, and when that was. An
-   * article whose text has not changed is not read again — the same words
-   * cannot yield different dates, and each reading costs a model call.
+   * The article as it read when it was last analysed. An article whose text
+   * has not changed is not read again — the same words cannot yield different
+   * dates, and each reading costs a model call.
    */
   @Prop()
   articleHash?: string;
-
-  @Prop()
-  analyzedAt?: string;
 
   /**
    * The first update run that saw the alert listed, standing in for a date the

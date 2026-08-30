@@ -107,6 +107,34 @@ describe('AlertReader.read', () => {
     },
   );
 
+  it('will not narrow a notice when a route did not fit in the prompt', async () => {
+    // More stops than the prompt has room for: the second line is dropped
+    // whole rather than cut in half.
+    const crowded = [
+      {
+        line: '21',
+        stations: Array.from({ length: 500 }, (_, index) => ({
+          id: `${1000 + index}`,
+          street: 'Av. de Navarra',
+        })),
+      },
+      ...routes,
+    ];
+    const { reader: subject } = reader({
+      startDate: null,
+      endDate: null,
+      stations: ['1000'],
+      scope: 'stations',
+    });
+
+    const details = await subject.read(alert, 'texto', crowded);
+
+    // A notice narrowed to the stops of the lines that fitted would go silent
+    // at the stops of the line that did not.
+    expect(details).toMatchObject({ scope: 'line' });
+    expect(sent).not.toContain('Línea 21: 1000 Av. de Navarra; 1001');
+  });
+
   it('offers the model the route of every affected line, in order', async () => {
     const { reader: subject } = reader({
       startDate: null,

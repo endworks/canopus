@@ -651,7 +651,8 @@ describe('alert articles', () => {
       kmls: {
         [kmlUrl('21', 1)]: [
           ['1', 'Av. de Navarra nº 71'],
-          ['2', 'Camino del Pilón nº 131'],
+          // As the KML spells it, accents and all missing.
+          ['2', 'Campus Rio Ebro'],
         ],
       },
       pages: {
@@ -737,7 +738,8 @@ describe('alert articles', () => {
           line: '21',
           stations: [
             { id: '1', street: 'Av. de Navarra nº 71' },
-            { id: '2', street: 'Camino del Pilón nº 131' },
+            // The prose the model matches this against carries the accent.
+            { id: '2', street: 'Campus Río Ebro' },
           ],
         },
       ],
@@ -801,6 +803,37 @@ describe('alert articles', () => {
 
     // Nothing stands behind the narrowing any more, so it goes.
     expect(alertModel.docs[0]).toMatchObject({ scope: 'line' });
+  });
+
+  it('keeps what an earlier run read when this one cannot read at all', async () => {
+    const read = {
+      startDate: '2026-08-24',
+      endDate: isoDay(3),
+      stations: ['1'],
+      scope: 'stations' as const,
+      articleHash: 'the hash of the article it was read from',
+    };
+    // No key at all: the deployment that has never had one, and the day the
+    // key stops working, are the same day for every alert already read.
+    const { service, alertModel } = withArticle({
+      articles: undefined,
+      storedAlerts: [
+        {
+          id: 'fiestas-en-miralbueno',
+          title: 'Fiestas en Miralbueno',
+          url: articleUrl,
+          date: today(),
+          lines: ['21'],
+          firstSeen: new Date().toISOString(),
+          ...read,
+        },
+      ],
+    });
+
+    await service.getLinesUpdate();
+
+    // Nothing was learned this run, so nothing was unlearned either.
+    expect(alertModel.docs[0]).toMatchObject(read);
   });
 
   it('keeps a reading that still matches the article it was taken from', async () => {

@@ -36,7 +36,7 @@ import {
   BusStationDocument,
 } from '../schemas/bus.schema';
 import { articleText, parseAlerts, ScrapedAlert } from '../alerts';
-import { AlertDetails, AlertReader, LineRoute } from '../alert-reader';
+import { AlertReader, LineRoute } from '../alert-reader';
 import {
   canonicalLineName,
   capitalize,
@@ -186,35 +186,43 @@ const routesOf = (
     const seen = new Set<string>();
     const stops = (routes.get(line) ?? [])
       .filter((stop) => !seen.has(stop.id) && seen.add(stop.id))
-      .map(({ id, street }) => ({ id, street }));
+      // The prose carries accents the KML drops; both sides have to be the
+      // same words for the model to match them.
+      .map(({ id, street }) => ({ id, street: normalizeStreet(street) }));
     return stops.length ? [{ line, stations: stops }] : [];
   });
 
 const articleHash = (article: string) =>
   createHash('sha256').update(article).digest('hex');
 
-/** What a stored alert says its article was read to mean. */
-const storedReading = (alert?: BusAlert): AlertAnalysis | undefined =>
-  alert?.articleHash
-    ? {
-        startDate: alert.startDate,
-        endDate: alert.endDate,
-        stations: alert.stations ?? [],
-        scope: alert.scope ?? 'line',
-        articleHash: alert.articleHash,
-        analyzedAt: alert.analyzedAt,
-      }
-    : undefined;
-
-/** One reading of an article, with what identifies the text it read. */
-type AlertAnalysis = AlertDetails & { articleHash: string; analyzedAt: string };
+/**
+ * The reading an alert carries, or the one an unread alert carries: no dates,
+ * no stops, the whole line, and no text on record as having been read.
+ */
+const readingOf = (alert?: BusAlert): ArticleReading => ({
+  startDate: alert?.startDate ?? null,
+  endDate: alert?.endDate ?? null,
+  stations: alert?.stations ?? [],
+  scope: alert?.scope ?? 'line',
+  articleHash: alert?.articleHash,
+});
 
 /**
- * What a run knows about each alert's article: a fresh reading, an entry that
- * is `null` where the text changed and nobody could read it, and no entry at
- * all where the text has not changed since the stored reading was taken.
+ * What an alert's article was read to say, and the text that was read. Every
+ * field of it comes from one reading, so they cannot disagree about which
+ * version of the notice they describe.
  */
-type ArticleReadings = Map<string, AlertAnalysis | null>;
+type ArticleReading = Pick<
+  BusAlert,
+  'startDate' | 'endDate' | 'stations' | 'scope' | 'articleHash'
+>;
+
+/**
+ * What a run learned. An alert with no entry is one this run learned nothing
+ * about — its text had not changed, or nobody could read it — and whatever is
+ * stored for it stands.
+ */
+type ArticleReadings = Map<string, ArticleReading>;
 
 const sameList = (a: string[], b: string[]) =>
   a.length === b.length && a.every((item, index) => item === b[index]);
@@ -791,25 +799,11 @@ export class BusService {
       await this.busAlertModel.bulkWrite(
         scraped.map((alert) => {
           const previous = stored.get(alert.id);
-          // What the article is known to say: this run's reading, or the
-          // stored one where the text has not changed since it was taken, or
-          // nothing at all — an edit nobody has read, a call that failed, no
-          // key. With nothing behind it the notice is the whole line's again,
-          // which is where it started and the side of the judgement that does
-          // not leave a stop silent.
-          const reading = readings.has(alert.id)
-            ? readings.get(alert.id)
-            : storedReading(previous);
           return upsertById<BusAlert>(alert.id, {
             ...alert,
-            startDate: reading?.startDate ?? null,
-            endDate: reading?.endDate ?? null,
-            stations: reading?.stations ?? [],
-            scope: reading?.scope ?? 'line',
-            // Kept even where the reading is not, so the next run can tell an
-            // article that changed from one nobody has read.
-            articleHash: reading?.articleHash ?? previous?.articleHash,
-            analyzedAt: reading?.analyzedAt ?? previous?.analyzedAt,
+            // This run's reading where it made one, and otherwise the one the
+            // alert already carried.
+            ...(readings.get(alert.id) ?? readingOf(previous)),
             firstSeen: previous?.firstSeen ?? now,
           });
         }),
@@ -840,11 +834,7 @@ export class BusService {
     stored: Map<string, BusAlert>,
     routes: Map<string, FetchedRoute>,
   ): Promise<ArticleReadings> {
-    // Every alert starts out as one no reading stands behind; a hash that
-    // still matches, or a reading, takes it out of that state.
-    const readings: ArticleReadings = new Map(
-      scraped.map((alert) => [alert.id, null]),
-    );
+    const readings: ArticleReadings = new Map();
     if (!this.alertReader.enabled) return readings;
 
     const articles = await mapWithLimit(
@@ -855,20 +845,17 @@ export class BusService {
         article: await this.fetchArticle(alert.url),
       }),
     );
-    articles.forEach(({ alert, article }) => {
-      if (
-        article &&
-        articleHash(article) === stored.get(alert.id)?.articleHash
-      ) {
-        readings.delete(alert.id);
-      }
-    });
+    // An article whose text is the one already read says nothing new; one that
+    // could not be fetched says nothing at all. Both leave the stored reading
+    // exactly where it is.
     const pending = articles
-      .filter(({ alert, article }) => article && readings.has(alert.id))
+      .filter(
+        ({ alert, article }) =>
+          article && articleHash(article) !== stored.get(alert.id)?.articleHash,
+      )
       .slice(0, maxAnalyzedAlerts);
     if (!pending.length) return readings;
 
-    const now = new Date().toISOString();
     // The readings are independent of each other, and the model is not the
     // WordPress site: they go out together.
     await mapWithLimit(
@@ -883,16 +870,20 @@ export class BusService {
           article,
           routesOf(alert.lines, routes),
         );
-        if (details) {
-          readings.set(alert.id, {
-            ...details,
-            articleHash: articleHash(article),
-            analyzedAt: now,
-          });
-        }
+        // Words nobody has read cannot hold a notice to a few stops, so an
+        // article that changed and could not be read clears what the last one
+        // said — its hash included, so the next run tries again.
+        readings.set(
+          alert.id,
+          details
+            ? { ...details, articleHash: articleHash(article) }
+            : readingOf(),
+        );
       },
     );
-    const read = [...readings.values()].filter(Boolean).length;
+    const read = [...readings.values()].filter(
+      (reading) => reading.articleHash,
+    ).length;
     this.logger.log(`Read the article of ${read} service alerts`);
     return readings;
   }

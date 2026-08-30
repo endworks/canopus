@@ -335,6 +335,17 @@ export const publishedLineId = (id: string): string => {
   return lineIdsByUppercase.get(trimmed.toUpperCase()) ?? trimmed;
 };
 
+// An id is at most a short prefix and a number ("21", "Ci3", "TUR", "ES7"), so
+// prose that names no line at all ("todas las líneas") contributes none.
+const lineIdShape = /^(?=.*[a-z0-9])[a-z]{0,3}\d{0,3}$/i;
+
+/** The line ids among these words, in the spelling they were published in. */
+export const publishedLineIds = (parts: string[]): string[] => [
+  ...new Set(
+    parts.filter((part) => lineIdShape.test(part.trim())).map(publishedLineId),
+  ),
+];
+
 // Listings show the numbered lines first, the lettered ones (C, Ci, EM, TUR)
 // after them, and the night lines (N1-N7) last.
 const lineGroup = (id: string): number => {

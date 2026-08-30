@@ -1,33 +1,29 @@
 import {
-  mergeAlerts,
+  articleText,
   parseAlertDate,
   parseAlertLines,
   parseAlerts,
 } from './alerts';
 
-const pageUrl = 'https://zaragoza.avanzagrupo.com/';
+const pageUrl =
+  'https://zaragoza.avanzagrupo.com/category/alteraciones-del-servicio/';
 
-// The block the site publishes under "Últimas alteraciones del servicio". The
-// theme's own markup is not something we can pin down, so the entries here are
-// wrapped the way the page renders them — a heading that links to the article,
-// a date, and a "Líneas:" row — and the parser is asked to find them by those
-// rather than by any class name.
+// The listing, as a WordPress archive renders one post per entry.
 const listing = (
   entries: { slug: string; title: string; date: string; lines: string }[],
-) => `<section>
-    <h2>Últimas alteraciones del servicio.</h2>
+) => `<main>
     ${entries
       .map(
         ({ slug, title, date, lines }) => `
         <article>
-          <h3><a href="https://zaragoza.avanzagrupo.com/${slug}/">${title}</a></h3>
+          <h2><a href="https://zaragoza.avanzagrupo.com/${slug}/">${title}</a></h2>
           <p>${date}</p>
           <p><em>Líneas: ${lines}</em></p>
         </article>`,
       )
       .join('')}
-    <a href="https://zaragoza.avanzagrupo.com/avisos/">Avisos anteriores »</a>
-  </section>`;
+    <a href="https://zaragoza.avanzagrupo.com/category/alteraciones-del-servicio/page/2/">Siguientes »</a>
+  </main>`;
 
 describe('parseAlertDate', () => {
   it.each([
@@ -85,9 +81,7 @@ describe('parseAlerts', () => {
   ];
 
   it('reads every entry the listing publishes', () => {
-    const alerts = parseAlerts(listing(entries), pageUrl);
-
-    expect(alerts).toEqual([
+    expect(parseAlerts(listing(entries), pageUrl)).toEqual([
       {
         id: 'como-ir-al-festival-vive-latino-2026-en-autobus',
         title: 'Cómo ir al Festival Vive Latino España 2026 en autobús',
@@ -106,55 +100,41 @@ describe('parseAlerts', () => {
     ]);
   });
 
-  it('does not take the link out of the entry below it', () => {
-    // One entry whose own markup carries no link at all: pairing it with the
-    // next entry's article would put the wrong lines under the wrong headline,
-    // so it is left out instead.
-    const alerts = parseAlerts(
-      `<section>
-         <article><p>Líneas: 44</p></article>
-         ${listing(entries).replace('<section>', '').replace('</section>', '')}
-       </section>`,
+  it('reads an entry the listing prints without its lines', () => {
+    const [alert] = parseAlerts(
+      `<article>
+         <h2><a href="/obras-en-gran-via/">Obras en Gran Vía</a></h2>
+         <p>20 agosto, 2026</p>
+       </article>`,
       pageUrl,
     );
 
-    expect(alerts.map((alert) => alert.lines)).toEqual([
-      ['23', '34', '42', 'Ci1', 'Ci2', 'ES7'],
-      ['21', '52', '53'],
-    ]);
+    // Still an alteration, and its article is there to be read.
+    expect(alert).toEqual({
+      id: 'obras-en-gran-via',
+      title: 'Obras en Gran Vía',
+      url: 'https://zaragoza.avanzagrupo.com/obras-en-gran-via/',
+      date: '2026-08-20',
+      lines: [],
+    });
   });
 
-  it('reads an entry whose title is not itself the link', () => {
-    const alerts = parseAlerts(
-      `<div>
-         <h3>Fiestas en Las Fuentes</h3>
-         <p>Líneas: 22, 30, 38, 44</p>
-         <a href="/fiestas-en-las-fuentes/">Fiestas en Las Fuentes</a>
-       </div>`,
-      pageUrl,
-    );
-
-    expect(alerts).toEqual([
-      {
-        id: 'fiestas-en-las-fuentes',
-        title: 'Fiestas en Las Fuentes',
-        url: 'https://zaragoza.avanzagrupo.com/fiestas-en-las-fuentes/',
-        date: undefined,
-        lines: ['22', '30', '38', '44'],
-      },
-    ]);
+  it("does not take the listing's own pages for alterations", () => {
+    // The "Siguientes »" link at the foot of the archive, and the archive
+    // itself, are not alterations.
+    expect(parseAlerts(listing(entries), pageUrl)).toHaveLength(2);
   });
 
   it('ignores a listing with nothing in it', () => {
     expect(
-      parseAlerts('<section><h2>Sin alteraciones</h2></section>', pageUrl),
+      parseAlerts('<main><h1>Sin alteraciones</h1></main>', pageUrl),
     ).toEqual([]);
   });
 
   it('does not follow a link off the site', () => {
     const alerts = parseAlerts(
       `<article>
-         <a href="https://example.com/aviso/">Aviso</a>
+         <h2><a href="https://example.com/aviso/">Aviso</a></h2>
          <p>Líneas: 21</p>
        </article>`,
       pageUrl,
@@ -164,20 +144,22 @@ describe('parseAlerts', () => {
   });
 });
 
-describe('mergeAlerts', () => {
-  it('keeps one entry per alert and every line either page named', () => {
-    const alert = {
-      id: 'fiestas',
-      title: 'Fiestas',
-      url: 'https://zaragoza.avanzagrupo.com/fiestas/',
-      lines: ['21'],
-    };
+describe('articleText', () => {
+  it('keeps the article and drops the furniture around it', () => {
+    const text = articleText(
+      `<html><head><style>p { color: red }</style></head><body>
+         <nav>Líneas y horarios</nav>
+         <article><h1>Fiestas</h1><p>Del 24 al 26 de agosto.</p></article>
+         <footer>Avanza</footer>
+       </body></html>`,
+    );
 
-    expect(
-      mergeAlerts([
-        { ...alert, date: undefined, lines: ['52'] },
-        { ...alert, date: '2026-08-24' },
-      ]),
-    ).toEqual([{ ...alert, date: '2026-08-24', lines: ['21', '52'] }]);
+    expect(text).toBe('Fiestas Del 24 al 26 de agosto.');
+  });
+
+  it('falls back to the page when there is no article element', () => {
+    expect(articleText('<body><p>Sin alteraciones</p></body>')).toBe(
+      'Sin alteraciones',
+    );
   });
 });

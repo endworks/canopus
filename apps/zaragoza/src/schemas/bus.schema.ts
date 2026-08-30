@@ -95,7 +95,7 @@ export class BusAlert {
   @Prop()
   date?: string;
 
-  /** Every line the alert names: the listing's, plus the article's. */
+  /** The lines the listing names as affected. */
   @Prop({ type: [String], default: [] })
   lines: string[];
 
@@ -119,14 +119,6 @@ export class BusAlert {
   endDate?: string;
 
   /**
-   * What reading the article last found, kept apart from `lines` so that the
-   * union with the listing can be recomputed rather than accumulated, and so
-   * that a line the listing drops is actually dropped.
-   */
-  @Prop({ type: [String], default: [] })
-  articleLines?: string[];
-
-  /**
    * The article as it read when it was last analysed, and when that was. An
    * article whose text has not changed is not read again — the same words
    * cannot yield different dates, and each reading costs a model call.
@@ -138,15 +130,11 @@ export class BusAlert {
   analyzedAt?: string;
 
   /**
-   * The first and last update run that saw the alert listed. The listing only
-   * shows the latest few, so falling off it says nothing about an alteration
-   * being over; `firstSeen` stands in for a date that could not be read.
+   * The first update run that saw the alert listed, standing in for a date the
+   * listing did not print or that could not be read.
    */
   @Prop()
   firstSeen: string;
-
-  @Prop()
-  lastSeen: string;
 }
 
 export const BusAlertSchema = SchemaFactory.createForClass(BusAlert);

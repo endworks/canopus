@@ -1,10 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import { Logger } from '@nestjs/common';
-import * as cheerio from 'cheerio';
 import { z } from 'zod';
 import { ScrapedAlert } from './alerts';
-import { publishedLineId } from './utils';
 
 /**
  * What reading an alert's article adds to what its listing already said: when
@@ -16,7 +14,6 @@ import { publishedLineId } from './utils';
 export interface AlertDetails {
   startDate?: string;
   endDate?: string;
-  lines: string[];
   stations: string[];
   /**
    * Whether the alteration is confined to the stops in `stations`, or reaches
@@ -49,9 +46,6 @@ const AlertSchema = z.object({
     .string()
     .nullable()
     .describe('Last day of the alteration, YYYY-MM-DD, or null'),
-  lines: z
-    .array(z.string())
-    .describe('Bus line ids named as affected, exactly as written'),
   stations: z
     .array(z.string())
     .describe(
@@ -70,7 +64,6 @@ Reglas:
 - No inventes nada. Si el aviso no dice cuándo termina la alteración, endDate es null; lo mismo para startDate.
 - Las fechas se dan a menudo sin año ("del 24 al 26 de agosto"): usa el año de la fecha de publicación que se te indica, y ten en cuenta que un aviso publicado en diciembre puede referirse a enero del año siguiente.
 - Una alteración de un solo día tiene startDate y endDate iguales.
-- lines: los identificadores de línea tal y como estén escritos (21, Ci3, N6, ES7). No traduzcas ni completes.
 - stations: los identificadores de las paradas afectadas. Se te dan las paradas de cada línea afectada en orden de recorrido, con su número y su calle: úsalas para resolver lo que el aviso describe con palabras ("no efectuará parada entre Gran Vía y Plaza España", "se suprime la parada de Coso"). Devuelve solo identificadores de esas listas, nunca números que no estén en ellas.
 - scope dice a quién hay que avisar, y es la decisión más delicada:
   - "stations" solo si la alteración se limita a las paradas que has identificado y has podido identificarlas todas: paradas suprimidas o trasladadas concretas, y el resto del recorrido sigue igual.
@@ -80,23 +73,21 @@ Reglas:
 
 // Enough for the several lines a notice names, without turning one reading
 // into a tour of the whole network.
-const maxRouteStations = 600;
+const maxRouteText = 8000;
 
-const routeList = (routes: LineRoute[]): string => {
-  let budget = maxRouteStations;
-  return routes
-    .map(({ line, stations }) => {
-      const listed = stations.slice(0, Math.max(budget, 0));
-      budget -= listed.length;
-      return `Línea ${line}: ${listed
-        .map((station) => `${station.id} ${station.street}`)
-        .join('; ')}`;
-    })
-    .join('\n');
-};
+const routeList = (routes: LineRoute[]): string =>
+  routes
+    .map(
+      ({ line, stations }) =>
+        `Línea ${line}: ${stations
+          .map((station) => `${station.id} ${station.street}`)
+          .join('; ')}`,
+    )
+    .join('\n')
+    .slice(0, maxRouteText);
 
-// An id is a short prefix and a number; a station is a stop number.
-const lineIdPattern = /^(?=.*[a-z0-9])[a-z]{0,3}\d{0,3}$/i;
+const alertModel = 'claude-opus-5';
+
 const stationIdPattern = /^\d{1,5}$/;
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -127,32 +118,10 @@ const daysBetween = (from: string, to: string) =>
 export class AlertReader {
   private readonly logger = new Logger(AlertReader.name);
 
-  constructor(
-    private readonly client?: Anthropic,
-    private readonly model = process.env.ANTHROPIC_MODEL || 'claude-opus-5',
-  ) {}
+  constructor(private readonly client?: Anthropic) {}
 
   get enabled(): boolean {
     return !!this.client;
-  }
-
-  /** The article's own words, without the furniture around them. */
-  static articleText(html: string): string {
-    const $ = cheerio.load(html);
-    $('script, style, nav, header, footer, form, noscript').remove();
-    // Text runs straight from one block into the next ("agostoLíneas"), and a
-    // model should not have to read words nobody wrote that way.
-    $('br').replaceWith(' ');
-    $(
-      'p, div, li, tr, td, section, article, blockquote, h1, h2, h3, h4',
-    ).append(' ');
-
-    const article = $('article').first();
-    const main = $('main').first();
-    const body = article.length ? article : main.length ? main : $('body');
-    const text = body.text().replace(/\s+/g, ' ').trim();
-    // Long enough for any of these notices, short enough to bound one call.
-    return text.slice(0, 12000);
   }
 
   async read(
@@ -164,7 +133,7 @@ export class AlertReader {
 
     try {
       const response = await this.client.messages.parse({
-        model: this.model,
+        model: alertModel,
         max_tokens: 16000,
         thinking: { type: 'adaptive' },
         system: systemPrompt,
@@ -253,14 +222,6 @@ export class AlertReader {
     return {
       startDate,
       endDate,
-      lines: [
-        ...new Set(
-          parsed.lines
-            .map((line) => line.trim())
-            .filter((line) => lineIdPattern.test(line))
-            .map(publishedLineId),
-        ),
-      ],
       stations,
       scope,
     };

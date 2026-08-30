@@ -40,7 +40,7 @@ const kml = (stops: [string, string][]) =>
        .join('')}
    </Document></kml>`;
 
-// The "Últimas alteraciones del servicio" block, as the theme renders it.
+// The listing of alterations, as the theme renders one post per entry.
 const alerts = (entries: [string, string, string][]) =>
   `<section>${entries
     .map(
@@ -88,7 +88,8 @@ const pasobus = (rows: [string, string, string][]) =>
        .join('')}
    </table>`;
 
-const homeUrl = 'https://zaragoza.avanzagrupo.com/';
+const alertsUrl =
+  'https://zaragoza.avanzagrupo.com/category/alteraciones-del-servicio/';
 const linesUrl = 'https://zaragoza.avanzagrupo.com/lineas-y-horarios/';
 const kmlUrl = (id: string, direction: number) => KmlForLine(id)[direction - 1];
 
@@ -490,7 +491,7 @@ describe('alerts', () => {
     build({
       lines: [['21', 'BARRIO JESUS - OLIVER MIRALBUENO']],
       kmls: { [kmlUrl('21', 1)]: [['1', 'Av. de Navarra nº 71']] },
-      pages: { [homeUrl]: listing },
+      pages: { [alertsUrl]: listing },
       ...extra,
     });
 
@@ -524,7 +525,6 @@ describe('alerts', () => {
           url: 'https://zaragoza.avanzagrupo.com/fiestas-en-miralbueno/',
           lines: ['21'],
           firstSeen: '2026-08-24T04:00:00.000Z',
-          lastSeen: '2026-08-24T04:00:00.000Z',
         },
       ],
     });
@@ -535,7 +535,6 @@ describe('alerts', () => {
       (alert) => alert.id === 'fiestas-en-miralbueno',
     );
     expect(stored.firstSeen).toBe('2026-08-24T04:00:00.000Z');
-    expect(stored.lastSeen > stored.firstSeen).toBe(true);
     // The listing is what the lines are, not the union with what we had.
     expect(stored.lines).toEqual(['21', '52', '53']);
   });
@@ -548,14 +547,13 @@ describe('alerts', () => {
       date: today(),
       lines: ['21'],
       firstSeen: new Date().toISOString(),
-      lastSeen: new Date().toISOString(),
     };
     const { service, alertModel } = build({
       lines: [['21', 'BARRIO JESUS - OLIVER MIRALBUENO']],
       kmls: { [kmlUrl('21', 1)]: [['1', 'Av. de Navarra nº 71']] },
       // The home page is a 500: an alteration nobody can read is not an
       // alteration that ended, and it is never the lines update's problem.
-      unreachable: [homeUrl],
+      unreachable: [alertsUrl],
       storedAlerts: [stored],
     });
 
@@ -576,7 +574,6 @@ describe('alerts', () => {
           date: old,
           lines: ['21'],
           firstSeen: `${old}T04:00:00.000Z`,
-          lastSeen: `${old}T04:00:00.000Z`,
         },
       ],
     });
@@ -587,7 +584,7 @@ describe('alerts', () => {
   it('shows a station only the alerts of the lines that serve it', async () => {
     const { service } = build({
       pages: {
-        [homeUrl]: listing,
+        [alertsUrl]: listing,
         [pasobusUrl('1')]: pasobus([['21', 'BARRIO JESUS', '3 minutos']]),
       },
       lines: [['21', 'BARRIO JESUS - OLIVER MIRALBUENO']],
@@ -608,14 +605,13 @@ describe('alerts', () => {
       ],
     });
     // Bookkeeping stays off the wire.
-    expect(resp).toMatchObject({ alerts: [{}] });
     expect(JSON.stringify(resp)).not.toContain('firstSeen');
   });
 
   it('leaves a station with no altered line without alerts', async () => {
     const { service } = build({
       pages: {
-        [homeUrl]: listing,
+        [alertsUrl]: listing,
         [pasobusUrl('2')]: pasobus([['44', 'ACTUR', '5 minutos']]),
       },
       lines: [['21', 'BARRIO JESUS - OLIVER MIRALBUENO']],
@@ -643,8 +639,6 @@ describe('alert articles', () => {
     'fiestas-en-miralbueno': {
       startDate: isoDay(0),
       endDate: isoDay(2),
-      // The article names a line the listing left out, and two stops.
-      lines: ['21', '52'],
       stations: ['1', '2'],
       // The whole line is altered; the two stops are just the ones it names.
       scope: 'line' as const,
@@ -661,7 +655,7 @@ describe('alert articles', () => {
         ],
       },
       pages: {
-        [homeUrl]: listing,
+        [alertsUrl]: listing,
         [articleUrl]: article('Del 24 al 26 de agosto, postes 1 y 2.'),
       },
       articles: read,
@@ -678,9 +672,7 @@ describe('alert articles', () => {
       endDate: read['fiestas-en-miralbueno'].endDate,
       stations: ['1', '2'],
       scope: 'line',
-      // What the listing named and what the article named, together.
-      lines: ['21', '52'],
-      articleLines: ['21', '52'],
+      lines: ['21'],
     });
     expect(alertModel.docs[0].articleHash).toEqual(expect.any(String));
   });
@@ -711,21 +703,24 @@ describe('alert articles', () => {
     expect(reader.read).toHaveBeenCalledTimes(2);
   });
 
-  it('leaves the alert as published when no model is configured', async () => {
-    const { service, alertModel, reader } = withArticle({
-      articles: undefined,
-    });
+  it.each([
+    ['no model is configured', undefined],
+    ['the reading fails', {}],
+  ])(
+    'leaves the alert as the listing published it when %s',
+    async (_case, articles) => {
+      const { service, alertModel } = withArticle({ articles });
 
-    await service.getLinesUpdate();
+      await service.getLinesUpdate();
 
-    expect(reader.read).not.toHaveBeenCalled();
-    expect(alertModel.docs[0]).toMatchObject({
-      lines: ['21'],
-      stations: [],
-      scope: 'line',
-    });
-    expect(alertModel.docs[0].articleHash).toBeUndefined();
-  });
+      expect(alertModel.docs[0]).toMatchObject({
+        lines: ['21'],
+        stations: [],
+        scope: 'line',
+      });
+      expect(alertModel.docs[0].articleHash).toBeUndefined();
+    },
+  );
 
   it('hands the model the stops of every line the alert names', async () => {
     const { service, reader } = withArticle();
@@ -755,14 +750,13 @@ describe('alert articles', () => {
         'fiestas-en-miralbueno': {
           startDate: undefined,
           endDate: undefined,
-          lines: ['21'],
           // Stop 1 is suppressed; the rest of the line runs as usual.
           stations: ['1'],
           scope: 'stations' as const,
         },
       },
       pages: {
-        [homeUrl]: listing,
+        [alertsUrl]: listing,
         [articleUrl]: article('Se suprime la parada de Av. de Navarra.'),
         [pasobusUrl('1')]: pasobus([['21', 'BARRIO JESUS', '3 minutos']]),
         [pasobusUrl('2')]: pasobus([['21', 'BARRIO JESUS', '6 minutos']]),
@@ -780,28 +774,11 @@ describe('alert articles', () => {
     expect(await service.getAlerts()).toHaveLength(1);
   });
 
-  it('falls back to the whole line when the reading fails', async () => {
-    const { service, alertModel, reader } = withArticle({ articles: {} });
-
-    await service.getLinesUpdate();
-
-    // The key is configured, the call is not answered: the alert is what the
-    // listing said it was, on every stop of the line.
-    expect(reader.read).toHaveBeenCalled();
-    expect(alertModel.docs[0]).toMatchObject({
-      lines: ['21'],
-      stations: [],
-      scope: 'line',
-    });
-    expect(alertModel.docs[0].articleHash).toBeUndefined();
-  });
-
   it('stops narrowing a notice whose article changed under a failed reading', async () => {
     const narrowed = {
       'fiestas-en-miralbueno': {
         startDate: undefined,
         endDate: undefined,
-        lines: ['21'],
         stations: ['1'],
         scope: 'stations' as const,
       },
@@ -832,7 +809,6 @@ describe('alert articles', () => {
         'fiestas-en-miralbueno': {
           startDate: undefined,
           endDate: undefined,
-          lines: ['21'],
           stations: ['1'],
           scope: 'stations' as const,
         },
@@ -860,7 +836,6 @@ describe('alert articles', () => {
       stations: [],
       endDate,
       firstSeen: '2019-12-01T04:00:00.000Z',
-      lastSeen: '2019-12-01T04:00:00.000Z',
     });
     const { service } = build({
       storedAlerts: [stored('running', isoDay(3)), stored('over', isoDay(-1))],
@@ -875,7 +850,7 @@ describe('alert articles', () => {
   it('marks the stops the article names, without hiding the rest', async () => {
     const { service } = withArticle({
       pages: {
-        [homeUrl]: listing,
+        [alertsUrl]: listing,
         [articleUrl]: article('Del 24 al 26 de agosto, postes 1 y 2.'),
         [pasobusUrl('1')]: pasobus([['21', 'BARRIO JESUS', '3 minutos']]),
         [pasobusUrl('9')]: pasobus([['21', 'BARRIO JESUS', '6 minutos']]),
@@ -904,7 +879,6 @@ describe('alert articles', () => {
           lines: ['44'],
           stations: ['3'],
           firstSeen: new Date().toISOString(),
-          lastSeen: new Date().toISOString(),
         },
       ],
       pages: {

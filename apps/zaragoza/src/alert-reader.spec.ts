@@ -35,32 +35,11 @@ const routes = [
   },
 ];
 
-describe('AlertReader.articleText', () => {
-  it('keeps the article and drops the furniture around it', () => {
-    const text = AlertReader.articleText(
-      `<html><head><style>p { color: red }</style></head><body>
-         <nav>Líneas y horarios</nav>
-         <article><h1>Fiestas</h1><p>Del 24 al 26 de agosto.</p></article>
-         <footer>Avanza</footer>
-       </body></html>`,
-    );
-
-    expect(text).toBe('Fiestas Del 24 al 26 de agosto.');
-  });
-
-  it('falls back to the page when there is no article element', () => {
-    expect(
-      AlertReader.articleText('<body><p>Sin alteraciones</p></body>'),
-    ).toBe('Sin alteraciones');
-  });
-});
-
 describe('AlertReader.read', () => {
   it('keeps what the article turned out to say', async () => {
     const { reader: subject } = reader({
       startDate: '2026-08-24',
       endDate: '2026-08-26',
-      lines: ['21', 'ES7'],
       stations: ['1234'],
       scope: 'stations',
     });
@@ -70,7 +49,6 @@ describe('AlertReader.read', () => {
     ).toEqual({
       startDate: '2026-08-24',
       endDate: '2026-08-26',
-      lines: ['21', 'ES7'],
       stations: ['1234'],
       scope: 'stations',
     });
@@ -82,7 +60,6 @@ describe('AlertReader.read', () => {
       endDate: null,
       // 9999 is not on any affected route; putting it through would badge
       // whichever stop happens to have that number.
-      lines: [],
       stations: ['1234', '9999', 'la parada de la esquina'],
       scope: 'stations',
     });
@@ -90,21 +67,6 @@ describe('AlertReader.read', () => {
     const details = await subject.read(alert, 'texto', routes);
 
     expect(details.stations).toEqual(['1234']);
-  });
-
-  it('drops anything that is not a line id', async () => {
-    const { reader: subject } = reader({
-      startDate: null,
-      endDate: null,
-      lines: ['21', 'todas las líneas', 'N06'],
-      stations: [],
-      scope: 'line',
-    });
-
-    const details = await subject.read(alert, 'texto', routes);
-
-    // Padding is dropped the way it is everywhere else.
-    expect(details.lines).toEqual(['21', 'N6']);
   });
 
   it.each([
@@ -115,7 +77,6 @@ describe('AlertReader.read', () => {
     const { reader: subject } = reader({
       startDate,
       endDate,
-      lines: [],
       stations: [],
       scope: 'line',
     });
@@ -126,40 +87,30 @@ describe('AlertReader.read', () => {
     expect(details.endDate).toBeUndefined();
   });
 
-  it('keeps a stop-level notice on the whole line when it named no stops', async () => {
-    const { reader: subject } = reader({
-      startDate: null,
-      endDate: null,
-      lines: ['21'],
+  it.each([
+    ['it named no stops', []],
+    ['every stop it named was invented', ['4321']],
+  ])(
+    'keeps a stop-level notice on the whole line when %s',
+    async (_case, stations) => {
+      const { reader: subject } = reader({
+        startDate: null,
+        endDate: null,
+        stations,
+        scope: 'stations',
+      });
+
       // Narrowing to nothing would silence the notice at every stop.
-      stations: [],
-      scope: 'stations',
-    });
+      const details = await subject.read(alert, 'texto', routes);
 
-    const details = await subject.read(alert, 'texto', routes);
-
-    expect(details).toMatchObject({ scope: 'line', stations: [] });
-  });
-
-  it('keeps a stop-level notice on the whole line when every stop it named was invented', async () => {
-    const { reader: subject } = reader({
-      startDate: null,
-      endDate: null,
-      lines: ['21'],
-      stations: ['4321'],
-      scope: 'stations',
-    });
-
-    const details = await subject.read(alert, 'texto', routes);
-
-    expect(details).toMatchObject({ scope: 'line', stations: [] });
-  });
+      expect(details).toMatchObject({ scope: 'line', stations: [] });
+    },
+  );
 
   it('offers the model the route of every affected line, in order', async () => {
     const { reader: subject } = reader({
       startDate: null,
       endDate: null,
-      lines: [],
       stations: [],
       scope: 'line',
     });

@@ -249,6 +249,19 @@ jobs:
           # they always did.
           GOOGLE_MAPS_API_KEY: op://end.works/Polaris Config/google
 
+      - name: Load anthropic secret
+        if: ${{ github.event_name != 'pull_request' && (github.ref_name == 'main' || github.ref_type == 'tag') && matrix.service == 'zaragoza' }}
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          # The key Arcturus already uses. Optional: with it, each service
+          # alert's article is read for when the alteration ends and which
+          # stops it affects; without it the alerts are stored exactly as the
+          # operator lists them.
+          ANTHROPIC_API_KEY: op://end.works/Polaris Config/anthropic
+
       - name: Load weatherkit secrets
         if: ${{ github.event_name != 'pull_request' && (github.ref_name == 'main' || github.ref_type == 'tag') && matrix.service == 'weather' }}
         uses: 1password/load-secrets-action@v2
@@ -285,7 +298,7 @@ jobs:
           port: ${{ env.PORT }}
           username: ${{ env.USERNAME }}
           key: ${{ env.KEY }}
-          envs: IMAGE,CONTAINER,MONGODB_URI,TWITTER_CLIENT_TOKEN,THE_MOVIE_DB_API_KEY,GOOGLE_MAPS_API_KEY,WEATHERKIT_TEAM_ID,WEATHERKIT_SERVICE_ID,WEATHERKIT_KEY_ID,WEATHERKIT_PRIVATE_KEY,WEATHER_CLIENT_KEY_VERSION
+          envs: IMAGE,CONTAINER,MONGODB_URI,TWITTER_CLIENT_TOKEN,THE_MOVIE_DB_API_KEY,GOOGLE_MAPS_API_KEY,ANTHROPIC_API_KEY,WEATHERKIT_TEAM_ID,WEATHERKIT_SERVICE_ID,WEATHERKIT_KEY_ID,WEATHERKIT_PRIVATE_KEY,WEATHER_CLIENT_KEY_VERSION
           script: |
             docker pull "$IMAGE"
             # -t 1, because nothing here installs a SIGTERM handler: no app
@@ -297,7 +310,7 @@ jobs:
             if [ "$CONTAINER" = "canopus-zine" ]; then
               docker run --network canopus -p ${{ matrix.port }}/tcp -e MONGODB_URI="$MONGODB_URI" -e THE_MOVIE_DB_API_KEY="$THE_MOVIE_DB_API_KEY" -e GOOGLE_MAPS_API_KEY="$GOOGLE_MAPS_API_KEY" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
             elif [ "$CONTAINER" = "canopus-zaragoza" ]; then
-              docker run --network canopus -p ${{ matrix.port }}/tcp -e MONGODB_URI="$MONGODB_URI" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
+              docker run --network canopus -p ${{ matrix.port }}/tcp -e MONGODB_URI="$MONGODB_URI" -e ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
             elif [ "$CONTAINER" = "canopus-weather" ]; then
               docker run --network canopus -p ${{ matrix.port }}/tcp -e WEATHERKIT_TEAM_ID="$WEATHERKIT_TEAM_ID" -e WEATHERKIT_SERVICE_ID="$WEATHERKIT_SERVICE_ID" -e WEATHERKIT_KEY_ID="$WEATHERKIT_KEY_ID" -e WEATHERKIT_PRIVATE_KEY="$WEATHERKIT_PRIVATE_KEY" -e WEATHER_CLIENT_KEY_VERSION="$WEATHER_CLIENT_KEY_VERSION" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
             elif [ "$CONTAINER" = "canopus-twitter-downloader" ]; then

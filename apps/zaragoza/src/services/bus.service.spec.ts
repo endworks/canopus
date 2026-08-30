@@ -646,6 +646,8 @@ describe('alert articles', () => {
       // The article names a line the listing left out, and two stops.
       lines: ['21', '52'],
       stations: ['1', '2'],
+      // The whole line is altered; the two stops are just the ones it names.
+      scope: 'line' as const,
     },
   };
 
@@ -675,6 +677,7 @@ describe('alert articles', () => {
       startDate: read['fiestas-en-miralbueno'].startDate,
       endDate: read['fiestas-en-miralbueno'].endDate,
       stations: ['1', '2'],
+      scope: 'line',
       // What the listing named and what the article named, together.
       lines: ['21', '52'],
       articleLines: ['21', '52'],
@@ -716,8 +719,65 @@ describe('alert articles', () => {
     await service.getLinesUpdate();
 
     expect(reader.read).not.toHaveBeenCalled();
-    expect(alertModel.docs[0]).toMatchObject({ lines: ['21'], stations: [] });
+    expect(alertModel.docs[0]).toMatchObject({
+      lines: ['21'],
+      stations: [],
+      scope: 'line',
+    });
     expect(alertModel.docs[0].articleHash).toBeUndefined();
+  });
+
+  it('hands the model the stops of every line the alert names', async () => {
+    const { service, reader } = withArticle();
+
+    await service.getLinesUpdate();
+
+    // In route order, with the street each stop is on: what "entre A y B" has
+    // to be resolved against.
+    expect(reader.read).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'fiestas-en-miralbueno' }),
+      expect.stringContaining('postes 1 y 2'),
+      [
+        {
+          line: '21',
+          stations: [
+            { id: '1', street: 'Av. de Navarra nº 71' },
+            { id: '2', street: 'Camino del Pilón nº 131' },
+          ],
+        },
+      ],
+    );
+  });
+
+  it('shows a stop-level alteration only at the stops it affects', async () => {
+    const { service } = withArticle({
+      articles: {
+        'fiestas-en-miralbueno': {
+          startDate: undefined,
+          endDate: undefined,
+          lines: ['21'],
+          // Stop 1 is suppressed; the rest of the line runs as usual.
+          stations: ['1'],
+          scope: 'stations' as const,
+        },
+      },
+      pages: {
+        [homeUrl]: listing,
+        [articleUrl]: article('Se suprime la parada de Av. de Navarra.'),
+        [pasobusUrl('1')]: pasobus([['21', 'BARRIO JESUS', '3 minutos']]),
+        [pasobusUrl('2')]: pasobus([['21', 'BARRIO JESUS', '6 minutos']]),
+      },
+    });
+    await service.getLinesUpdate();
+
+    const suppressed = await service.getStation('1', 'web');
+    const untouched = await service.getStation('2', 'web');
+
+    expect(suppressed).toMatchObject({ alerts: [{ direct: true }] });
+    // Nothing happens at stop 2, so nothing is said there.
+    expect(untouched).toMatchObject({ alerts: [] });
+    // It is still one of the city's alterations.
+    expect(await service.getAlerts()).toHaveLength(1);
   });
 
   it('shows an alert until the day its article says it ends', async () => {

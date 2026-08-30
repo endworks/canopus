@@ -15,8 +15,13 @@ export interface BusAlertResponse {
   startDate?: string;
   endDate?: string;
   lines: string[];
-  /** The stops the article names one by one; empty when it names none. */
+  /** The stops the alert names; empty when it names none. */
   stations: string[];
+  /**
+   * `'stations'` when only `stations` are affected and the rest of the route
+   * runs as usual; `'line'` when every stop of every line named is.
+   */
+  scope: 'stations' | 'line';
   /**
    * Only in a station's own alerts: the article names this stop, rather than
    * just a line that serves it. Absent from the alert list.

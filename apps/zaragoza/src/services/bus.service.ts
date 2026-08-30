@@ -36,7 +36,7 @@ import {
   BusStationDocument,
 } from '../schemas/bus.schema';
 import { mergeAlerts, parseAlerts, ScrapedAlert } from '../alerts';
-import { AlertDetails, AlertReader } from '../alert-reader';
+import { AlertDetails, AlertReader, LineRoute } from '../alert-reader';
 import {
   canonicalLineName,
   capitalize,
@@ -88,7 +88,7 @@ type KmlDocument =
   | { status: 'failed' };
 
 // The stops of a line, or null when its route could not be read at all.
-type LineRoute = StationBase[] | null;
+type FetchedRoute = StationBase[] | null;
 
 type ActiveLines = Map<string, string | undefined>;
 
@@ -144,6 +144,7 @@ const toAlertResponse = (alert: BusAlert): BusAlertResponse => ({
   endDate: alert.endDate ?? undefined,
   lines: alert.lines ?? [],
   stations: alert.stations ?? [],
+  scope: alert.scope ?? 'line',
 });
 
 const daysAgo = (days: number) =>
@@ -168,6 +169,29 @@ const activeAlerts = (alerts: BusAlert[]): BusAlert[] => {
     )
     .sort((a, b) => announced(b).localeCompare(announced(a)));
 };
+
+/**
+ * The stops of each of these lines, in route order and named by their street.
+ *
+ * A line whose route we do not have contributes nothing rather than an empty
+ * route: the difference between "these are the stops" and "we do not know the
+ * stops" is the difference between a notice that can be narrowed and one that
+ * must not be.
+ */
+const routesOf = (
+  lineIds: string[],
+  lines: Map<string, BusLine>,
+  stations: Map<string, BusStation>,
+): LineRoute[] =>
+  lineIds.flatMap((line) => {
+    const stops = [...new Set(lines.get(line)?.stations ?? [])].flatMap(
+      (id) => {
+        const station = stations.get(id);
+        return station ? [{ id, street: station.street }] : [];
+      },
+    );
+    return stops.length ? [{ line, stations: stops }] : [];
+  });
 
 const articleHash = (article: string) =>
   createHash('sha256').update(article).digest('hex');
@@ -449,11 +473,15 @@ export class BusService {
   /**
    * The alerts a stop should show.
    *
-   * The listing only says which lines an alteration touches, so every stop of
-   * a named line carries the alert: over-showing beats leaving somebody at a
-   * cut stop with nothing on screen. Where reading the article did name stops,
-   * `direct` marks the ones it named — enough for a client to lead with those
-   * and fold the rest away, without any stop losing a notice it should see.
+   * A notice is narrowed to particular stops only where reading its article
+   * established that the alteration stops there — some stops suppressed or
+   * moved, the rest of the route running as usual. Everything else stays a
+   * line-wide notice on every stop of every line it names, which is where an
+   * unread article, a diversion and a doubt all land: over-showing beats
+   * leaving somebody at a cut stop with nothing on screen.
+   *
+   * `direct` marks the stops the notice itself names, so a client can lead
+   * with those and fold the rest away.
    */
   private async alertsForStation(
     id: string,
@@ -464,7 +492,8 @@ export class BusService {
       .filter(
         (alert) =>
           alert.stations.includes(id) ||
-          alert.lines.some((line) => lines.includes(line)),
+          (alert.scope !== 'stations' &&
+            alert.lines.some((line) => lines.includes(line))),
       )
       .map((alert) => ({ ...alert, direct: alert.stations.includes(id) }));
   }
@@ -536,7 +565,7 @@ export class BusService {
   private async fetchRoutes(
     ids: string[],
     routeFiles: Map<string, string[]>,
-  ): Promise<Map<string, LineRoute>> {
+  ): Promise<Map<string, FetchedRoute>> {
     const routes = new Map(
       await mapWithLimit(
         ids,
@@ -564,7 +593,7 @@ export class BusService {
   private async fetchLineStations(
     id: string,
     published: string[] = [],
-  ): Promise<LineRoute> {
+  ): Promise<FetchedRoute> {
     try {
       // Read both what the site links and what the convention predicts: a page
       // that links one direction must not cost us the other, and a file that is
@@ -603,7 +632,7 @@ export class BusService {
   }
 
   private stationUpdates(
-    routes: Map<string, LineRoute>,
+    routes: Map<string, FetchedRoute>,
     stationsBackup: Map<string, BusStation>,
     activeLines: ActiveLines,
   ) {
@@ -672,7 +701,7 @@ export class BusService {
   }
 
   private lineUpdates(
-    routes: Map<string, LineRoute>,
+    routes: Map<string, FetchedRoute>,
     linesBackup: Map<string, BusLine>,
     activeLines: ActiveLines,
   ) {
@@ -764,6 +793,7 @@ export class BusService {
             // "the article named no stops" and "no article has been read" are
             // the same empty list to a client either way.
             stations: analysis?.stations ?? previous?.stations ?? [],
+            scope: analysis?.scope ?? previous?.scope ?? 'line',
             // A re-reading replaces what the last one found, nulls included:
             // an article edited to drop its end date has no end date.
             ...(analysis
@@ -824,17 +854,24 @@ export class BusService {
       .slice(0, maxAnalyzedAlerts);
     if (!pending.length) return analyses;
 
-    // A stop the article names has to be a stop the network has; this is what
-    // that is checked against.
-    const knownStations = new Set(
-      (await this.getAllStations()).map((station) => station.id),
+    // What the article's words are resolved against: the stops of each line it
+    // affects, in the order the route runs them, so that "entre Gran Vía y
+    // Plaza España" can become the stops it actually means.
+    const [lines, stations] = await Promise.all([
+      this.getAllLines(),
+      this.getAllStations(),
+    ]);
+    const linesById = new Map(lines.map((line) => [line.id, line]));
+    const stationsById = new Map(
+      stations.map((station) => [station.id, station]),
     );
+
     const now = new Date().toISOString();
     await mapWithLimit(pending, 1, async ({ alert, article }) => {
       const details = await this.alertReader.read(
         alert,
         article,
-        knownStations,
+        routesOf(alert.lines, linesById, stationsById),
       );
       if (details) {
         analyses.set(alert.id, {

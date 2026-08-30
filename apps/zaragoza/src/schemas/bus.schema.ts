@@ -99,9 +99,17 @@ export class BusAlert {
   @Prop({ type: [String], default: [] })
   lines: string[];
 
-  /** The stops the article names one by one, when it names any. */
+  /** The stops the article names, resolved against the lines' routes. */
   @Prop({ type: [String], default: [] })
   stations: string[];
+
+  /**
+   * Whether the alteration stops at those stops, or reaches the whole of every
+   * line it names. Only `'stations'` narrows the notice to some of a line's
+   * stops; anything unread, diverted or doubtful stays `'line'`.
+   */
+  @Prop({ default: 'line' })
+  scope?: 'stations' | 'line';
 
   /** When the alteration starts and ends, as the article gives them. */
   @Prop()

@@ -63,11 +63,20 @@ export class ServiceAlert {
   lines: string[];
 
   /**
-   * The stops the article names one by one, when it names any at all. Empty
-   * where the notice only describes the alteration in words.
+   * The stops the alert affects, resolved from the notice against the routes
+   * of the lines it names. Empty where none could be established.
    * @example ['1234', '1235']
    */
   stations: string[];
+
+  /**
+   * `'stations'` when only those stops are affected and the rest of each
+   * route runs as usual — the alert is then shown at those stops alone.
+   * `'line'` when every stop of every line named is affected, which is also
+   * where an unread notice and a doubtful one land.
+   * @example 'line'
+   */
+  scope: 'stations' | 'line';
 
   /**
    * Only in a station's own `alerts`: the notice names this stop, rather than

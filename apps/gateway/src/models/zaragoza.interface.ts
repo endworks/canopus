@@ -256,8 +256,7 @@ export class BiziStation {
 /**
  * One of the city's points, whatever kind it is.
  *
- * Taxi ranks, chemists on duty, car parks, petrol stations and bike racks all
- * arrive from Zaragoza in the same envelope, so they leave here in one too —
+ * Taxi ranks and chemists on duty arrive from Zaragoza in the same envelope, so they leave here in one too —
  * `kind` selects the set rather than the path selecting a service.
  */
 export class Place {

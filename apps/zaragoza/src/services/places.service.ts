@@ -116,22 +116,6 @@ const datasets: Record<PlaceKind, Dataset> = {
       url: place.url?.trim() || undefined,
     }),
   },
-  'car-park': {
-    path: `${equipment}/aparcamiento-publico`,
-    ttl: STATIC_TTL,
-    extra: (place) => ({
-      address: place.description,
-      schedule: place.horario,
-    }),
-  },
-  'petrol-station': {
-    path: `${equipment}/estacion-servicio`,
-    ttl: STATIC_TTL,
-    extra: (place) => ({
-      address: place.description,
-      schedule: place.horario,
-    }),
-  },
 };
 
 export const placeKinds = Object.keys(datasets) as PlaceKind[];

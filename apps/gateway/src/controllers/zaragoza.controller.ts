@@ -143,8 +143,7 @@ export class ZaragozaController {
   @ApiParam({
     name: 'kind',
     type: String,
-    description:
-      'taxi-rank | taxi-office | pharmacy | car-park | petrol-station',
+    description: 'taxi-rank | taxi-office | pharmacy',
   })
   @ApiMapResponse(Place, 'Places keyed by id')
   async zaragozaPlaces(@Param('kind') kind: string) {

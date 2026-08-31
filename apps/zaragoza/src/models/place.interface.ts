@@ -1,8 +1,8 @@
 /**
  * The city's points, in the one shape they all share.
  *
- * Zaragoza publishes a taxi rank, a chemist on duty, a car park and a petrol
- * station from the same API and in nearly the same envelope: an id, a title
+ * Zaragoza publishes a taxi rank and a chemist on duty from the same API and
+ * in nearly the same envelope: an id, a title
  * that is usually the street it stands on, and a point. What differs between
  * them is a field or two — a phone on a chemist, a status on a moving taxi —
  * and not enough to be worth a service, a schema and a controller each, the
@@ -59,8 +59,7 @@ export interface Place {
 export type PlacesResponse = Record<string, Place>;
 
 /** The datasets this serves, named the way the app asks for them. */
-export type PlaceKind =
-  'taxi-rank' | 'taxi-office' | 'pharmacy' | 'car-park' | 'petrol-station';
+export type PlaceKind = 'taxi-rank' | 'taxi-office' | 'pharmacy';
 
 export interface PlacesPayload {
   kind: PlaceKind;

@@ -9,6 +9,7 @@ import { LoggingModule } from '@canopus/nest';
 import { BusModule } from './modules/bus.module';
 import { BiziModule } from './modules/bizi.module';
 import { TramModule } from './modules/tram.module';
+import { PlacesModule } from './modules/places.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { TramModule } from './modules/tram.module';
     BusModule,
     TramModule,
     BiziModule,
+    PlacesModule,
   ],
   controllers: [],
   providers: [],

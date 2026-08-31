@@ -17,6 +17,9 @@ export const ZARAGOZA_PATTERNS = {
   biziStations: 'bizi/stations',
   biziStation: 'bizi/station',
   biziStationsUpdate: 'bizi/stations/update',
+  places: 'places',
+  place: 'place',
+  taxis: 'taxis',
 } as const;
 
 export const ZINE_PATTERNS = {

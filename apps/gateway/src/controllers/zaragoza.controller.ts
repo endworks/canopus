@@ -11,6 +11,7 @@ import { ApiMapResponse } from '../swagger';
 import {
   BiziStation,
   BusLine,
+  Place,
   ServiceAlert,
   Station,
 } from '../models/zaragoza.interface';
@@ -127,5 +128,50 @@ export class ZaragozaController {
   })
   async zaragozaBiziStation(@Param('id') id: string) {
     return this.zaragozaService.getBiziStation(id);
+  }
+
+  /**
+   * One route for every set of points the city publishes.
+   *
+   * A taxi rank, a chemist on duty and a bike rack are an id, a name and a
+   * point apiece; giving each its own path would be the same handler written
+   * eight times. `kind` picks the set, and adding the ninth is a line in a
+   * table rather than a service, a module and a route.
+   */
+  @Get('places/:kind')
+  @ApiOperation({ summary: 'Get places of one kind' })
+  @ApiParam({
+    name: 'kind',
+    type: String,
+    description:
+      'taxi-rank | taxi-office | pharmacy | car-park | petrol-station',
+  })
+  @ApiMapResponse(Place, 'Places keyed by id')
+  async zaragozaPlaces(@Param('kind') kind: string) {
+    return this.zaragozaService.getPlaces(kind);
+  }
+
+  @Get('places/:kind/:id')
+  @ApiOperation({ summary: 'Get one place by kind and ID' })
+  @ApiParam({ name: 'kind', type: String })
+  @ApiParam({ name: 'id', type: String })
+  @ApiResponse({ status: 200, description: 'Return place', type: Place })
+  async zaragozaPlace(@Param('kind') kind: string, @Param('id') id: string) {
+    return this.zaragozaService.getPlace(kind, id);
+  }
+
+  /**
+   * The taxis for hire, right now.
+   *
+   * Not a `kind` on the route above: that one answers with where things are
+   * and is good for a day, this one answers with what is moving and is stale
+   * in half a minute. One route each so a caller can cache them differently
+   * without being told to.
+   */
+  @Get('taxis')
+  @ApiOperation({ summary: 'Get taxis currently circulating' })
+  @ApiMapResponse(Place, 'Live taxis keyed by id')
+  async zaragozaTaxis() {
+    return this.zaragozaService.getLiveTaxis();
   }
 }

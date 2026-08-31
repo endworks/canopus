@@ -60,4 +60,18 @@ export class ZaragozaService {
       this.client.send(ZARAGOZA_PATTERNS.biziStationsUpdate, {}),
     );
   }
+
+  getPlaces(kind: string) {
+    return lastValueFrom(this.client.send(ZARAGOZA_PATTERNS.places, { kind }));
+  }
+
+  getPlace(kind: string, id: string) {
+    return lastValueFrom(
+      this.client.send(ZARAGOZA_PATTERNS.place, { kind, id }),
+    );
+  }
+
+  getLiveTaxis() {
+    return lastValueFrom(this.client.send(ZARAGOZA_PATTERNS.taxis, {}));
+  }
 }

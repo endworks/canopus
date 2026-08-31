@@ -252,3 +252,76 @@ export class BiziStation {
    */
   type?: string;
 }
+
+/**
+ * One of the city's points, whatever kind it is.
+ *
+ * Taxi ranks, chemists on duty, car parks, petrol stations and bike racks all
+ * arrive from Zaragoza in the same envelope, so they leave here in one too —
+ * `kind` selects the set rather than the path selecting a service.
+ */
+export class Place {
+  /**
+   * Identifier within its kind.
+   * @example '60'
+   */
+  id: string;
+
+  /**
+   * What the city calls it, usually the street it stands on.
+   * @example 'Calle Alcalde Gomez Laguna, 25'
+   */
+  title: string;
+
+  /**
+   * @example 41.64174414911776
+   */
+  latitude: number;
+
+  /**
+   * @example -0.9097477711138128
+   */
+  longitude: number;
+
+  /**
+   * Where the set has one: a chemist on duty, a taxi cooperative.
+   * @example '976757575'
+   */
+  phone?: string;
+
+  /**
+   * Live sets only. A taxi is `Libre` or it is not for hire.
+   * @example 'Libre'
+   */
+  status?: string;
+
+  /**
+   * The street, where the title is a name rather than an address.
+   * @example 'Calle Río Piedra, s/n entrada por Avenida Cataluña 298'
+   */
+  address?: string;
+
+  /**
+   * When it is open. For a chemist, the duty shift rather than its own hours.
+   * @example 'Abiertas de 9:15 h. a 13:45 h. y de 17:00 h. a 21:30 h.'
+   */
+  schedule?: string;
+
+  /**
+   * The day a duty shift applies to.
+   * @example '2026-08-30T00:00:00'
+   */
+  date?: string;
+
+  /**
+   * Whatever else is worth a line: a duty sector, what a place is.
+   * @example 'Sector Avda.Cataluña-Urbanización Ríos de Aragón'
+   */
+  detail?: string;
+
+  /**
+   * Where the place publishes one.
+   * @example 'http://www.somostufarmacia.es'
+   */
+  url?: string;
+}

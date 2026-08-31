@@ -252,6 +252,55 @@ describe('getLinesUpdate', () => {
     expect(resp['38'].hidden).toBe(false);
   });
 
+  it('keeps the two directions apart', async () => {
+    const { service } = build({
+      lines: [['21', 'BARRIO JESUS - OLIVER MIRALBUENO']],
+      kmls: {
+        [kmlUrl('21', 1)]: [
+          ['1', 'Av. de Navarra nº 71'],
+          ['2', 'Av. de Navarra nº 40'],
+        ],
+        // The return leg is not the outbound one reversed: a stop across the
+        // road is its own stop with its own number, which is the whole reason
+        // these are two lists and not one read backwards.
+        [kmlUrl('21', 2)]: [['3', 'Av. de Navarra nº 41']],
+      },
+    });
+
+    const resp = await service.getLinesUpdate();
+
+    expect(resp['21'].stations).toEqual(['1', '2']);
+    expect(resp['21'].stationsReturn).toEqual(['3']);
+  });
+
+  it('leaves the return empty for a line that runs one way', async () => {
+    const { service } = build({
+      lines: [['21', 'BARRIO JESUS - OLIVER MIRALBUENO']],
+      kmls: { [kmlUrl('21', 1)]: [['1', 'Av. de Navarra nº 71']] },
+    });
+
+    const resp = await service.getLinesUpdate();
+
+    expect(resp['21'].stations).toEqual(['1']);
+    expect(resp['21'].stationsReturn).toEqual([]);
+  });
+
+  it('gives a stop the line that only serves it on the way back', async () => {
+    const { service } = build({
+      lines: [['21', 'BARRIO JESUS - OLIVER MIRALBUENO']],
+      kmls: {
+        [kmlUrl('21', 1)]: [['1', 'Av. de Navarra nº 71']],
+        [kmlUrl('21', 2)]: [['3', 'Av. de Navarra nº 41']],
+      },
+    });
+
+    await service.getLinesUpdate();
+    const stops = await service.getStations();
+
+    // A stop served only on the return leg is still a stop of line 21.
+    expect(stops['3'].lines).toContain('21');
+  });
+
   it('shows a line again once its route comes back', async () => {
     const { service } = build({
       lines: [['21', 'BARRIO JESUS - OLIVER MIRALBUENO']],

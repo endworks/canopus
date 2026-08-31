@@ -87,8 +87,25 @@ type KmlDocument =
   | { status: 'missing' }
   | { status: 'failed' };
 
-// The stops of a line, or null when its route could not be read at all.
-type FetchedRoute = StationBase[] | null;
+/**
+ * A line's stops, each way round, or null when its route could not be read.
+ *
+ * Two lists rather than one. The site publishes a route file per direction —
+ * `21-1.kml` and `21-2.kml` — and these used to be flattened together the
+ * moment they were parsed, which made line 21 a single run of seventy-eight
+ * stops instead of two of about thirty-nine. The boundary was thrown away at
+ * the only point anything knew where it was, and no reader downstream could
+ * put it back: the return leg is not the outbound one reversed, because a stop
+ * on the other side of the road is a different stop with a different number.
+ *
+ * `back` is empty for a line that runs one way, which is a real thing here —
+ * some of these are loops that come back to where they began.
+ */
+type FetchedRoute = { out: StationBase[]; back: StationBase[] } | null;
+
+/** Every stop of a line, both ways, for the readers that want the whole set. */
+const allStops = (route: FetchedRoute): StationBase[] =>
+  route ? [...route.out, ...route.back] : [];
 
 type ActiveLines = Map<string, string | undefined>;
 
@@ -196,7 +213,7 @@ const routesOf = (
 ): LineRoute[] =>
   lineIds.flatMap((line) => {
     const seen = new Set<string>();
-    const stops = (routes.get(line) ?? [])
+    const stops = allStops(routes.get(line) ?? null)
       .filter((stop) => !seen.has(stop.id) && seen.add(stop.id))
       // The prose carries accents the KML drops; both sides have to be the
       // same words for the model to match them.
@@ -636,16 +653,33 @@ export class BusService {
       // not there costs nothing to ask for.
       const urls = [...new Set([...published, ...KmlForLine(id)])];
       const documents = await Promise.all(
-        urls.map((url) => this.fetchKmlDocument(url)),
+        urls.map(async (url) => ({
+          url,
+          document: await this.fetchKmlDocument(url),
+        })),
       );
       // Without every file the site is willing to serve, this line's stops
       // would look like they had been withdrawn.
-      if (documents.some((document) => document.status === 'failed')) {
+      if (documents.some(({ document }) => document.status === 'failed')) {
         return null;
       }
-      return documents.flatMap((document) =>
-        document.status === 'read' ? parseKmlStations(document.xml) : [],
-      );
+
+      // Which way round a file is, from the name the site gives it: `-2` is the
+      // return leg and everything else is the outbound one. A link the page
+      // published itself need not follow the convention, and an unrecognised
+      // file is better read as the way out — one long list is what this did
+      // before, and is wrong in a way somebody can see rather than a return
+      // leg quietly presented as an outbound one.
+      const stopsOf = (wanted: 'out' | 'back') =>
+        documents
+          .filter(
+            ({ url }) => (/-2\.kml$/i.test(url) ? 'back' : 'out') === wanted,
+          )
+          .flatMap(({ document }) =>
+            document.status === 'read' ? parseKmlStations(document.xml) : [],
+          );
+
+      return { out: stopsOf('out'), back: stopsOf('back') };
     } catch (exception) {
       this.logger.warn(
         `Could not read the route of line ${id}: ${exception.message}`,
@@ -680,8 +714,10 @@ export class BusService {
       string,
       { variants: StationBase[]; lines: string[] }
     >();
-    routes.forEach((stations, lineId) =>
-      (stations ?? []).forEach((station) => {
+    routes.forEach((route, lineId) =>
+      // Both ways: a stop served only on the return leg is still a stop, and
+      // leaving it out here would leave it without the line in its own record.
+      allStops(route).forEach((station) => {
         const entry = seen.get(station.id) ?? { variants: [], lines: [] };
         entry.variants.push(station);
         if (!entry.lines.includes(lineId)) entry.lines.push(lineId);
@@ -745,9 +781,16 @@ export class BusService {
       const route = routes.get(lineId);
       // Its route could not be read, so there is nothing new to say about it.
       if (!route) return [];
-      const stations = route.length
-        ? route.map((station) => station.id)
-        : (linesBackup.get(lineId)?.stations ?? []);
+      const backup = linesBackup.get(lineId);
+      const stations = route.out.length
+        ? route.out.map((station) => station.id)
+        : (backup?.stations ?? []);
+      // Kept from the backup only when the outbound leg was kept too: a line
+      // that has just been read has been read whole, and half a fresh route
+      // beside half a stale one is a line that runs somewhere it does not.
+      const stationsReturn = route.out.length
+        ? route.back.map((station) => station.id)
+        : (backup?.stationsReturn ?? []);
       return [
         upsertById<BusLine>(lineId, {
           id: lineId,
@@ -758,6 +801,7 @@ export class BusService {
             ),
           lastUpdated: new Date().toISOString(),
           stations,
+          stationsReturn,
           // The source offers it, so whatever it was before, it is not
           // withdrawn now. Whether it has a route to draw is derived from
           // `stations` when the line is read back.

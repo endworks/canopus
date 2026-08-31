@@ -17,6 +17,7 @@ import { extraLineIds, KmlForLine } from '../utils';
 
 const dropdown = (lines: [string, string][], links: string[] = []) =>
   `${links.map((url) => `<a href="${url}">kml</a>`).join('')}
+   <input type="hidden" id="avz_alteraciones_ajax_nonce" value="test-nonce" />
    <select id="linea-lineas-horarios">
      <option value="lineDefault">Elige una línea</option>
      ${lines
@@ -41,16 +42,21 @@ const kml = (stops: [string, string][]) =>
    </Document></kml>`;
 
 // The listing of alterations, as the theme renders one post per entry.
+// One page of the fragment admin-ajax answers with, which is where the site
+// says which alterations it is currently showing.
 const alerts = (entries: [string, string, string][]) =>
-  `<section>${entries
+  `<div class="container-allposts">${entries
     .map(
-      ([slug, date, lines]) =>
-        `<article>
-           <h3><a href="https://zaragoza.avanzagrupo.com/${slug}/">${slug}</a></h3>
-           <p>${date}</p><p>Líneas: ${lines}</p>
-         </article>`,
+      ([slug, date, lines], index) =>
+        `<div class="container-post container-post-${index}">
+           <div class="container-post-title">
+             <a href="https://zaragoza.avanzagrupo.com/${slug}/">${slug}</a>
+           </div>
+           <div class="container-entry-date">${date}</div>
+           <div class="container-post-lines">Líneas: ${lines}</div>
+         </div>`,
     )
-    .join('')}</section>`;
+    .join('')}</div>`;
 
 const today = () => {
   const now = new Date();
@@ -88,8 +94,7 @@ const pasobus = (rows: [string, string, string][]) =>
        .join('')}
    </table>`;
 
-const alertsUrl =
-  'https://zaragoza.avanzagrupo.com/category/alteraciones-del-servicio/';
+const alertsUrl = 'https://zaragoza.avanzagrupo.com/wp-admin/admin-ajax.php';
 const linesUrl = 'https://zaragoza.avanzagrupo.com/lineas-y-horarios/';
 const kmlUrl = (id: string, direction: number) => KmlForLine(id)[direction - 1];
 
@@ -141,6 +146,13 @@ class FakeModel<T extends { id: string }> {
     return { modifiedCount: this.docs.length };
   }
 
+  async deleteMany(filter: { id: { $in: string[] } }) {
+    const going = new Set(filter.id.$in);
+    const before = this.docs.length;
+    this.docs = this.docs.filter((doc) => !going.has(doc.id));
+    return { deletedCount: before - this.docs.length };
+  }
+
   async bulkWrite(operations: AnyBulkWriteOperation[]) {
     operations.forEach((operation) => {
       const { filter, update } = (
@@ -180,6 +192,8 @@ const build = (options: {
   storedLines?: Partial<BusLine>[];
   storedStations?: Partial<BusStation>[];
   storedAlerts?: Partial<BusAlert>[];
+  // The alterations the endpoint is showing, one fragment per page.
+  alertPages?: string[];
   // What reading each alert's article yields, by alert id. Absent means no
   // model is configured for this deployment.
   articles?: Record<string, AlertDetails>;
@@ -205,6 +219,10 @@ const build = (options: {
     bodies.set(url, html),
   );
 
+  // The alterations endpoint answers a form POST, a page at a time. Anything
+  // past the pages a test supplied is the empty fragment that ends the walk.
+  const alertPages = options.alertPages ?? [];
+
   const httpService = {
     get: jest.fn((url: string) => {
       if (bodies.has(url)) return of({ data: bodies.get(url) });
@@ -212,6 +230,14 @@ const build = (options: {
         return throwError(() => httpError(500));
       }
       return throwError(() => httpError(404));
+    }),
+    post: jest.fn((url: string, body: string) => {
+      if (options.unreachable?.includes(url)) {
+        return throwError(() => httpError(500));
+      }
+      if (url !== alertsUrl) return throwError(() => httpError(404));
+      const paged = Number(new URLSearchParams(body).get('paged') ?? '1');
+      return of({ data: alertPages[paged - 1] ?? alerts([]) });
     }),
   } as unknown as HttpService;
 
@@ -540,7 +566,7 @@ describe('alerts', () => {
     build({
       lines: [['21', 'BARRIO JESUS - OLIVER MIRALBUENO']],
       kmls: { [kmlUrl('21', 1)]: [['1', 'Av. de Navarra nº 71']] },
-      pages: { [alertsUrl]: listing },
+      alertPages: [listing],
       ...extra,
     });
 
@@ -612,28 +638,103 @@ describe('alerts', () => {
     expect(alertModel.docs).toEqual([stored]);
   });
 
-  it('drops an alert a week after the day it was announced', async () => {
-    const old = '2019-12-01';
+  it('keeps an alert the listing shows, however long ago it was announced', async () => {
     const { service } = build({
+      lines: [['21', 'BARRIO JESUS - OLIVER MIRALBUENO']],
+      kmls: { [kmlUrl('21', 1)]: [['1', 'Av. de Navarra nº 71']] },
+      // Announced in January, and the site is still showing it: the works are
+      // still going on, which is the whole of what an age could never tell us.
+      alertPages: [alerts([['obras-coso', '2 enero, 2026', '21']])],
+    });
+    await service.getLinesUpdate();
+
+    expect((await service.getAlerts()).map((alert) => alert.id)).toEqual([
+      'obras-coso',
+    ]);
+  });
+
+  it('drops an alert the listing has stopped showing', async () => {
+    const { service, alertModel } = build({
+      lines: [['21', 'BARRIO JESUS - OLIVER MIRALBUENO']],
+      kmls: { [kmlUrl('21', 1)]: [['1', 'Av. de Navarra nº 71']] },
       storedAlerts: [
         {
-          id: 'old',
-          title: 'Fiestas del Pilar 2019',
-          url: 'https://zaragoza.avanzagrupo.com/old/',
-          date: old,
+          id: 'terminada',
+          title: 'Obras terminadas',
+          url: 'https://zaragoza.avanzagrupo.com/terminada/',
+          date: '2026-08-30',
           lines: ['21'],
-          firstSeen: `${old}T04:00:00.000Z`,
+          firstSeen: '2026-08-30T04:00:00.000Z',
         },
       ],
+      alertPages: [alerts([['en-curso', today(), '21']])],
     });
+    await service.getLinesUpdate();
 
-    expect(await service.getAlerts()).toEqual([]);
+    expect((await service.getAlerts()).map((alert) => alert.id)).toEqual([
+      'en-curso',
+    ]);
+    // And it is gone for good, not merely filtered out of the answer.
+    expect(alertModel.docs.map((doc) => doc.id)).toEqual(['en-curso']);
+  });
+
+  it('walks the listing until a page adds nothing', async () => {
+    const { service, httpService } = build({
+      lines: [['21', 'BARRIO JESUS - OLIVER MIRALBUENO']],
+      kmls: { [kmlUrl('21', 1)]: [['1', 'Av. de Navarra nº 71']] },
+      alertPages: [
+        alerts([['primera', today(), '21']]),
+        alerts([['segunda', today(), '21']]),
+        // The paginator hands back the page before it rather than emptying.
+        alerts([['segunda', today(), '21']]),
+      ],
+    });
+    await service.getLinesUpdate();
+
+    expect((await service.getAlerts()).map((alert) => alert.id).sort()).toEqual(
+      ['primera', 'segunda'],
+    );
+    // Three asked for, and the third is what stopped the walk.
+    expect((httpService.post as jest.Mock).mock.calls).toHaveLength(3);
+  });
+
+  it('stops showing an alert the day after it ends, cached or not', async () => {
+    const clock = jest
+      .spyOn(Date, 'now')
+      .mockReturnValue(Date.parse('2026-08-31T09:00:00Z'));
+    try {
+      const { service } = build({
+        storedAlerts: [
+          {
+            id: 'ends-today',
+            title: 'Corte de tr\u00e1fico',
+            url: 'https://zaragoza.avanzagrupo.com/ends-today/',
+            date: '2026-08-31',
+            lines: ['21'],
+            stations: [],
+            endDate: '2026-08-31',
+            firstSeen: '2026-08-31T04:00:00.000Z',
+          },
+        ],
+      });
+
+      expect((await service.getAlerts()).map((alert) => alert.id)).toEqual([
+        'ends-today',
+      ]);
+
+      // The same cache entry, one day later: what was cached is the alert, not
+      // the verdict that it was still running.
+      clock.mockReturnValue(Date.parse('2026-09-01T09:00:00Z'));
+      expect(await service.getAlerts()).toEqual([]);
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   it('shows a station only the alerts of the lines that serve it', async () => {
     const { service } = build({
+      alertPages: [listing],
       pages: {
-        [alertsUrl]: listing,
         [pasobusUrl('1')]: pasobus([['21', 'BARRIO JESUS', '3 minutos']]),
       },
       lines: [['21', 'BARRIO JESUS - OLIVER MIRALBUENO']],
@@ -659,8 +760,8 @@ describe('alerts', () => {
 
   it('leaves a station with no altered line without alerts', async () => {
     const { service } = build({
+      alertPages: [listing],
       pages: {
-        [alertsUrl]: listing,
         [pasobusUrl('2')]: pasobus([['44', 'ACTUR', '5 minutos']]),
       },
       lines: [['21', 'BARRIO JESUS - OLIVER MIRALBUENO']],
@@ -689,6 +790,7 @@ describe('alert articles', () => {
       startDate: isoDay(0),
       endDate: isoDay(2),
       stations: ['1', '2'],
+      addedStations: [],
       // The whole line is altered; the two stops are just the ones it names.
       scope: 'line' as const,
     },
@@ -704,8 +806,8 @@ describe('alert articles', () => {
           ['2', 'Campus Rio Ebro'],
         ],
       },
+      alertPages: [listing],
       pages: {
-        [alertsUrl]: listing,
         [articleUrl]: article('Del 24 al 26 de agosto, postes 1 y 2.'),
       },
       articles: read,
@@ -721,6 +823,7 @@ describe('alert articles', () => {
       startDate: read['fiestas-en-miralbueno'].startDate,
       endDate: read['fiestas-en-miralbueno'].endDate,
       stations: ['1', '2'],
+      addedStations: [],
       scope: 'line',
       lines: ['21'],
     });
@@ -735,6 +838,7 @@ describe('alert articles', () => {
           startDate: isoDay(0),
           endDate: undefined,
           stations: [],
+          addedStations: [],
           scope: 'line' as const,
         },
       },
@@ -777,6 +881,7 @@ describe('alert articles', () => {
           startDate: isoDay(0),
           endDate: isoDay(1),
           stations: [],
+          addedStations: [],
           scope: 'line' as const,
         },
       },
@@ -809,6 +914,7 @@ describe('alert articles', () => {
       expect(alertModel.docs[0]).toMatchObject({
         lines: ['21'],
         stations: [],
+        addedStations: [],
         scope: 'line',
       });
       expect(alertModel.docs[0].articleHash).toBeUndefined();
@@ -846,11 +952,11 @@ describe('alert articles', () => {
           endDate: undefined,
           // Stop 1 is suppressed; the rest of the line runs as usual.
           stations: ['1'],
+          addedStations: [],
           scope: 'stations' as const,
         },
       },
       pages: {
-        [alertsUrl]: listing,
         [articleUrl]: article('Se suprime la parada de Av. de Navarra.'),
         [pasobusUrl('1')]: pasobus([['21', 'BARRIO JESUS', '3 minutos']]),
         [pasobusUrl('2')]: pasobus([['21', 'BARRIO JESUS', '6 minutos']]),
@@ -874,6 +980,7 @@ describe('alert articles', () => {
         startDate: undefined,
         endDate: undefined,
         stations: ['1'],
+        addedStations: [],
         scope: 'stations' as const,
       },
     };
@@ -902,6 +1009,7 @@ describe('alert articles', () => {
       startDate: '2026-08-24',
       endDate: isoDay(3),
       stations: ['1'],
+      addedStations: [],
       scope: 'stations' as const,
       articleHash: 'the hash of the article it was read from',
     };
@@ -935,6 +1043,7 @@ describe('alert articles', () => {
           startDate: undefined,
           endDate: undefined,
           stations: ['1'],
+          addedStations: [],
           scope: 'stations' as const,
         },
       },
@@ -975,7 +1084,6 @@ describe('alert articles', () => {
   it('marks the stops the article names, without hiding the rest', async () => {
     const { service } = withArticle({
       pages: {
-        [alertsUrl]: listing,
         [articleUrl]: article('Del 24 al 26 de agosto, postes 1 y 2.'),
         [pasobusUrl('1')]: pasobus([['21', 'BARRIO JESUS', '3 minutos']]),
         [pasobusUrl('9')]: pasobus([['21', 'BARRIO JESUS', '6 minutos']]),

@@ -18,6 +18,11 @@ export interface BusAlertResponse {
   /** The stops the alert names; empty when it names none. */
   stations: string[];
   /**
+   * Provisional stops the alteration puts on, named as the article writes
+   * them rather than by id — they are in no route file. Empty for most.
+   */
+  addedStations: string[];
+  /**
    * `'stations'` when only `stations` are affected and the rest of the route
    * runs as usual; `'line'` when every stop of every line named is.
    */

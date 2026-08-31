@@ -2,28 +2,29 @@ import {
   articleText,
   parseAlertDate,
   parseAlertLines,
-  parseAlerts,
+  parseAlertsNonce,
+  parseAlterations,
 } from './alerts';
 
-const pageUrl =
-  'https://zaragoza.avanzagrupo.com/category/alteraciones-del-servicio/';
+const pageUrl = 'https://zaragoza.avanzagrupo.com/lineas-y-horarios/';
 
-// The listing, as a WordPress archive renders one post per entry.
+// One page of the fragment admin-ajax answers with.
 const listing = (
-  entries: { slug: string; title: string; date: string; lines: string }[],
-) => `<main>
+  entries: { slug: string; title: string; date: string; lines?: string }[],
+) => `<div class="container-allposts">
     ${entries
       .map(
-        ({ slug, title, date, lines }) => `
-        <article>
-          <h2><a href="https://zaragoza.avanzagrupo.com/${slug}/">${title}</a></h2>
-          <p>${date}</p>
-          <p><em>Líneas: ${lines}</em></p>
-        </article>`,
+        ({ slug, title, date, lines }, index) => `
+        <div class="container-post container-post-${index}">
+          <div class="container-post-title">
+            <a href="https://zaragoza.avanzagrupo.com/${slug}/">${title}</a>
+          </div>
+          <div class="container-entry-date">${date}</div>
+          ${lines ? `<div class="container-post-lines">Líneas: ${lines}</div>` : ''}
+        </div>`,
       )
       .join('')}
-    <a href="https://zaragoza.avanzagrupo.com/category/alteraciones-del-servicio/page/2/">Siguientes »</a>
-  </main>`;
+  </div>`;
 
 describe('parseAlertDate', () => {
   it.each([
@@ -64,7 +65,21 @@ describe('parseAlertLines', () => {
   });
 });
 
-describe('parseAlerts', () => {
+describe('parseAlertsNonce', () => {
+  it('reads the nonce the alterations endpoint demands', () => {
+    expect(
+      parseAlertsNonce(
+        '<form><input type="hidden" id="avz_alteraciones_ajax_nonce" value="0eb1d9e166" /></form>',
+      ),
+    ).toBe('0eb1d9e166');
+  });
+
+  it('reads nothing from a page that carries none', () => {
+    expect(parseAlertsNonce('<main><h1>Líneas</h1></main>')).toBeUndefined();
+  });
+});
+
+describe('parseAlterations', () => {
   const entries = [
     {
       slug: 'como-ir-al-festival-vive-latino-2026-en-autobus',
@@ -73,15 +88,17 @@ describe('parseAlerts', () => {
       lines: '23, 34, 42, Ci1, Ci2, ES7',
     },
     {
-      slug: 'fiestas-en-miralbueno-afecciones-en-el-bus-urbano',
-      title: 'Fiestas en Miralbueno – Afecciones en el bus urbano',
-      date: '24 agosto, 2026',
-      lines: '21, 52, 53',
+      slug: 'ii-fase-obras-coso-lineas-de-autobus-desviadas',
+      title: 'III Fase obras Coso – Líneas de autobús desviadas',
+      // Months old and still shown, which is the point of reading this and
+      // not the archive.
+      date: '21 mayo, 2026',
+      lines: '21, 22, 28, N1, N5',
     },
   ];
 
-  it('reads every entry the listing publishes', () => {
-    expect(parseAlerts(listing(entries), pageUrl)).toEqual([
+  it('reads every alteration the page is showing', () => {
+    expect(parseAlterations(listing(entries), pageUrl)).toEqual([
       {
         id: 'como-ir-al-festival-vive-latino-2026-en-autobus',
         title: 'Cómo ir al Festival Vive Latino España 2026 en autobús',
@@ -91,21 +108,24 @@ describe('parseAlerts', () => {
         lines: ['23', '34', '42', 'Ci1', 'Ci2', 'ES7'],
       },
       {
-        id: 'fiestas-en-miralbueno-afecciones-en-el-bus-urbano',
-        title: 'Fiestas en Miralbueno – Afecciones en el bus urbano',
-        url: 'https://zaragoza.avanzagrupo.com/fiestas-en-miralbueno-afecciones-en-el-bus-urbano/',
-        date: '2026-08-24',
-        lines: ['21', '52', '53'],
+        id: 'ii-fase-obras-coso-lineas-de-autobus-desviadas',
+        title: 'III Fase obras Coso – Líneas de autobús desviadas',
+        url: 'https://zaragoza.avanzagrupo.com/ii-fase-obras-coso-lineas-de-autobus-desviadas/',
+        date: '2026-05-21',
+        lines: ['21', '22', '28', 'N1', 'N5'],
       },
     ]);
   });
 
-  it('reads an entry the listing prints without its lines', () => {
-    const [alert] = parseAlerts(
-      `<article>
-         <h2><a href="/obras-en-gran-via/">Obras en Gran Vía</a></h2>
-         <p>20 agosto, 2026</p>
-       </article>`,
+  it('reads an alteration printed without its lines', () => {
+    const [alert] = parseAlterations(
+      listing([
+        {
+          slug: 'obras-en-gran-via',
+          title: 'Obras en Gran Vía',
+          date: '20 agosto, 2026',
+        },
+      ]),
       pageUrl,
     );
 
@@ -119,28 +139,22 @@ describe('parseAlerts', () => {
     });
   });
 
-  it("does not take the listing's own pages for alterations", () => {
-    // The "Siguientes »" link at the foot of the archive, and the archive
-    // itself, are not alterations.
-    expect(parseAlerts(listing(entries), pageUrl)).toHaveLength(2);
-  });
-
-  it('ignores a listing with nothing in it', () => {
+  it('ends the walk on the empty page the paginator finishes with', () => {
     expect(
-      parseAlerts('<main><h1>Sin alteraciones</h1></main>', pageUrl),
+      parseAlterations('<div class="container-allposts"></div>', pageUrl),
     ).toEqual([]);
   });
 
   it('does not follow a link off the site', () => {
-    const alerts = parseAlerts(
-      `<article>
-         <h2><a href="https://example.com/aviso/">Aviso</a></h2>
-         <p>Líneas: 21</p>
-       </article>`,
-      pageUrl,
-    );
-
-    expect(alerts).toEqual([]);
+    expect(
+      parseAlterations(
+        `<div class="container-post">
+           <div class="container-post-title"><a href="https://example.com/aviso/">Aviso</a></div>
+           <div class="container-post-lines">Líneas: 21</div>
+         </div>`,
+        pageUrl,
+      ),
+    ).toEqual([]);
   });
 });
 

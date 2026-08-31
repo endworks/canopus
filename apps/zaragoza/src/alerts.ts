@@ -66,14 +66,7 @@ export const parseAlertLines = (text: string): string[] =>
 const clean = (text: string): string =>
   stripBom(fixMojibake(text)).replace(/\s+/g, ' ').trim();
 
-// Every post on the listing is an alteration, so an entry is a post: the
-// selectors WordPress themes wrap one in. The headline is the post's own link.
-const entrySelector = 'article, .post, .entry';
-const headlineSelector = 'h1 a, h2 a, h3 a, h4 a';
-
-// A listing links its own pages as well as its posts.
-const archivePath = /\/(category|tag|author|page|feed)\//;
-
+/** The slug a post's URL ends in, which is the only id these notices have. */
 const alertId = (url: URL): string | undefined => {
   const segments = url.pathname.split('/').filter(Boolean);
   return segments.length
@@ -82,59 +75,64 @@ const alertId = (url: URL): string | undefined => {
 };
 
 /**
- * The alerts published on the listing.
+ * The nonce the alterations endpoint will not answer without.
  *
- * Nothing here reads the alteration itself: the listing gives a headline, a
- * link, a day and the lines, and whatever else the notice says is read from
- * the article behind it.
+ * The line pages print an empty `#avisos` and fill it from admin-ajax, which
+ * rejects a request with no nonce outright. It is minted per page load, so it
+ * is read from the page that was just fetched rather than remembered.
  */
-export const parseAlerts = (html: string, pageUrl: string): ScrapedAlert[] => {
-  const $ = cheerio.load(html);
-  const page = new URL(pageUrl);
+export const parseAlertsNonce = (html: string): string | undefined =>
+  cheerio.load(html)('#avz_alteraciones_ajax_nonce').attr('value') || undefined;
 
-  const postUrl = (href?: string): URL | undefined => {
-    if (!href) return undefined;
+/**
+ * One page of the alterations the site is currently showing.
+ *
+ * This is the fragment admin-ajax returns, not a page: a run of
+ * `.container-post`, each with the headline and its link, the day it was
+ * announced and the lines it names. What the site lists here is what it is
+ * showing a traveller today — an alteration announced in January and still in
+ * force is on it, and one that is over is not, which is the whole reason for
+ * reading it rather than the category archive.
+ */
+export const parseAlterations = (
+  fragment: string,
+  pageUrl: string,
+): ScrapedAlert[] => {
+  const $ = cheerio.load(fragment);
+  const alerts: ScrapedAlert[] = [];
+
+  $('.container-post').each((_, element) => {
+    const entry = $(element);
+    const anchor = entry.find('.container-post-title a').first();
+    const href = anchor.attr('href');
+    if (!href) return;
+
     let url: URL;
     try {
-      url = new URL(href, page);
+      url = new URL(href, pageUrl);
     } catch {
-      return undefined;
+      return;
     }
     url.hash = '';
-    const isPost =
-      url.host === page.host &&
-      url.pathname !== '/' &&
-      url.pathname !== page.pathname &&
-      !archivePath.test(url.pathname);
-    return isPost ? url : undefined;
-  };
+    // The fragment is somebody else's HTML: an alteration is a post on this
+    // site, and a link anywhere else is not one.
+    if (url.host !== new URL(pageUrl).host) return;
 
-  const alerts = new Map<string, ScrapedAlert>();
-  $(entrySelector).each((_, element) => {
-    const entry = $(element);
-    const links = [
-      ...entry.find(headlineSelector).toArray(),
-      ...entry.find('a[href]').toArray(),
-    ];
-    const link = links
-      .map((anchor) => ({ anchor, url: postUrl($(anchor).attr('href')) }))
-      .find(({ url }) => url);
-    if (!link) return;
+    const id = alertId(url);
+    const title = clean(anchor.text());
+    if (!id || !title) return;
 
-    const id = alertId(link.url);
-    const title = clean($(link.anchor).text());
-    if (!id || !title || alerts.has(id)) return;
-
-    const text = clean(entry.text());
-    alerts.set(id, {
+    alerts.push({
       id,
       title,
-      url: link.url.href,
-      date: parseAlertDate(text),
-      lines: parseAlertLines(text).sort(compareLineIds),
+      url: url.href,
+      date: parseAlertDate(clean(entry.find('.container-entry-date').text())),
+      lines: parseAlertLines(
+        clean(entry.find('.container-post-lines').text()),
+      ).sort(compareLineIds),
     });
   });
-  return [...alerts.values()];
+  return alerts;
 };
 
 /**

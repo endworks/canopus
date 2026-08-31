@@ -41,6 +41,7 @@ describe('AlertReader.read', () => {
       startDate: '2026-08-24',
       endDate: '2026-08-26',
       stations: ['1234'],
+      addedStations: [],
       scope: 'stations',
     });
 
@@ -50,6 +51,7 @@ describe('AlertReader.read', () => {
       startDate: '2026-08-24',
       endDate: '2026-08-26',
       stations: ['1234'],
+      addedStations: [],
       scope: 'stations',
     });
   });
@@ -61,6 +63,7 @@ describe('AlertReader.read', () => {
       // 9999 is not on any affected route; putting it through would badge
       // whichever stop happens to have that number.
       stations: ['1234', '9999', 'la parada de la esquina'],
+      addedStations: [],
       scope: 'stations',
     });
 
@@ -78,6 +81,7 @@ describe('AlertReader.read', () => {
       startDate,
       endDate,
       stations: [],
+      addedStations: [],
       scope: 'line',
     });
 
@@ -97,6 +101,7 @@ describe('AlertReader.read', () => {
         startDate: null,
         endDate: null,
         stations,
+        addedStations: [],
         scope: 'stations',
       });
 
@@ -106,6 +111,42 @@ describe('AlertReader.read', () => {
       expect(details).toMatchObject({ scope: 'line', stations: [] });
     },
   );
+
+  it('keeps a provisional stop by name, having no id to give it', async () => {
+    const { reader: subject } = reader({
+      startDate: null,
+      endDate: null,
+      stations: ['1236'],
+      addedStations: ['Coso 54 (provisional)', 'Plaza Ariño'],
+      scope: 'stations',
+    });
+
+    expect(await subject.read(alert, 'texto', routes)).toMatchObject({
+      // Resolved against the route, because it is a stop the network has.
+      stations: ['1236'],
+      // Not resolved against anything, because these are not.
+      addedStations: ['Coso 54 (provisional)', 'Plaza Ariño'],
+    });
+  });
+
+  it('drops a provisional stop that came back as a sentence', async () => {
+    const { reader: subject } = reader({
+      startDate: null,
+      endDate: null,
+      stations: [],
+      addedStations: [
+        '  Plaza Ariño  ',
+        'Plaza Ariño',
+        // A diversion the model wrote out instead of naming a stop.
+        'desde Plaza Paraíso por Constitución, Mina, Plaza San Miguel, Espartero a Coso, y de ahí a sus recorridos oficiales',
+      ],
+      scope: 'line',
+    });
+
+    const details = await subject.read(alert, 'texto', routes);
+
+    expect(details.addedStations).toEqual(['Plaza Ariño']);
+  });
 
   it('will not narrow a notice when a route did not fit in the prompt', async () => {
     // More stops than the prompt has room for: the second line is dropped
@@ -124,6 +165,7 @@ describe('AlertReader.read', () => {
       startDate: null,
       endDate: null,
       stations: ['1000'],
+      addedStations: [],
       scope: 'stations',
     });
 
@@ -140,6 +182,7 @@ describe('AlertReader.read', () => {
       startDate: null,
       endDate: null,
       stations: [],
+      addedStations: [],
       scope: 'line',
     });
 

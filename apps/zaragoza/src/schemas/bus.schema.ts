@@ -104,6 +104,13 @@ export class BusAlert {
   stations: string[];
 
   /**
+   * Provisional stops the alteration puts on, as the article names them. Text,
+   * not ids: a stop that exists only while the works do is in no route file.
+   */
+  @Prop({ type: [String], default: [] })
+  addedStations: string[];
+
+  /**
    * Whether the alteration stops at those stops, or reaches the whole of every
    * line it names. Only `'stations'` narrows the notice to some of a line's
    * stops; anything unread, diverted or doubtful stays `'line'`.

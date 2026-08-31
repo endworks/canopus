@@ -25,7 +25,7 @@ import {
   BusStationsResponse,
 } from '../models/bus.interface';
 import { ErrorResponse, mapWithLimit } from '@canopus/shared';
-import { fetchWithTimeout } from '@canopus/nest';
+import { fetchWithTimeout, postWithTimeout } from '@canopus/nest';
 import { StationBase, ValueLabel } from '../models/common.interface';
 import {
   BusAlert,
@@ -35,7 +35,12 @@ import {
   BusStation,
   BusStationDocument,
 } from '../schemas/bus.schema';
-import { articleText, parseAlerts, ScrapedAlert } from '../alerts';
+import {
+  articleText,
+  parseAlertsNonce,
+  parseAlterations,
+  ScrapedAlert,
+} from '../alerts';
 import { AlertReader, LineRoute } from '../alert-reader';
 import {
   canonicalLineName,
@@ -56,18 +61,13 @@ const busApiURL =
 const busWebURL =
   'https://zaragoza-pasobus.avanzagrupo.com/frm_esquemaparadatime.php?poste=';
 const busLinesURL = 'https://zaragoza.avanzagrupo.com/lineas-y-horarios/';
-const busAlertsURL =
-  'https://zaragoza.avanzagrupo.com/category/alteraciones-del-servicio/';
+// The line pages print an empty `#avisos` and fill it from here, so this is
+// the only place the site says which alterations it is currently showing.
+const busAlertsURL = 'https://zaragoza.avanzagrupo.com/wp-admin/admin-ajax.php';
 
-/**
- * How long an alteration stays in the responses.
- *
- * The site says when an alteration was announced and never when it is over,
- * and the listing shows only the latest few, so an alert that has scrolled off
- * it is not thereby finished. A week is long enough for a weekend of works and
- * short enough that August's fiestas are not still on a stop in September.
- */
-const alertMaxAgeDays = 7;
+// The endpoint answers three alterations at a time. The cap is what stops a
+// paginator that never empties from walking the site until the run dies.
+const maxAlertPages = 20;
 
 // Articles come from the same WordPress site as everything else, so they are
 // read a few at a time. A run that suddenly has dozens of new alerts is a
@@ -160,6 +160,7 @@ const toAlertResponse = (alert: BusAlert): BusAlertResponse => ({
   endDate: alert.endDate ?? undefined,
   lines: alert.lines ?? [],
   stations: alert.stations ?? [],
+  addedStations: alert.addedStations ?? [],
   scope: alert.scope ?? 'line',
 });
 
@@ -181,20 +182,19 @@ const settled = (alert?: BusAlert): boolean =>
 /**
  * The alterations still in force, newest first.
  *
- * An alert whose article gave an end date is shown until that day and not one
- * after it. Everything else is aged by the day it was announced — or, when
- * even that could not be read, by the run that first saw it — because the
- * listing itself never says when an alteration is over.
+ * Being stored is most of the answer: a run only keeps what the site was still
+ * showing, and drops the rest. So there is no age to judge here — an
+ * alteration announced in January and still under way is still under way, and
+ * guessing otherwise from its date is what used to hide it. An end date, where
+ * an article gave one, retires it a day early rather than waiting for the
+ * operator to take the notice down.
  */
 const activeAlerts = (alerts: BusAlert[]): BusAlert[] => {
   const today = dayFrom(0);
-  const cutoff = dayFrom(-alertMaxAgeDays);
   const announced = (alert: BusAlert) =>
     (alert.date ?? alert.firstSeen ?? '').slice(0, 10);
   return alerts
-    .filter((alert) =>
-      alert.endDate ? alert.endDate >= today : announced(alert) >= cutoff,
-    )
+    .filter((alert) => !alert.endDate || alert.endDate >= today)
     .sort((a, b) => announced(b).localeCompare(announced(a)));
 };
 
@@ -232,6 +232,7 @@ const readingOf = (alert?: BusAlert): ArticleReading => ({
   startDate: alert?.startDate ?? null,
   endDate: alert?.endDate ?? null,
   stations: alert?.stations ?? [],
+  addedStations: alert?.addedStations ?? [],
   scope: alert?.scope ?? 'line',
   articleHash: alert?.articleHash,
 });
@@ -243,7 +244,12 @@ const readingOf = (alert?: BusAlert): ArticleReading => ({
  */
 type ArticleReading = Pick<
   BusAlert,
-  'startDate' | 'endDate' | 'stations' | 'scope' | 'articleHash'
+  | 'startDate'
+  | 'endDate'
+  | 'stations'
+  | 'addedStations'
+  | 'scope'
+  | 'articleHash'
 >;
 
 /**
@@ -518,10 +524,19 @@ export class BusService {
   }
 
   // Alerts
+  /**
+   * The alterations in force right now.
+   *
+   * What is stored is cached; which of it is still in force is not. That line
+   * matters because the filter turns on today's date and a cache entry outlives
+   * the midnight it was built before — an alert that ended yesterday would go on
+   * being served all morning, which is the one thing an end date exists to stop.
+   */
   public async getAlerts(): Promise<BusAlertResponse[]> {
-    return this.cacheManager.wrap('bus/alerts', async () =>
-      activeAlerts(await this.getAllAlerts()).map(toAlertResponse),
+    const stored = await this.cacheManager.wrap('bus/alerts', () =>
+      this.getAllAlerts(),
     );
+    return activeAlerts(stored).map(toAlertResponse);
   }
 
   /**
@@ -865,7 +880,21 @@ export class BusService {
         }),
         { ordered: false },
       );
-      this.logger.log(`Read ${scraped.length} service alerts`);
+
+      // What the site has stopped showing is over, and nothing else says so:
+      // these notices carry no end date and the ones that do are the minority.
+      // Dropping them here is what lets the responses stop guessing from a
+      // date. Only ever reached with a listing that answered — an endpoint
+      // that failed returns nothing at all and leaves the run before this.
+      const listed = new Set(scraped.map((alert) => alert.id));
+      const gone = [...stored.keys()].filter((id) => !listed.has(id));
+      if (gone.length) {
+        await this.busAlertModel.deleteMany({ id: { $in: gone } });
+      }
+
+      this.logger.log(
+        `Read ${scraped.length} service alerts, dropped ${gone.length}`,
+      );
     } catch (exception) {
       this.logger.warn(
         `Could not update the service alerts: ${exception.message}`,
@@ -959,18 +988,52 @@ export class BusService {
     }
   }
 
+  /**
+   * The alterations the site is currently showing.
+   *
+   * Not the category archive, which keeps every notice ever published: the
+   * endpoint the line pages themselves call, whose answer is what a traveller
+   * is shown today. Asked once for every line at a time — `default` — because
+   * asking it line by line returns the same notices carrying the same line
+   * lists, forty-six times over.
+   */
   private async fetchAlerts(): Promise<ScrapedAlert[]> {
     try {
-      const html = await fetchWithTimeout<string>(
+      const page = await fetchWithTimeout<string>(
         this.httpService,
-        busAlertsURL,
+        busLinesURL,
       );
-      return parseAlerts(html, busAlertsURL);
+      // Minted per page load, and the endpoint answers 403 without it.
+      const nonce = parseAlertsNonce(page);
+      if (!nonce) {
+        this.logger.warn(`No alterations nonce on ${busLinesURL}`);
+        return [];
+      }
+
+      const alerts = new Map<string, ScrapedAlert>();
+      for (let paged = 1; paged <= maxAlertPages; paged++) {
+        const fragment = await postWithTimeout<string>(
+          this.httpService,
+          busAlertsURL,
+          {
+            action: 'get_alteraciones_servicio',
+            lineaAfectada: 'default',
+            nonce,
+            paged: `${paged}`,
+          },
+        );
+        const listed = parseAlterations(fragment, busLinesURL);
+        // A page with nothing new on it ends the walk, whether the paginator
+        // ran out or started handing back the page before it.
+        if (!listed.some((alert) => !alerts.has(alert.id))) break;
+        listed.forEach((alert) => alerts.set(alert.id, alert));
+      }
+      return [...alerts.values()];
     } catch (exception) {
       // Whatever the page that is fetched for the lines carried is still
-      // worth storing, so a home page that is down costs only its own alerts.
+      // worth storing, so a listing that is down costs only its own alerts.
       this.logger.warn(
-        `Could not read the service alerts from ${busAlertsURL}: ${exception.message}`,
+        `Could not read the service alerts: ${exception.message}`,
       );
       return [];
     }

@@ -28,7 +28,11 @@ const dropdown = (lines: [string, string][], links: string[] = []) =>
        .join('')}
    </select>`;
 
-const kml = (stops: [string, string][]) =>
+// Every real route file carries one `LineString` beside its stops: the shape
+// the bus traces, which is not the stops joined up. The fixture carries one
+// too, so the parser that reads it is exercised by the tests that were only
+// ever about stops.
+const kml = (stops: [string, string][], path = defaultPath) =>
   `<?xml version="1.0" encoding="UTF-8"?>
    <kml><Document>
      ${stops
@@ -39,7 +43,17 @@ const kml = (stops: [string, string][]) =>
             </Placemark>`,
        )
        .join('')}
+     <Placemark><LineString><coordinates>
+       ${path.map(([lon, lat]) => `${lon},${lat},0.0`).join(' ')}
+     </coordinates></LineString></Placemark>
    </Document></kml>`;
+
+// Seven decimals in, five out: the files are written to the centimetre and
+// nobody reading a bus route can see it.
+const defaultPath: [number, number][] = [
+  [-0.8651679, 41.6626462],
+  [-0.9338272, 41.6587922],
+];
 
 // The listing of alterations, as the theme renders one post per entry.
 // One page of the fragment admin-ajax answers with, which is where the site
@@ -297,6 +311,32 @@ describe('getLinesUpdate', () => {
 
     expect(resp['21'].stations).toEqual(['1', '2']);
     expect(resp['21'].stationsReturn).toEqual(['3']);
+  });
+
+  it('reads the drawn shape of each leg, and keeps it out of the listing', async () => {
+    const { service } = build({
+      lines: [['21', 'BARRIO JESUS - OLIVER MIRALBUENO']],
+      kmls: {
+        [kmlUrl('21', 1)]: [['1', 'Av. de Navarra nº 71']],
+        [kmlUrl('21', 2)]: [['3', 'Av. de Navarra nº 41']],
+      },
+    });
+
+    const listing = await service.getLinesUpdate();
+    // Fifty lines' worth of coordinates is not what every reader asks for at
+    // startup. See `toLineResponse`.
+    expect(listing['21'].path).toBeUndefined();
+    expect(listing['21'].pathReturn).toBeUndefined();
+
+    const line = await service.getLine('21');
+    expect(line.path).toEqual([
+      [-0.86517, 41.66265],
+      [-0.93383, 41.65879],
+    ]);
+    expect(line.pathReturn).toEqual([
+      [-0.86517, 41.66265],
+      [-0.93383, 41.65879],
+    ]);
   });
 
   it('leaves the return empty for a line that runs one way', async () => {

@@ -58,6 +58,20 @@ export class BusLine {
   stationsReturn?: string[];
 
   /**
+   * The shape the line traces on the ground, each leg its own, as
+   * `[longitude, latitude]` pairs in the order the route runs them.
+   *
+   * Not derivable from `stations`: joining the stops draws a line through
+   * whatever the bus drives around. Kept beside them because it comes out of
+   * the same file, in the same read.
+   */
+  @Prop({ type: [[Number]], default: [] })
+  path?: number[][];
+
+  @Prop({ type: [[Number]], default: [] })
+  pathReturn?: number[][];
+
+  /**
    * The source stopped offering this line: it has been withdrawn from the
    * network. Distinct from having no route to draw, which is derived from
    * `stations` — one recovers when the dropdown lists the line again, the

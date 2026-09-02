@@ -101,7 +101,13 @@ type KmlDocument =
  * `back` is empty for a line that runs one way, which is a real thing here —
  * some of these are loops that come back to where they began.
  */
-type FetchedRoute = { out: StationBase[]; back: StationBase[] } | null;
+type FetchedRoute = {
+  out: StationBase[];
+  back: StationBase[];
+  /** The shape each leg traces, from the same file its stops came from. */
+  pathOut: number[][];
+  pathBack: number[][];
+} | null;
 
 /** Every stop of a line, both ways, for the readers that want the whole set. */
 const allStops = (route: FetchedRoute): StationBase[] =>
@@ -114,6 +120,39 @@ interface PublishedLines {
   lines: ValueLabel[];
   routeFiles: Map<string, string[]>;
 }
+
+/**
+ * The line drawn on the ground, as the route file already carries it.
+ *
+ * Every one of these files holds a single `LineString` beside its stop
+ * placemarks — the shape the bus actually traces, kerb by kerb, which is not
+ * the run of its stops joined up: a line that goes round a block between two
+ * stops looks, drawn straight, like it goes through the buildings.
+ *
+ * Five decimal places, about a metre. The files carry seven, which is
+ * centimetres — a precision nobody looking at a bus route can see and which
+ * costs a third of the payload to send.
+ */
+const parseKmlPath = (xml: string): number[][] => {
+  const $ = cheerio.load(xml, { xmlMode: true });
+  return $('LineString > coordinates')
+    .toArray()
+    .flatMap((el) =>
+      $(el)
+        .text()
+        .trim()
+        .split(/\s+/)
+        .flatMap((point) => {
+          // Longitude, latitude, and an altitude every one of these files
+          // writes as nought.
+          const [lon, lat] = point.split(',').map(Number);
+          if (!Number.isFinite(lon) || !Number.isFinite(lat)) return [];
+          return [[round5(lon), round5(lat)]];
+        }),
+    );
+};
+
+const round5 = (value: number): number => Math.round(value * 1e5) / 1e5;
 
 const parseKmlStations = (xml: string): StationBase[] => {
   const $ = cheerio.load(xml, { xmlMode: true });
@@ -137,12 +176,18 @@ const parseKmlStations = (xml: string): StationBase[] => {
 
 // `withdrawn` is how the two halves of `hidden` recover on their own terms; it
 // is bookkeeping, so it stays out of the response.
-const toLineResponse = ({
-  _id,
-  withdrawn,
-  ...line
-}: BusLine & { _id?: unknown }): BusLineResponse => ({
+//
+// The drawn shape is asked for rather than assumed. It is by far the largest
+// thing a line carries — a couple of hundred coordinate pairs per leg against
+// a couple of dozen stop ids — and the listing of every line is fetched by
+// every reader at startup, where fifty of those shapes would be several
+// hundred kilobytes nobody has asked to see. One line at a time, it is a few.
+const toLineResponse = (
+  { _id, withdrawn, path, pathReturn, ...line }: BusLine & { _id?: unknown },
+  { withPath = false }: { withPath?: boolean } = {},
+): BusLineResponse => ({
   ...line,
+  ...(withPath ? { path: path ?? [], pathReturn: pathReturn ?? [] } : {}),
   // Out of listings either because the source withdrew the line or because
   // there is no route to draw for it.
   hidden: !!withdrawn || !line.stations?.length,
@@ -519,7 +564,7 @@ export class BusService {
           `Resource with ID '${id}' was not found`,
         );
       }
-      return toLineResponse(line);
+      return toLineResponse(line, { withPath: true });
     });
   }
 
@@ -685,16 +730,27 @@ export class BusService {
       // file is better read as the way out — one long list is what this did
       // before, and is wrong in a way somebody can see rather than a return
       // leg quietly presented as an outbound one.
-      const stopsOf = (wanted: 'out' | 'back') =>
+      const filesOf = (wanted: 'out' | 'back') =>
         documents
           .filter(
             ({ url }) => (/-2\.kml$/i.test(url) ? 'back' : 'out') === wanted,
           )
           .flatMap(({ document }) =>
-            document.status === 'read' ? parseKmlStations(document.xml) : [],
+            document.status === 'read' ? [document.xml] : [],
           );
 
-      return { out: stopsOf('out'), back: stopsOf('back') };
+      const out = filesOf('out');
+      const back = filesOf('back');
+
+      return {
+        out: out.flatMap(parseKmlStations),
+        back: back.flatMap(parseKmlStations),
+        // The first file that draws anything, rather than every one of them
+        // joined: a leg is one shape, and two files for the same direction are
+        // the published link and the guessed one naming the same route.
+        pathOut: out.map(parseKmlPath).find((path) => path.length) ?? [],
+        pathBack: back.map(parseKmlPath).find((path) => path.length) ?? [],
+      };
     } catch (exception) {
       this.logger.warn(
         `Could not read the route of line ${id}: ${exception.message}`,
@@ -806,6 +862,14 @@ export class BusService {
       const stationsReturn = route.out.length
         ? route.back.map((station) => station.id)
         : (backup?.stationsReturn ?? []);
+      // On the same terms as the stops, and for the same reason: a shape from
+      // this read beside stops from the last one is a line drawn somewhere it
+      // does not go. An empty path is a file that carried no `LineString`,
+      // which is not a reason to drop the one already stored.
+      const path = route.pathOut.length ? route.pathOut : (backup?.path ?? []);
+      const pathReturn = route.pathOut.length
+        ? route.pathBack
+        : (backup?.pathReturn ?? []);
       return [
         upsertById<BusLine>(lineId, {
           id: lineId,
@@ -817,6 +881,8 @@ export class BusService {
           lastUpdated: new Date().toISOString(),
           stations,
           stationsReturn,
+          path,
+          pathReturn,
           // The source offers it, so whatever it was before, it is not
           // withdrawn now. Whether it has a route to draw is derived from
           // `stations` when the line is read back.

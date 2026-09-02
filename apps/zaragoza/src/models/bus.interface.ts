@@ -58,6 +58,15 @@ export interface BusLineResponse {
   color?: string;
   stations: string[];
   stationsReturn?: string[];
+  /**
+   * The shape each leg traces, `[longitude, latitude]` pairs in route order.
+   *
+   * Only on one line asked for by id. The listing of every line leaves them
+   * out — see `toLineResponse` — so a reader that wants to draw a route asks
+   * for that line.
+   */
+  path?: number[][];
+  pathReturn?: number[][];
   /** Withdrawn, or with no route to draw. Derived, never stored. */
   hidden: boolean;
   lastUpdated: string;

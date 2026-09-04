@@ -444,7 +444,11 @@ export class WeatherReading {
   /**
    * Warnings in force, most severe first. Present only when
    * `X-Weather-Alerts` asked for them and a feed answered — an empty array
-   * means MeteoAlarm was asked and holds nothing for the country.
+   * means a feed was asked and holds nothing for the country.
+   *
+   * From MeteoAlarm in the 38 countries it publishes for, whichever provider
+   * answered the reading, and from the provider itself outside them where it
+   * issues warnings of its own.
    *
    * Narrowed to the regions the cell falls in where that is possible, and to
    * the country where it is not — see `alertScope`, and narrow further with
@@ -508,9 +512,12 @@ export class WeatherProviderInfo {
   geocoding: boolean;
 
   /**
-   * Whether this provider issues its own warnings, rather than the response
-   * borrowing them from MeteoAlarm. One that does covers more than Europe and
-   * costs no extra call.
+   * Whether this provider issues its own warnings.
+   *
+   * Not the same as whether it will be asked for them: MeteoAlarm answers
+   * wherever it publishes, whichever provider was asked, so that one storm is
+   * not described two ways. One that issues its own answers for the rest of
+   * the world, in the same request as the reading.
    * @example false
    */
   alerts: boolean;

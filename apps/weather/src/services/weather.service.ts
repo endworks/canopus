@@ -115,13 +115,17 @@ export class WeatherService {
       country,
     );
 
-    // Two rows the chosen provider may already carry. Where it does, the
-    // service does not go looking for a second source: Apple ships the
-    // warnings and the UV index in the same document as the temperature, and
-    // asking Open-Meteo and MeteoAlarm anyway would add two parties to the
-    // request to be told what is already in hand.
-    const ownAlerts = Boolean(payload.includeAlerts && provider.info.alerts);
+    // The sun is a row the chosen provider may already carry, and where it
+    // does the service does not go looking for a second source: Apple ships
+    // the UV index in the same document as the temperature, and asking
+    // Open-Meteo anyway would add a party to the request to be told what is
+    // already in hand.
     const ownUv = Boolean(payload.includeUv && provider.info.uv);
+    // The warnings are the one row that does not work that way — see
+    // `ownWarnings`. Where MeteoAlarm has a feed it answers them whoever the
+    // provider is, so that two callers standing in the same street are not
+    // warned differently for having picked different providers.
+    const ownAlerts = this.ownWarnings(provider, payload, cell.country);
     // The air asks the other way round from the sun: on unless refused, because
     // it has always come back with the reading and a caller who never sent a
     // header for it should not lose it because this service grew one.
@@ -137,6 +141,10 @@ export class WeatherService {
     // the country is known this early only when a name was geocoded or the
     // caller said so. When it is not, the reading itself has to name it, and
     // the call is necessarily the slower one.
+    //
+    // For a provider that issues its own this is also what pays for the swap:
+    // the feed goes out with the reading rather than after it, and the reading
+    // it flies beside is a smaller document for having left the warnings out.
     const feed =
       ownAlerts || !cell.country
         ? undefined
@@ -396,6 +404,45 @@ export class WeatherService {
       );
     }
     return credential;
+  }
+
+  /**
+   * Whether the provider's own warnings are the ones this reading will show.
+   *
+   * Only where MeteoAlarm has no feed for the country. It reads backwards —
+   * the provider is nearer the source, it costs no second call, and it covers
+   * ground the aggregator does not — and it is still the wrong way round for
+   * everywhere the aggregator reaches.
+   *
+   * A warning is not a temperature. Two readers standing in the same street
+   * should be told the same thing about the same storm, and with each provider
+   * answering for itself they were not: the same AEMET warning arrives from
+   * MeteoAlarm with the colour band its maps are drawn in, the phenomenon it
+   * is filed under, the office's own wording and the message it supersedes,
+   * and from WeatherKit as one line of Apple's translation with no colour, no
+   * type and nothing naming what it replaced. Which of those a reader saw came
+   * down to which provider their app happened to be pointed at.
+   *
+   * So the aggregator wins wherever it publishes, and the provider's own are
+   * what answers for the rest of the world — which is most of it. The swap
+   * costs one keyless call to a feed that was going out anyway for every other
+   * provider, and saves the warnings out of the WeatherKit document in
+   * exchange.
+   *
+   * Where the country is not known yet this is false, and a provider that
+   * scopes its warnings by one has none to give: WeatherKit answers no
+   * warnings at all without a country, which is the same silence as before.
+   */
+  private ownWarnings(
+    provider: WeatherProvider,
+    payload: WeatherPayload,
+    country?: string,
+  ): boolean {
+    return Boolean(
+      payload.includeAlerts &&
+      provider.info.alerts &&
+      !this.alertProvider.covers(country),
+    );
   }
 
   /**

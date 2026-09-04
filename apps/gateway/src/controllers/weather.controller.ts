@@ -182,16 +182,17 @@ export class WeatherController {
     name: 'X-Weather-Alerts',
     required: false,
     description:
-      'Set to include the official weather warnings in force. Off by default. Where they come ' +
-      'from depends on the provider: Apple issues its own, for the coordinate asked about and ' +
-      'for most of the world, in the same request as the reading. Every other provider borrows ' +
-      "MeteoAlarm's (EUMETNET, no key needed), which is another party in the request and is " +
-      'credited separately in `attribution` where a warning of theirs is on show — and which ' +
-      'covers Europe only, so a place outside it comes back with no `alerts` at all rather ' +
-      'than an empty list. An empty list is the feed answering that nothing is in force, and ' +
-      'carries no credit with it: there is nothing of theirs being shown. Narrow further with ' +
-      '`safety` and `area`. The response says in `alertScope` whether the warnings are narrowed ' +
-      'to the place (`area`) or are everything the country has (`country`).',
+      'Set to include the official weather warnings in force. Off by default. They come from ' +
+      'MeteoAlarm (EUMETNET, no key needed) wherever it publishes — its 38 countries — ' +
+      'whichever provider was asked, so the same storm is not described two different ways ' +
+      'to two readers standing in the same street. It is another party in the request and is ' +
+      'credited separately in `attribution` where a warning of theirs is on show. Outside ' +
+      'those countries a provider that issues its own answers instead, in the same request as ' +
+      'the reading — Apple does — and one that does not comes back with no `alerts` at all ' +
+      'rather than an empty list. An empty list is a feed answering that nothing is in force, ' +
+      'and carries no credit with it: there is nothing of theirs being shown. Narrow further ' +
+      'with `safety` and `area`. The response says in `alertScope` whether the warnings are ' +
+      'narrowed to the place (`area`) or are everything the country has (`country`).',
   })
   @ApiHeader({
     name: 'X-Weather-Forecast',

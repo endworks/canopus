@@ -296,10 +296,13 @@ export interface WeatherResponse {
    * Warnings in force, most severe first — present only when the caller asked
    * for them and a feed answered.
    *
-   * From the weather provider itself where it issues warnings — Apple does,
-   * for the coordinate asked about and for most of the world — and from
-   * MeteoAlarm otherwise, which covers Europe and scopes by country. How wide
-   * the net was is in `alertScope` rather than left to be inferred.
+   * From MeteoAlarm wherever it publishes, whoever the provider is: it covers
+   * 38 countries and scopes by country, and a reader should not be told a
+   * different thing about the same storm for having picked a different
+   * provider. Outside those countries, from the provider itself where it
+   * issues warnings — Apple does, for the coordinate asked about — and from
+   * nobody at all where it does not. How wide the net was is in `alertScope`
+   * rather than left to be inferred.
    *
    * MeteoAlarm publishes one feed per country and scopes each warning by a
    * region code with no geometry attached — and the codes are not even the same
@@ -442,10 +445,12 @@ export interface ProviderInfo {
   /**
    * Whether this provider issues its own warnings.
    *
-   * True means the warnings come back inside the reading and MeteoAlarm is not
-   * asked at all — the provider is nearer the source, covers more of the world
-   * than Europe, and costs no extra call. It also means the provider is the one
-   * credited for them in `attribution`.
+   * It is not the same as whether it will be asked for them. MeteoAlarm
+   * answers wherever it publishes, whoever the provider is, so that the same
+   * storm is not described two different ways to two readers standing in the
+   * same street. True here means the provider can answer for the rest of the
+   * world — the warnings come back inside the reading, cost no extra call, and
+   * the provider is the one credited for them in `attribution`.
    */
   alerts: boolean;
   /**

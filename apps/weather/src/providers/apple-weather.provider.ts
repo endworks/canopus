@@ -133,7 +133,9 @@ type WeatherKitResponse = {
  * One request answers everything. Current conditions, both forecasts and the
  * warnings arrive in a single document, so `includeForecast` shapes the payload
  * here rather than saving an upstream call, and the warnings cost nothing over
- * asking for the temperature alone.
+ * asking for the temperature alone. The service asks for them only outside the
+ * countries MeteoAlarm publishes for, though — see `WeatherService.ownWarnings`
+ * — so in Europe the dataset is left out of the URL and out of the document.
  *
  * It knows the weather and nothing else. No geocoding forward or back, so a
  * place name cannot be resolved and the reading names no town and no country.
@@ -569,6 +571,12 @@ export class AppleWeatherProvider extends WeatherProvider {
         const event = alert.description ?? '';
         const expires =
           seconds(alert.eventEndTime) ?? seconds(alert.expireTime);
+        // Read as a field of its own and not only as a fallback for the onset
+        // below. The other source carries CAP's `sent` for it, and without
+        // this the same warning arrived dated from one provider and undated
+        // from the other — which is also what decides between two messages
+        // about one storm when neither says it replaced the other.
+        const issued = seconds(alert.issuedTime);
 
         return {
           id: alert.id,
@@ -578,10 +586,11 @@ export class AppleWeatherProvider extends WeatherProvider {
           severity: alert.severity ?? 'Unknown',
           urgency: alert.urgency ?? 'Unknown',
           certainty: alert.certainty ?? 'Unknown',
+          ...(issued === undefined ? {} : { issued }),
           onset:
             seconds(alert.eventOnsetTime) ??
             seconds(alert.effectiveTime) ??
-            seconds(alert.issuedTime) ??
+            issued ??
             0,
           ...(expires === undefined ? {} : { expires }),
           areas: alert.areaName ? [alert.areaName] : [],

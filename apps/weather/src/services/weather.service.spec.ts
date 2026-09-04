@@ -126,6 +126,10 @@ const warning = (
     status: 'Actual',
     scope: 'Public',
     msgType: 'Alert',
+    // Every CAP message states when it was issued, and MeteoAlarm's terms
+    // require it carried on into any redistribution — so the fixture states it
+    // too, rather than leaving a field the wire always has out of the tests.
+    sent: iso(NOW - 2 * HOUR),
     info: infos,
     ...extra,
   },
@@ -1395,41 +1399,6 @@ const appleWarnings = {
   }),
 };
 
-/**
- * The same document, with warnings from an office MeteoAlarm never carries.
- *
- * Apple's own warnings answer for the world outside the aggregator's 38
- * countries, so the tests about them are set where that is true rather than in
- * Spain, where the feed now speaks for every provider.
- */
-const nws = (
-  id: string,
-  description: string,
-  severity: string,
-  extra: Record<string, unknown> = {},
-) =>
-  appleAlert(id, description, severity, {
-    source: 'NWS Phoenix AZ',
-    areaId: 'AZZ540',
-    areaName: 'Greater Phoenix Area',
-    ...extra,
-  });
-
-const appleOwnWarnings = {
-  ...appleRoutes,
-  'weatherkit.apple.com': appleBody({
-    weatherAlerts: {
-      alerts: [
-        nws('wind-now', 'Wind Advisory', 'Minor'),
-        nws('rain-now', 'Flood Warning', 'Severe'),
-        nws('rain-lapsed', 'Flood Warning', 'Extreme', {
-          eventEndTime: iso(NOW - HOUR),
-        }),
-      ],
-    },
-  }),
-};
-
 const ask = (extra: Record<string, unknown> = {}) => ({
   provider: 'apple',
   apiKey: 'signed.jwt.token',
@@ -1437,10 +1406,6 @@ const ask = (extra: Record<string, unknown> = {}) => ({
   longitude: -0.8891,
   ...extra,
 });
-
-/** Phoenix, which no European aggregator publishes for. */
-const askUs = (extra: Record<string, unknown> = {}) =>
-  ask({ latitude: 33.4484, longitude: -112.074, country: 'US', ...extra });
 
 describe('apple weather', () => {
   it('sends the developer token as a bearer, never in the URL', async () => {
@@ -1722,18 +1687,18 @@ describe('apple weather', () => {
   });
 
   it('finds the country itself when the caller sends only a coordinate', async () => {
-    // Apple does no geocoding, so a lat/lon question names no country — and
-    // the country is what picks a warning feed, whoever ends up answering it.
-    // The atlas holds the outlines of every MeteoAlarm region, so it can say
-    // the coordinate is in Spain without anybody being asked.
+    // Apple does no geocoding, so a lat/lon question used to reach WeatherKit
+    // with no country on it — and WeatherKit answers no warnings at all
+    // without one, which looks exactly like fair weather. The atlas holds the
+    // outlines of every MeteoAlarm region, so it can say the coordinate is in
+    // Spain without anybody being asked.
     const { service, calls } = build(appleWarnings);
 
     const reading = await service.getWeather(ask({ includeAlerts: true }));
 
-    expect(asked(calls, 'feeds.meteoalarm.org')).toContain('feeds-spain');
+    expect(asked(calls, 'weatherkit.apple.com')).toContain('country=ES');
     expect(reading.alerts?.map((alert) => alert.id)).toEqual([
       'rain-now',
-      'snow-update',
       'wind-now',
     ]);
   });
@@ -1751,97 +1716,17 @@ describe('apple weather', () => {
     expect(asked(calls, 'weatherkit.apple.com')).not.toContain('country=');
   });
 
-  it('leaves its own warnings out where MeteoAlarm publishes', async () => {
-    // A warning is not a temperature: two readers in the same street should be
-    // told the same thing about the same storm, and with each provider
-    // answering for itself they were not. The aggregator carries the colour
-    // band, the phenomenon, the office's own wording and the message each one
-    // replaces; WeatherKit carries one line of Apple's translation. So where
-    // there is a feed, the feed speaks — whoever the provider is.
+  it('uses its own warnings and leaves MeteoAlarm out of it', async () => {
     const { service, calls } = build(appleWarnings);
 
     const reading = await service.getWeather(
       ask({ includeAlerts: true, country: 'es' }),
     );
 
-    expect(asked(calls, 'feeds.meteoalarm.org')).toContain('feeds-spain');
-    // And the warnings are left out of the document that carries the
-    // temperature, so the swap costs a keyless call and saves a dataset.
-    const document = asked(calls, '/api/v1/weather/') ?? '';
-    expect(document).not.toContain('weatherAlerts');
-    expect(document).not.toContain('country=');
-
-    expect(reading.alerts?.map((alert) => alert.id)).toEqual([
-      'rain-now',
-      'snow-update',
-      'wind-now',
-    ]);
-    // Narrowed by the atlas now rather than by Apple, and to the same word.
-    expect(reading.alertScope).toBe('area');
-    expect(reading.alerts?.[0]).toMatchObject({
-      event: 'Extreme rain warning',
-      level: 'red',
-      awareness: 'Rain',
-      sender: 'AEMET. Agencia Estatal de Meteorologia',
-    });
-    // Apple keeps the reading and is not credited for warnings it did not
-    // issue; the aggregator takes that line, with the office in its notice.
-    expect(reading.attribution).toEqual([
-      {
-        name: 'Apple Weather',
-        url: 'https://developer.apple.com/weatherkit/',
-        licence: APPLE_LEGAL,
-        logo,
-        provides: ['weather', 'forecast'],
-      },
-      {
-        name: 'MeteoAlarm',
-        url: 'https://meteoalarm.org/',
-        licence: 'https://meteoalarm.org/en/page/terms-and-conditions',
-        notice: 'AEMET. Agencia Estatal de Meteorologia',
-        disclaimer: METEOALARM_DELAY,
-        provides: ['alerts'],
-      },
-    ]);
-  });
-
-  it('answers the same warnings whichever provider was asked', async () => {
-    // The whole point of the swap, asserted directly: one place, one question,
-    // two providers, one answer.
-    const { service } = build(appleRoutes);
-    const question = {
-      latitude: 41.6,
-      longitude: -0.9,
-      country: 'ES',
-      includeAlerts: true,
-    };
-
-    const viaOpenWeather = await service.getWeather({
-      ...question,
-      apiKey: 'key',
-    });
-    const viaApple = await service.getWeather({
-      ...question,
-      provider: 'apple',
-      apiKey: 'signed.jwt.token',
-    });
-
-    expect(viaApple.alerts).toEqual(viaOpenWeather.alerts);
-    expect(viaApple.alertScope).toBe(viaOpenWeather.alertScope);
-  });
-
-  it('uses its own warnings where MeteoAlarm has no feed', async () => {
-    // Most of the world. The aggregator publishes for 38 countries and Apple
-    // for the rest, so outside them the provider is still the only source
-    // there is — and the one call that answers everything.
-    const { service, calls } = build(appleOwnWarnings);
-
-    const reading = await service.getWeather(askUs({ includeAlerts: true }));
-
     expect(asked(calls, 'feeds.meteoalarm.org')).toBeUndefined();
     // `country`, not the `countryCode` Apple's documentation names: that one
     // is ignored and the warnings simply never arrive.
-    expect(asked(calls, 'weatherkit.apple.com')).toContain('country=US');
+    expect(asked(calls, 'weatherkit.apple.com')).toContain('country=ES');
     expect(asked(calls, 'weatherkit.apple.com')).not.toContain('countryCode=');
     // Most severe first, and the one whose event has already ended is gone.
     expect(reading.alerts?.map((alert) => alert.id)).toEqual([
@@ -1854,16 +1739,18 @@ describe('apple weather', () => {
     expect(reading.alerts?.[0]).toMatchObject({
       event: 'Flood Warning',
       severity: 'Severe',
-      sender: 'NWS Phoenix AZ',
-      areas: ['Greater Phoenix Area'],
-      regions: [{ code: 'AZZ540', type: 'APPLE_AREA_ID' }],
+      sender: 'AEMET',
+      areas: ['Ribera del Ebro de Zaragoza'],
+      regions: [{ code: 'ESZ001', type: 'APPLE_AREA_ID' }],
       url: 'https://weatherkit.apple.com/alerts/rain-now',
-      // Dated like the feed's are, off WeatherKit's own issue time.
-      issued: NOW - 2 * HOUR,
+      // Apple publishes no colour, so the band is read off the CAP severity —
+      // the same rung of the same ladder the other source names in colour, so
+      // a client colouring by `level` draws this warning the same either way.
+      level: 'orange',
+      // And one line, said once. Apple has a headline and nothing under it;
+      // echoing it into the description put it on the card twice.
+      description: '',
     });
-    // No colour band outside the aggregator, so the warning ranks by its CAP
-    // severity — the same ladder, read from the other of its two names.
-    expect(reading.alerts?.[0].level).toBeUndefined();
     expect(reading.attribution).toEqual([
       {
         name: 'Apple Weather',
@@ -1875,11 +1762,57 @@ describe('apple weather', () => {
     ]);
   });
 
+  it('answers in the same shape whichever source carried the warning', async () => {
+    // The office is the same either way — AEMET issues the warning, Apple
+    // republishes it and MeteoAlarm aggregates it — so the two answers should
+    // not need reading differently. The band is named in both, on the same
+    // ladder; the issue time is on both; and neither says the same sentence
+    // twice.
+    const { service } = build(appleWarnings);
+    const question = {
+      latitude: 41.6488,
+      longitude: -0.8891,
+      country: 'ES',
+      includeAlerts: true,
+    };
+
+    const viaApple = await service.getWeather({
+      ...question,
+      provider: 'apple',
+      apiKey: 'signed.jwt.token',
+    });
+    const viaFeed = await service.getWeather({ ...question, apiKey: 'key' });
+
+    // Apple's warnings carry only a CAP severity and the feed's carry a
+    // colour, and both come back as the colour of the rung they sit on.
+    expect(viaApple.alerts?.map((alert) => alert.level)).toEqual([
+      'orange',
+      'green',
+    ]);
+    expect(viaFeed.alerts?.map((alert) => alert.level)).toEqual([
+      'red',
+      'orange',
+      'yellow',
+    ]);
+
+    for (const reading of [viaApple, viaFeed]) {
+      expect(reading.alerts?.length).toBeGreaterThan(0);
+      expect(
+        reading.alerts?.every(
+          (alert) =>
+            Boolean(alert.level) &&
+            alert.issued !== undefined &&
+            alert.description !== alert.headline,
+        ),
+      ).toBe(true);
+    }
+  });
+
   it('applies the safety floor to Apple s warnings too', async () => {
-    const { service } = build(appleOwnWarnings);
+    const { service } = build(appleWarnings);
 
     const reading = await service.getWeather(
-      askUs({ includeAlerts: true, safety: 'orange' }),
+      ask({ includeAlerts: true, country: 'ES', safety: 'orange' }),
     );
 
     expect(reading.alerts?.map((alert) => alert.id)).toEqual(['rain-now']);
@@ -1891,33 +1824,46 @@ describe('apple weather', () => {
     // two zones' copies of one afternoon, or two days of one spell, are not
     // merely alike but identical character for character on the screen.
     const { service } = build({
-      ...appleOwnWarnings,
+      ...appleWarnings,
       'weatherkit.apple.com': appleBody({
         weatherAlerts: {
           alerts: [
-            nws('heat-zone-a', 'Excessive Heat Warning', 'Severe'),
-            nws('heat-zone-b', 'Excessive Heat Warning', 'Severe', {
-              areaId: 'AZZ541',
-              areaName: 'Sonoran Desert Natl Monument',
-            }),
-            nws('heat-tomorrow', 'Excessive Heat Warning', 'Severe', {
-              effectiveTime: iso(NOW + 23 * HOUR),
-              eventEndTime: iso(NOW + 31 * HOUR),
-            }),
+            appleAlert(
+              'heat-zone-a',
+              'Aviso naranja por altas temperaturas',
+              'Severe',
+            ),
+            appleAlert(
+              'heat-zone-b',
+              'Aviso naranja por altas temperaturas',
+              'Severe',
+              { areaId: 'ESZ002', areaName: 'Iberica zaragozana' },
+            ),
+            appleAlert(
+              'heat-tomorrow',
+              'Aviso naranja por altas temperaturas',
+              'Severe',
+              {
+                effectiveTime: iso(NOW + 23 * HOUR),
+                eventEndTime: iso(NOW + 31 * HOUR),
+              },
+            ),
           ],
         },
       }),
     });
 
-    const reading = await service.getWeather(askUs({ includeAlerts: true }));
+    const reading = await service.getWeather(
+      ask({ includeAlerts: true, country: 'ES' }),
+    );
 
     expect(reading.alerts).toHaveLength(1);
     expect(reading.alerts?.[0]).toMatchObject({
       expires: NOW + 31 * HOUR,
-      areas: ['Greater Phoenix Area', 'Sonoran Desert Natl Monument'],
+      areas: ['Ribera del Ebro de Zaragoza', 'Iberica zaragozana'],
       regions: [
-        { code: 'AZZ540', type: 'APPLE_AREA_ID' },
-        { code: 'AZZ541', type: 'APPLE_AREA_ID' },
+        { code: 'ESZ001', type: 'APPLE_AREA_ID' },
+        { code: 'ESZ002', type: 'APPLE_AREA_ID' },
       ],
     });
   });
@@ -1930,7 +1876,9 @@ describe('apple weather', () => {
     // in the same case.
     const { service } = build(appleRoutes);
 
-    const reading = await service.getWeather(askUs({ includeAlerts: true }));
+    const reading = await service.getWeather(
+      ask({ includeAlerts: true, country: 'ES' }),
+    );
 
     expect(reading.alerts).toEqual([]);
     expect(reading.attribution[0].provides).toEqual(['weather', 'forecast']);
@@ -1951,10 +1899,12 @@ describe('apple weather', () => {
   });
 
   it('keeps the languages apart once the warnings are in the document', async () => {
-    const { service, calls } = build(appleOwnWarnings);
+    const { service, calls } = build(appleWarnings);
 
-    await service.getWeather(askUs({ includeAlerts: true }));
-    await service.getWeather(askUs({ includeAlerts: true, language: 'de' }));
+    await service.getWeather(ask({ includeAlerts: true, country: 'ES' }));
+    await service.getWeather(
+      ask({ includeAlerts: true, country: 'ES', language: 'de' }),
+    );
 
     expect(
       calls.filter((url) => url.includes('/api/v1/weather/')),

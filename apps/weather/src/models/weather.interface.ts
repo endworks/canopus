@@ -296,13 +296,10 @@ export interface WeatherResponse {
    * Warnings in force, most severe first — present only when the caller asked
    * for them and a feed answered.
    *
-   * From MeteoAlarm wherever it publishes, whoever the provider is: it covers
-   * 38 countries and scopes by country, and a reader should not be told a
-   * different thing about the same storm for having picked a different
-   * provider. Outside those countries, from the provider itself where it
-   * issues warnings — Apple does, for the coordinate asked about — and from
-   * nobody at all where it does not. How wide the net was is in `alertScope`
-   * rather than left to be inferred.
+   * From the weather provider itself where it issues warnings — Apple does,
+   * for the coordinate asked about and for most of the world — and from
+   * MeteoAlarm otherwise, which covers Europe and scopes by country. How wide
+   * the net was is in `alertScope` rather than left to be inferred.
    *
    * MeteoAlarm publishes one feed per country and scopes each warning by a
    * region code with no geometry attached — and the codes are not even the same
@@ -353,6 +350,14 @@ export type AlertScope = 'area' | 'country';
  * band its maps are drawn in, and the phenomenon it files the warning under —
  * lifted out of the parameter list a client would otherwise have to parse.
  *
+ * The same shape whoever carried it. A provider that issues its own warnings
+ * answers them and MeteoAlarm is not asked, so one office's warning can reach
+ * a reader by either road — and the two used to arrive needing to be read
+ * differently. `level`, `issued` and `description` are settled the same way on
+ * both now; see each of them. What cannot be made to agree is what only one
+ * road carries: `awareness` and `instruction` are CAP fields WeatherKit does
+ * not republish, and `regions` are in whichever scheme the source scopes by.
+ *
  * One warning here can stand for several of the office's messages, because a
  * reader in one place should be told a thing once: an office issuing a
  * heatwave a day at a time, a cell that landed in two of its zones, and a
@@ -374,12 +379,32 @@ export interface WeatherAlert {
   /** The sender's name for the phenomenon, in the requested language. */
   event: string;
   headline: string;
+  /**
+   * What the office wrote under the headline, where it wrote anything.
+   *
+   * Empty rather than an echo: WeatherKit publishes one line per warning where
+   * CAP has three, and repeating it here put the same sentence on the card
+   * twice. A client drawing both should expect to draw one of them.
+   */
   description: string;
   /** What the sender says to do about it; not every office writes one. */
   instruction?: string;
   /** CAP severity: `Minor`, `Moderate`, `Severe`, `Extreme`. */
   severity: string;
-  /** MeteoAlarm's colour band: `green`, `yellow`, `orange`, `red`. */
+  /**
+   * The colour band the warning is on: `green`, `yellow`, `orange`, `red`.
+   *
+   * MeteoAlarm's own where it published one, and otherwise the rung the CAP
+   * severity sits on — the same ladder `safety` is read against, so naming it
+   * changes no filtering. It is here for both sources because a client
+   * colouring a card by it drew nothing for the source that publishes only a
+   * severity, or coloured by that severity instead, which put one orange
+   * warning on an orange card and a red one depending on who carried it.
+   *
+   * Absent only where the severity is one the ladder does not know — CAP's
+   * `Unknown`, which is a real value — since a colour invented for that would
+   * be a claim nobody made.
+   */
   level?: string;
   /** What it is a warning of: `Wind`, `Rain`, `snow-ice`, `Thunderstorm`… */
   awareness?: string;
@@ -445,12 +470,10 @@ export interface ProviderInfo {
   /**
    * Whether this provider issues its own warnings.
    *
-   * It is not the same as whether it will be asked for them. MeteoAlarm
-   * answers wherever it publishes, whoever the provider is, so that the same
-   * storm is not described two different ways to two readers standing in the
-   * same street. True here means the provider can answer for the rest of the
-   * world — the warnings come back inside the reading, cost no extra call, and
-   * the provider is the one credited for them in `attribution`.
+   * True means the warnings come back inside the reading and MeteoAlarm is not
+   * asked at all — the provider is nearer the source, covers more of the world
+   * than Europe, and costs no extra call. It also means the provider is the one
+   * credited for them in `attribution`.
    */
   alerts: boolean;
   /**

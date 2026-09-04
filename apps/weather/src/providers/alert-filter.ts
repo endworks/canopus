@@ -31,6 +31,9 @@ const BANDS: Record<string, number> = {
 /** What a caller may send as a safety floor, for the error that lists them. */
 export const SAFETY_BANDS = Object.keys(BANDS);
 
+/** The colour each rung of that ladder is drawn in, by its rank. */
+const COLOURS = ['', 'green', 'yellow', 'orange', 'red'];
+
 /** The `EMMA_ID` codes a warning is scoped by, which are the placeable ones. */
 export const emmaCodes = (alert: { regions: AlertRegion[] }): string[] =>
   alert.regions
@@ -56,15 +59,39 @@ const worstFirst = (a: WeatherAlert, b: WeatherAlert): number =>
   rankAlert(b) - rankAlert(a) || a.onset - b.onset;
 
 /**
- * The warnings still standing, most severe first.
+ * The warning with its band named, whichever of the band's two names it came
+ * with.
  *
- * Both sources need the same two rules and neither should drift from the
- * other: a warning with no end is kept, because an absent expiry is not a
- * lapsed one, and the ladder ranks before the clock does.
+ * MeteoAlarm publishes the colour and Apple publishes only the CAP severity,
+ * and a client colouring a card by `level` was left drawing nothing for one of
+ * them — or, worse, colouring by the severity itself, which put the same
+ * orange warning on an orange card from one source and a red one from the
+ * other. The ladder is already shared, so this only writes down the rung the
+ * warning was on either way.
+ *
+ * The office's own colour always wins where it sent one; this fills a gap
+ * rather than overruling anybody. Where the severity is one this ladder does
+ * not know — CAP's `Unknown`, which is a real value — the band stays unnamed,
+ * because a colour invented for it would be a claim nobody made.
+ */
+const banded = (alert: WeatherAlert): WeatherAlert => {
+  if (alert.level) return alert;
+  const colour = COLOURS[BANDS[plain(alert.severity)] ?? 0];
+  return colour ? { ...alert, level: colour } : alert;
+};
+
+/**
+ * The warnings still standing, most severe first, each on a named band.
+ *
+ * Both sources need the same three rules and none of them should drift from
+ * the other: a warning with no end is kept, because an absent expiry is not a
+ * lapsed one; the ladder ranks before the clock does; and a warning arrives
+ * carrying the rung it is on whichever source it came through.
  */
 export const inForce = (alerts: WeatherAlert[], now: number): WeatherAlert[] =>
   alerts
     .filter((alert) => alert.expires === undefined || alert.expires > now)
+    .map(banded)
     .sort(worstFirst);
 
 /**

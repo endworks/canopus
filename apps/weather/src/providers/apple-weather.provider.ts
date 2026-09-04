@@ -582,7 +582,13 @@ export class AppleWeatherProvider extends WeatherProvider {
           id: alert.id,
           event,
           headline: event,
-          description: event,
+          // Empty, and not the headline over again. Apple publishes one line
+          // per warning where CAP has three, and copying it into all three
+          // put the same sentence on the card twice — where the other source,
+          // carrying the same office's warning, has a headline and then the
+          // detail under it. An office that wrote no description is better
+          // said with nothing than with an echo.
+          description: '',
           severity: alert.severity ?? 'Unknown',
           urgency: alert.urgency ?? 'Unknown',
           certainty: alert.certainty ?? 'Unknown',

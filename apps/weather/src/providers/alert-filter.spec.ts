@@ -1,5 +1,5 @@
 import { WeatherAlert } from '../models/weather.interface';
-import { collapse, filterAlerts, inForce } from './alert-filter';
+import { collapse, filterAlerts, inForce, rankAlert } from './alert-filter';
 
 const HOUR = 3600;
 const NOON = 1_756_900_800;
@@ -220,6 +220,47 @@ describe('filterAlerts', () => {
 });
 
 describe('inForce', () => {
+  it('names the band a warning is on, whichever name it arrived with', () => {
+    // MeteoAlarm publishes the colour and Apple publishes only the CAP
+    // severity. A client colouring a card by `level` drew nothing for one of
+    // them, or coloured by the severity instead — which put this same orange
+    // warning on an orange card from one source and a red one from the other.
+    const [fromApple] = inForce(
+      [warning('apple', { level: undefined, severity: 'Severe' })],
+      NOON,
+    );
+    const [fromFeed] = inForce([warning('feed')], NOON);
+
+    expect(fromApple.level).toBe('orange');
+    expect(fromApple.level).toBe(fromFeed.level);
+    // Read off the same ladder the ranking and the safety floor use, so
+    // naming it changes neither.
+    expect(rankAlert(fromApple)).toBe(rankAlert(fromFeed));
+  });
+
+  it('takes the office s own colour over the severity beside it', () => {
+    // They disagree across the feed — Spain files yellow as Moderate, Germany
+    // files it as Minor — and the office's colour is the one MeteoAlarm
+    // normalises across its members. This fills a gap; it overrules nobody.
+    const [alert] = inForce(
+      [warning('theirs', { level: 'yellow', severity: 'Minor' })],
+      NOON,
+    );
+
+    expect(alert.level).toBe('yellow');
+  });
+
+  it('leaves the band unnamed where the severity is not one', () => {
+    // `Unknown` is a real CAP value, and a colour invented for it would be a
+    // claim nobody made.
+    const [alert] = inForce(
+      [warning('vague', { level: undefined, severity: 'Unknown' })],
+      NOON,
+    );
+
+    expect(alert.level).toBeUndefined();
+  });
+
   it('leaves the copies for the fold to deal with', () => {
     // Two things in one list, kept separate on purpose: what is still standing
     // is a question about the clock, and what is a second copy is a question

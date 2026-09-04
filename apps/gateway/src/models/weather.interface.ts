@@ -326,7 +326,9 @@ export class WeatherAlert {
   headline: string;
 
   /**
-   * What the office says is coming.
+   * What the office says is coming. Empty where it wrote nothing under the
+   * headline, which is every warning Apple carries: WeatherKit publishes one
+   * line where CAP has three, and an echo of the headline is not a detail.
    * @example 'Twelve-hours accumulated precipitation: 180 mm.'
    */
   description: string;
@@ -344,7 +346,11 @@ export class WeatherAlert {
   severity: string;
 
   /**
-   * MeteoAlarm's colour band, which is what its maps are drawn in.
+   * The colour band the warning is on, which is what MeteoAlarm's maps are
+   * drawn in. Its own where it published one, and otherwise the rung the CAP
+   * severity sits on — so a warning carried by a provider that publishes only
+   * a severity, as Apple does, still colours the same. Absent only for a
+   * severity the ladder does not know, such as CAP's `Unknown`.
    * @example 'red'
    */
   level?: string;
@@ -444,11 +450,7 @@ export class WeatherReading {
   /**
    * Warnings in force, most severe first. Present only when
    * `X-Weather-Alerts` asked for them and a feed answered — an empty array
-   * means a feed was asked and holds nothing for the country.
-   *
-   * From MeteoAlarm in the 38 countries it publishes for, whichever provider
-   * answered the reading, and from the provider itself outside them where it
-   * issues warnings of its own.
+   * means MeteoAlarm was asked and holds nothing for the country.
    *
    * Narrowed to the regions the cell falls in where that is possible, and to
    * the country where it is not — see `alertScope`, and narrow further with
@@ -512,12 +514,9 @@ export class WeatherProviderInfo {
   geocoding: boolean;
 
   /**
-   * Whether this provider issues its own warnings.
-   *
-   * Not the same as whether it will be asked for them: MeteoAlarm answers
-   * wherever it publishes, whichever provider was asked, so that one storm is
-   * not described two ways. One that issues its own answers for the rest of
-   * the world, in the same request as the reading.
+   * Whether this provider issues its own warnings, rather than the response
+   * borrowing them from MeteoAlarm. One that does covers more than Europe and
+   * costs no extra call.
    * @example false
    */
   alerts: boolean;

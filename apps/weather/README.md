@@ -73,14 +73,12 @@ MeteoAlarm covers and is therefore a map of those countries too. Send it for
 somewhere outside them, or to overrule a point the atlas places on the wrong
 side of a border.
 
-Getting this right matters more for Apple than it looks. The country is what
-picks a warning feed, and outside the countries MeteoAlarm publishes for it is
-also what unlocks Apple's own: WeatherKit returns no warnings **at all** unless
-the request names one, and it does not say so — the call succeeds, the
-`weatherAlerts` dataset is simply absent, and the reading is indistinguishable
-from a place where nothing is in force. Apple also does no geocoding, so before
-the atlas was asked, every `lat`/`lon` question put to Apple came back with no
-warnings whatever the weather was doing.
+Getting this right matters more for Apple than it looks. WeatherKit returns no
+warnings **at all** unless the request names a country, and it does not say so
+— the call succeeds, the `weatherAlerts` dataset is simply absent, and the
+reading is indistinguishable from a place where nothing is in force. Apple also
+does no geocoding, so before the atlas was asked, every `lat`/`lon` question
+put to Apple came back with no warnings whatever the weather was doing.
 
 The parameter that carries it is `country`, which is not what Apple's own REST
 documentation calls it. That says `countryCode`, and `countryCode` is ignored
@@ -333,34 +331,36 @@ it; MeteoAlarm's own colour band (`green`, `yellow`, `orange`, `red`) and the
 phenomenon it files the warning under (`Wind`, `Rain`, `snow-ice`, …) are lifted
 out of the CAP parameter list into `level` and `awareness`.
 
-### Who answers them
+**Europe only.** The 38 countries EUMETNET publishes for. Anywhere else has no
+feed to ask, and comes back with no `alerts` field at all.
 
-The aggregator, wherever it publishes — whoever the provider is. A provider that
-issues warnings of its own answers only for the ground MeteoAlarm does not
-reach, which is most of the world but not this half of it.
+A provider that issues its own warnings answers them instead, and MeteoAlarm is
+not asked at all: Apple does, for the coordinate itself and for most of the
+world, in the same request that carries the temperature. Which is one office's
+warning reaching a reader by either of two roads — AEMET issues it, Apple
+republishes it, MeteoAlarm aggregates it — so the two roads are made to arrive
+in the same shape.
 
-It reads backwards, since the provider is nearer the source and costs no second
-call, and it is still the wrong way round. A warning is not a temperature: two
-readers standing in the same street should be told the same thing about the same
-storm, and while each provider answered for itself they were not. The same AEMET
-warning arrived from MeteoAlarm with the colour band its maps are drawn in, the
-phenomenon it is filed under, the office's own wording and the identifier of the
-message it supersedes — and from WeatherKit as a single line of Apple's
-translation, with no colour, no type, no instruction and nothing naming what it
-replaced. Which of the two a reader saw came down to which provider their app
-happened to be pointed at, and so did whether `safety: orange` meant the colour
-or the CAP severity beside it.
+| Field         | On both                                                          |
+| ------------- | ---------------------------------------------------------------- |
+| `level`       | The colour, or the rung the CAP severity sits on where none came |
+| `issued`      | CAP's `sent` from the feed, WeatherKit's `issuedTime` from Apple |
+| `description` | Empty rather than an echo of the headline where there is none    |
 
-The swap costs one keyless call to a feed that was already going out for every
-other provider, and buys back the `weatherAlerts` dataset in the WeatherKit
-document, which is no longer asked for in the 38 countries. Outside them nothing
-changes: the provider's own warnings are the only ones there are, they arrive in
-the one document that answers everything, and they rank on the CAP severity —
-the same ladder as the colours, read from the other of its two names.
+The band is the one worth spelling out. MeteoAlarm normalises a colour across
+its members and WeatherKit publishes only the CAP severity, so a client
+colouring a card by `level` drew nothing for Apple's warnings — or coloured by
+the severity instead, which showed one orange warning on an orange card from
+one road and a red one from the other. Both names were always on the same
+ladder, which is what `safety` reads them against; now the rung is written down
+whichever name arrived, so naming it changes no filtering and no ordering. A
+severity the ladder does not know — CAP's `Unknown` — leaves the band unnamed,
+since a colour invented for it would be a claim nobody made.
 
-**Europe only, for the feed.** The 38 countries EUMETNET publishes for.
-Elsewhere a provider that issues its own answers, and a provider that does not
-comes back with no `alerts` field at all.
+What cannot be made to agree is what only one road carries. `awareness` and
+`instruction` are CAP fields WeatherKit does not republish, `regions` are in
+whichever scheme the source scopes by (`EMMA_ID` against `APPLE_AREA_ID`), and
+the offices are named as each source names them.
 
 ### Narrowing to the place
 

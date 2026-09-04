@@ -394,6 +394,50 @@ message naming the one it replaces — both are in the feed, only the update com
 back. A warning with no expiry at all is kept, since some offices issue those
 and an absent end is not a lapsed one.
 
+### One warning per warning
+
+The last thing done to a list that is about a place is folding the copies of a
+warning into the warning. A reader standing in one place, told the same thing
+three times, is being told nothing the third time — and there are four ways for
+it to happen.
+
+An office issues a long spell one day at a time. AEMET's heat warnings run noon
+to nine in the evening and start again the next noon, so three days of a
+heatwave are three orange warnings for the same zone, differing only in a
+maximum a degree apart — and to a client drawing a time rather than a date, they
+are three cards all reading "until 20:59".
+
+The cell is placed by its corners as well as its middle, so a point near a
+boundary lands in two or three zones at once, and in a heatwave every one of
+them is under the same warning that afternoon. That over-inclusion stays: it is
+how a town on the far side of a cell keeps the warning that covers it.
+
+An office that updates a warning is meant to name the message it replaces, and
+where it does the replaced one never leaves the provider — but not every re-issue
+names one.
+
+And Apple hands back the same offices' warnings scoped to the coordinate, with
+no colour band and the headline for a description, so two copies of one
+afternoon are identical character for character.
+
+Copies count as one warning when the office, the phenomenon and the band all
+match, whatever their region or their wording. What comes back is the office's
+latest word on it — or, where a bulletin issued several days together, the day
+that starts soonest, since a reader wants this afternoon's forty degrees rather
+than Thursday's thirty-nine. `onset` and `expires` cover the whole spell, and
+`areas` and `regions` carry every zone the copies named, so nothing a client
+narrows or draws by is lost in the fold.
+
+A gap of more than a day breaks the run. A warning that goes away for longer
+than a night and comes back is a second episode, and a reader is owed a second
+card for it.
+
+None of it happens to an `alertScope: country` list. That list is the answer
+for a whole country because the cell could not be placed in it, so it is not
+about one reader: each zone's own warning is a separate answer there, and
+folding them would show one zone's degrees over all the others. A caller who
+narrowed by `area` themselves is back to a place, and gets the fold.
+
 How much of a reading `lang` actually reaches depends on who answered.
 OpenWeather takes a language and describes the sky in it. WeatherKit does not:
 it sends a `conditionCode` enum — `MostlyClear`, `WintryMix` — and the

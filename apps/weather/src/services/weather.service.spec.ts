@@ -637,6 +637,99 @@ describe('getWeather', () => {
     expect(ids).toContain('snow-update');
   });
 
+  it('folds the days of one spell into one warning', async () => {
+    // What the client was drawing three of. AEMET issues a heatwave a day at a
+    // time — noon to nine, again the next noon — so the same orange warning
+    // for the same zone arrives once per day, and a card showing a time and
+    // not a date makes them three warnings all reading "until 20:59".
+    const heat = (severity: string) => ({
+      severity,
+      parameter: [
+        { value: '3; orange; Severe', valueName: 'awareness_level' },
+        { value: '4; high-temperature', valueName: 'awareness_type' },
+      ],
+    });
+    const day = (start: number, max: number) =>
+      info('en-GB', 'Aviso naranja por temperaturas maximas', {
+        ...heat('Severe'),
+        description: `Temperatura maxima: ${max} °C.`,
+        onset: iso(start),
+        expires: iso(start + 8 * HOUR),
+      });
+
+    const { service } = build({
+      ...routes,
+      'feeds.meteoalarm.org': {
+        warnings: [
+          warning('heat-today', [day(NOW - HOUR, 40)], {
+            sent: iso(NOW - 6 * HOUR),
+          }),
+          warning('heat-tomorrow', [day(NOW + 23 * HOUR, 39)], {
+            sent: iso(NOW - 6 * HOUR),
+          }),
+          warning('heat-thursday', [day(NOW + 47 * HOUR, 39)], {
+            sent: iso(NOW - 6 * HOUR),
+          }),
+        ],
+      },
+    });
+
+    const reading = await service.getWeather({
+      apiKey: 'key',
+      latitude: 41.6,
+      longitude: -0.9,
+      includeAlerts: true,
+    });
+
+    expect(reading.alerts).toHaveLength(1);
+    expect(reading.alerts?.[0]).toMatchObject({
+      id: 'heat-today',
+      onset: NOW - HOUR,
+      // Through to the end of the last day of the spell, so the card says how
+      // long this lasts rather than repeating itself.
+      expires: NOW + 55 * HOUR,
+      description: 'Temperatura maxima: 40 °C.',
+    });
+  });
+
+  it('folds an update that named no message to replace', async () => {
+    // The office is supposed to name what it supersedes, and where it does the
+    // replaced warning never leaves the provider. Where it does not, the day's
+    // revisions all arrive looking new — and the latest word is the one shown.
+    const { service } = build({
+      ...routes,
+      'feeds.meteoalarm.org': {
+        warnings: [
+          warning(
+            'wind-first',
+            [info('en-GB', 'Moderate wind warning', yellowWind)],
+            { sent: iso(NOW - 6 * HOUR) },
+          ),
+          warning(
+            'wind-again',
+            [
+              info('en-GB', 'Moderate wind warning', {
+                ...yellowWind,
+                description: 'Rachas de 80 km/h.',
+              }),
+            ],
+            { msgType: 'Update', sent: iso(NOW - HOUR) },
+          ),
+        ],
+      },
+    });
+
+    const reading = await service.getWeather({
+      apiKey: 'key',
+      latitude: 41.6,
+      longitude: -0.9,
+      includeAlerts: true,
+    });
+
+    expect(reading.alerts).toHaveLength(1);
+    expect(reading.alerts?.[0].id).toBe('wind-again');
+  });
+
   it('writes the warnings in English until a language is asked for', async () => {
     const { service } = build(routes);
 
@@ -852,6 +945,51 @@ describe('getWeather', () => {
 
     expect(reading.alertScope).toBe('country');
     expect(reading.alerts?.map((alert) => alert.id)).toEqual(['fr-wind']);
+  });
+
+  it('leaves a country-wide list unfolded, zone by zone', async () => {
+    // The fold answers "what is the weather doing to me", and a list that
+    // could not be narrowed to a cell is not about one reader: two zones a
+    // country apart are two answers, and showing one of them with the other's
+    // degrees is the direction a warning must never be wrong in.
+    const zone = (max: number, where: { desc: string; code: string }) =>
+      info(
+        'en-GB',
+        'Aviso naranja por temperaturas maximas',
+        {
+          severity: 'Severe',
+          description: `Temperatura maxima: ${max} °C.`,
+          parameter: [
+            { value: '3; orange; Severe', valueName: 'awareness_level' },
+            { value: '4; high-temperature', valueName: 'awareness_type' },
+          ],
+        },
+        where,
+      );
+
+    const { service } = build({
+      ...routes,
+      'feeds.meteoalarm.org': {
+        warnings: [
+          warning('heat-zaragoza', [zone(40, ZARAGOZA)]),
+          warning('heat-tarragona', [zone(34, TARRAGONA)]),
+        ],
+      },
+    });
+
+    const reading = await service.getWeather({
+      apiKey: 'key',
+      // Off Iceland: inside a country the atlas holds, outside every region.
+      latitude: 63.0,
+      longitude: -24.0,
+      includeAlerts: true,
+    });
+
+    expect(reading.alertScope).toBe('country');
+    expect(reading.alerts?.map((alert) => alert.id)).toEqual([
+      'heat-zaragoza',
+      'heat-tarragona',
+    ]);
   });
 
   it('keeps only the warnings at or above the safety band asked for', async () => {
@@ -1622,6 +1760,56 @@ describe('apple weather', () => {
     );
 
     expect(reading.alerts?.map((alert) => alert.id)).toEqual(['rain-now']);
+  });
+
+  it('folds Apple s copies of one office s warning', async () => {
+    // Apple hands back the same national offices' warnings scoped to the
+    // coordinate, with no colour band and the headline for a description — so
+    // two zones' copies of one afternoon, or two days of one spell, are not
+    // merely alike but identical character for character on the screen.
+    const { service } = build({
+      ...appleWarnings,
+      'weatherkit.apple.com': appleBody({
+        weatherAlerts: {
+          alerts: [
+            appleAlert(
+              'heat-zone-a',
+              'Aviso naranja por altas temperaturas',
+              'Severe',
+            ),
+            appleAlert(
+              'heat-zone-b',
+              'Aviso naranja por altas temperaturas',
+              'Severe',
+              { areaId: 'ESZ002', areaName: 'Iberica zaragozana' },
+            ),
+            appleAlert(
+              'heat-tomorrow',
+              'Aviso naranja por altas temperaturas',
+              'Severe',
+              {
+                effectiveTime: iso(NOW + 23 * HOUR),
+                eventEndTime: iso(NOW + 31 * HOUR),
+              },
+            ),
+          ],
+        },
+      }),
+    });
+
+    const reading = await service.getWeather(
+      ask({ includeAlerts: true, country: 'ES' }),
+    );
+
+    expect(reading.alerts).toHaveLength(1);
+    expect(reading.alerts?.[0]).toMatchObject({
+      expires: NOW + 31 * HOUR,
+      areas: ['Ribera del Ebro de Zaragoza', 'Iberica zaragozana'],
+      regions: [
+        { code: 'ESZ001', type: 'APPLE_AREA_ID' },
+        { code: 'ESZ002', type: 'APPLE_AREA_ID' },
+      ],
+    });
   });
 
   it('claims no warnings in its credit where none are in force', async () => {

@@ -16,6 +16,7 @@ import {
   WeatherUnits,
 } from '../models/weather.interface';
 import {
+  collapse,
   emmaCodes,
   filterAlerts,
   plain,
@@ -410,15 +411,24 @@ export class WeatherService {
     payload: WeatherPayload,
   ): Warnings | undefined {
     if (!reading.alerts) return undefined;
+
+    // Assumed national where a provider does not say, which is the reading
+    // that under-promises: telling a caller their list is narrowed when it is
+    // not is the one thing `AlertScope` exists to prevent.
+    const scope = reading.alertScope ?? 'country';
+    const shown = filterAlerts(reading.alerts, {
+      safety: payload.safety,
+      area: payload.area,
+    });
+
     return {
-      alerts: filterAlerts(reading.alerts, {
-        safety: payload.safety,
-        area: payload.area,
-      }),
-      // Assumed national where a provider does not say, which is the reading
-      // that under-promises: telling a caller their list is narrowed when it
-      // is not is the one thing `AlertScope` exists to prevent.
-      scope: reading.alertScope ?? 'country',
+      // Folded on the same terms as the feed's: a provider that scoped to the
+      // coordinate has already answered about one place, so two of these are
+      // two of the office's messages about the same weather over the same
+      // reader — and Apple's carry no wording of their own to tell them apart
+      // by. A provider claiming no better than a country is left alone.
+      alerts: scope === 'area' || payload.area ? collapse(shown) : shown,
+      scope,
     };
   }
 
@@ -464,12 +474,20 @@ export class WeatherService {
         const scoped =
           covering.length > 0 && this.atlas.speaks(country, placeable);
 
+        const shown = filterAlerts(alerts, {
+          safety: payload.safety,
+          area: payload.area,
+          regions: scoped ? covering : [],
+        });
+
+        // Folded only where the list is about a place — the cell was placed,
+        // or the caller named their own region. A national list is not: there
+        // the office's warning for each of its zones is a separate answer, and
+        // folding them would show one zone's degrees over all of them.
+        const placed = scoped || Boolean(payload.area);
+
         return {
-          alerts: filterAlerts(alerts, {
-            safety: payload.safety,
-            area: payload.area,
-            regions: scoped ? covering : [],
-          }),
+          alerts: placed ? collapse(shown) : shown,
           scope: (scoped ? 'area' : 'country') as AlertScope,
         };
       })

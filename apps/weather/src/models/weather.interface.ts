@@ -349,9 +349,24 @@ export type AlertScope = 'area' | 'country';
  * Straight out of CAP, with the two fields MeteoAlarm adds to it — the colour
  * band its maps are drawn in, and the phenomenon it files the warning under —
  * lifted out of the parameter list a client would otherwise have to parse.
+ *
+ * One warning here can stand for several of the office's messages, because a
+ * reader in one place should be told a thing once: an office issuing a
+ * heatwave a day at a time, a cell that landed in two of its zones, and a
+ * re-issue that named no predecessor all put the same warning in the list more
+ * than once. Copies are folded where the office, the phenomenon and the band
+ * match and the windows are no more than a day apart, and the fold is
+ * described on `id`, `onset`, `expires` and `areas`.
  */
 export interface WeatherAlert {
-  /** The CAP identifier, stable across updates, so a client can dedupe. */
+  /**
+   * The CAP identifier, stable across updates, so a client can dedupe.
+   *
+   * Where copies were folded it is the identifier of the one that speaks for
+   * them — the office's latest word, or the day starting soonest out of a
+   * bulletin issued in one go. The others' identifiers do not travel: they
+   * name messages that say the same thing about the same place.
+   */
   id: string;
   /** The sender's name for the phenomenon, in the requested language. */
   event: string;
@@ -378,9 +393,15 @@ export interface WeatherAlert {
    * for tonight was written this morning or four days ago.
    */
   issued?: number;
-  /** Unix seconds the warning starts. */
+  /** Unix seconds the warning starts, or the earliest of the copies folded. */
   onset: number;
-  /** Unix seconds it lapses; absent where the sender set no end. */
+  /**
+   * Unix seconds it lapses; absent where the sender set no end.
+   *
+   * The end of the whole spell where an office issued it a day at a time, so a
+   * client drawing a time rather than a date shows how long this lasts instead
+   * of the same hour once per day. Absent if any copy in the run had no end.
+   */
   expires?: number;
   /**
    * The regions it covers, as the issuing office names them.
@@ -388,6 +409,10 @@ export interface WeatherAlert {
    * The feed scopes a warning by region code alone and carries no geometry, so
    * this is what tells a caller whether a national warning is about their
    * valley. See `alerts` on the response.
+   *
+   * Every folded copy's regions are here, not just the surviving message's:
+   * the copies covered real, different ground, and a caller narrowing by
+   * `area` should still find it.
    */
   areas: string[];
   /**

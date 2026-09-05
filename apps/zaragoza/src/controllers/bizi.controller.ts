@@ -15,7 +15,7 @@ export class BiziController {
 
   @MessagePattern(ZARAGOZA_PATTERNS.biziStation, Transport.TCP)
   async biziStation(@Payload() data: BiziStationPayload) {
-    return this.biziService.getStation(data.id, data.source);
+    return this.biziService.getStation(data.id);
   }
 
   @MessagePattern(ZARAGOZA_PATTERNS.biziStationsUpdate, Transport.TCP)

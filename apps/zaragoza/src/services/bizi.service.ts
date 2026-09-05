@@ -1,12 +1,10 @@
 import { HttpService } from '@nestjs/axios';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import {
-  HttpException,
   HttpStatus,
   Inject,
   Injectable,
   InternalServerErrorException,
-  NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Cache } from 'cache-manager';
@@ -20,9 +18,9 @@ import {
   BiziStationsResponse,
 } from '../models/bizi.interface';
 import { ErrorResponse } from '@canopus/shared';
-import { fetchWithTimeout } from '@canopus/nest';
+import { fetchWithTimeout, upstreamFailure } from '@canopus/nest';
 import { BiziStation, BiziStationDocument } from '../schemas/bizi.schema';
-import { capitalizeEachWord, fixWords } from '../utils';
+import { capitalizeEachWord, fixWords, notFoundById } from '../utils';
 
 const biziApiURL =
   'https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/estacion-bicicleta.json';
@@ -71,10 +69,9 @@ export class BiziService {
 
   public async getStation(
     id: string,
-    source?: string,
   ): Promise<BiziStationResponse | ErrorResponse> {
     const cache: BiziStationResponse = await this.cacheManager.get(
-      `bizi/stations/${id}/${source ?? 'api'}`,
+      `bizi/stations/${id}`,
     );
     if (cache) return cache;
 
@@ -107,31 +104,11 @@ export class BiziService {
         type: 'bizi',
       };
 
-      await this.cacheManager.set(
-        `bizi/stations/${id}/${source ?? 'api'}`,
-        resp,
-        10000,
-      );
+      await this.cacheManager.set(`bizi/stations/${id}`, resp, 10000);
 
       return resp;
     } catch (exception) {
-      if (exception instanceof HttpException) throw exception;
-      if (exception.response?.status === HttpStatus.NOT_FOUND) {
-        throw new NotFoundException(
-          {
-            statusCode: HttpStatus.NOT_FOUND,
-            message: `Resource with ID '${id}' was not found`,
-          },
-          `Resource with ID '${id}' was not found`,
-        );
-      }
-      throw new InternalServerErrorException(
-        {
-          statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-          message: exception.response?.data?.mensaje || exception.message,
-        },
-        exception.response?.data?.mensaje || exception.message,
-      );
+      throw upstreamFailure(exception, 'The Bizi API', notFoundById(id));
     }
   }
 
@@ -205,14 +182,7 @@ export class BiziService {
       await this.cacheManager.set('bizi/stations', resp);
       return resp;
     } catch (exception) {
-      if (exception instanceof HttpException) throw exception;
-      throw new InternalServerErrorException(
-        {
-          statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-          message: exception.message,
-        },
-        exception.message,
-      );
+      throw upstreamFailure(exception, 'The Bizi API');
     }
   }
 

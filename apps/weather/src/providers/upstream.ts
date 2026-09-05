@@ -1,11 +1,10 @@
 import { HttpService } from '@nestjs/axios';
 import {
-  BadGatewayException,
   HttpException,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { fetchWithTimeout } from '@canopus/nest';
+import { fetchWithTimeout, upstreamFailure } from '@canopus/nest';
 import { AxiosRequestConfig, isAxiosError } from 'axios';
 
 /**
@@ -32,19 +31,9 @@ export const upstreamGet = async <T>(
   try {
     return await fetchWithTimeout<T>(http, url, config);
   } catch (exception) {
-    // A timeout already arrives as the 504 `fetchWithTimeout` names it.
-    if (exception instanceof HttpException) throw exception;
-    if (!isAxiosError(exception) || !exception.response) {
-      throw new BadGatewayException(
-        `${provider} is unreachable: ${(exception as Error).message}`,
-      );
-    }
-    const { status } = exception.response;
+    const status = isAxiosError(exception) && exception.response?.status;
     if (status === 401 || status === 403) {
       throw new UnauthorizedException(`${provider} rejected the API key`);
-    }
-    if (status === 404) {
-      throw new NotFoundException(`${provider} has no data for that place`);
     }
     if (status === 429) {
       throw new HttpException(
@@ -52,6 +41,13 @@ export const upstreamGet = async <T>(
         429,
       );
     }
-    throw new BadGatewayException(`${provider} answered ${status}`);
+    // The rest is what every service does with somebody else's outage: the
+    // 504 of a missed deadline passed through, a 404 said in our own words,
+    // and 502 for everything the provider did to us.
+    throw upstreamFailure(
+      exception,
+      provider,
+      new NotFoundException(`${provider} has no data for that place`),
+    );
   }
 };

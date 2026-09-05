@@ -22,6 +22,22 @@ export const ZARAGOZA_PATTERNS = {
   taxis: 'taxis',
 } as const;
 
+/**
+ * The roads to one station's arrivals, in the order they are walked.
+ *
+ * Here rather than in either end of the wire because the gateway documents
+ * them, the caller picks one by name, and the service branches on them: three
+ * places that have to agree, and did not while each spelled the union out.
+ */
+export const STATION_SOURCES = ['api', 'web', 'backup'] as const;
+
+export type StationSource = (typeof STATION_SOURCES)[number];
+
+/** The city's point sets, named the way a caller asks for them. */
+export const PLACE_KINDS = ['taxi-rank', 'taxi-office', 'pharmacy'] as const;
+
+export type PlaceKind = (typeof PLACE_KINDS)[number];
+
 export const ZINE_PATTERNS = {
   cinemas: 'cinemas',
   locations: 'locations',

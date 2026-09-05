@@ -1,14 +1,9 @@
 import { HttpService } from '@nestjs/axios';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import {
-  Inject,
-  Injectable,
-  InternalServerErrorException,
-  NotFoundException,
-} from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Cache } from 'cache-manager';
 import { ErrorResponse } from '@canopus/shared';
-import { fetchWithTimeout } from '@canopus/nest';
+import { fetchWithTimeout, upstreamFailure } from '@canopus/nest';
 import { Place, PlaceKind, PlacesResponse } from '../models/place.interface';
 import { capitalizeEachWord } from '../utils';
 
@@ -118,8 +113,6 @@ const datasets: Record<PlaceKind, Dataset> = {
   },
 };
 
-export const placeKinds = Object.keys(datasets) as PlaceKind[];
-
 @Injectable()
 export class PlacesService {
   constructor(
@@ -152,10 +145,7 @@ export class PlacesService {
       await this.cacheManager.set(`places/${kind}`, resp, dataset.ttl);
       return resp;
     } catch (error) {
-      if (error instanceof NotFoundException) throw error;
-      throw new InternalServerErrorException(
-        `Could not read ${kind} from the city: ${error?.message ?? error}`,
-      );
+      throw upstreamFailure(error, `The city's ${kind} list`);
     }
   }
 
@@ -200,9 +190,7 @@ export class PlacesService {
       await this.cacheManager.set('taxis', resp, LIVE_TTL);
       return resp;
     } catch (error) {
-      throw new InternalServerErrorException(
-        `Could not read live taxis from the city: ${error?.message ?? error}`,
-      );
+      throw upstreamFailure(error, "The city's taxi feed");
     }
   }
 

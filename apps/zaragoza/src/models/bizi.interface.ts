@@ -1,8 +1,6 @@
 import { IdPayload } from '@canopus/shared';
 
-export interface BiziStationPayload extends IdPayload {
-  source: string;
-}
+export type BiziStationPayload = IdPayload;
 
 export interface BiziStationResponse {
   id: string;

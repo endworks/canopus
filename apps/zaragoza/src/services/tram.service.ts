@@ -1,7 +1,6 @@
 import { HttpService } from '@nestjs/axios';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import {
-  HttpException,
   HttpStatus,
   Inject,
   Injectable,
@@ -9,15 +8,19 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Cache } from 'cache-manager';
-import Fuse = require('fuse.js');
 import { Model } from 'mongoose';
 import {
   TramStationResponse,
   TramStationsResponse,
 } from '../models/tram.interface';
-import { capitalizeEachWord, fixWords, isInt } from '../utils';
+import {
+  capitalizeEachWord,
+  compareArrivalTimes,
+  fixWords,
+  notFoundById,
+} from '../utils';
 import { ErrorResponse } from '@canopus/shared';
-import { fetchWithTimeout } from '@canopus/nest';
+import { fetchWithTimeout, upstreamFailure } from '@canopus/nest';
 import { TramStation, TramStationDocument } from '../schemas/tram.schema';
 
 @Injectable()
@@ -59,24 +62,8 @@ export class TramService {
   // Station
   public async getStation(
     id: string,
-    source?: string,
   ): Promise<TramStationResponse | ErrorResponse> {
     try {
-      if (!isInt(id)) {
-        const stationResponse = await this.getStations();
-        const stations = Object.keys(stationResponse).map(
-          (station) => stationResponse[station],
-        );
-
-        const fuse = new Fuse(stations, {
-          keys: ['street'],
-          includeScore: true,
-          threshold: 0.4,
-        });
-        const results = fuse.search(id);
-        console.log(results);
-      }
-
       const cache: TramStationResponse = await this.cacheManager.get(
         `tram/stations/${id}`,
       );
@@ -90,7 +77,8 @@ export class TramService {
         lines: [],
         times: [],
         coordinates: [],
-        source: null,
+        // One road for a tram stop, so it is the one that answers.
+        source: 'api',
         sourceUrl: null,
         type: 'tram',
       };
@@ -109,8 +97,6 @@ export class TramService {
             resp.lines = [resp.lines];
           }
         }
-
-        resp.source = 'backup';
       }
 
       const url =
@@ -137,33 +123,12 @@ export class TramService {
         );
       });
 
-      resp.times.sort((a, b) => {
-        const normalize = (time: string) => time.trim().toLowerCase();
-        const getWeight = (time: string): number => {
-          if (time.includes('parada')) return 0;
-          if (time.match(/^\d+/)) return parseInt(time);
-          if (time.includes('estimación')) return 9999;
-          return 999;
-        };
-        return getWeight(normalize(a.time)) - getWeight(normalize(b.time));
-      });
-      resp.source = 'api';
+      resp.times.sort((a, b) => compareArrivalTimes(a.time, b.time));
 
-      await this.cacheManager.set(
-        `tram/stations/${id}/${source ?? 'api'}`,
-        resp,
-        10000,
-      );
+      await this.cacheManager.set(`tram/stations/${id}`, resp, 10000);
       return resp;
     } catch (exception) {
-      if (exception instanceof HttpException) throw exception;
-      throw new InternalServerErrorException(
-        {
-          statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-          message: exception.message,
-        },
-        exception.message,
-      );
+      throw upstreamFailure(exception, 'The tram API', notFoundById(id));
     }
   }
 

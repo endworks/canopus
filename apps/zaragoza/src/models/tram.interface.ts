@@ -1,9 +1,7 @@
 import { IdPayload } from '@canopus/shared';
 import { StationTime } from './common.interface';
 
-export interface TramStationPayload extends IdPayload {
-  source: string;
-}
+export type TramStationPayload = IdPayload;
 
 export interface TramStationResponse {
   id: string;

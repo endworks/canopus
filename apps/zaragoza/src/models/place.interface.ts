@@ -1,3 +1,5 @@
+import type { PlaceKind } from '@canopus/shared';
+
 /**
  * The city's points, in the one shape they all share.
  *
@@ -59,7 +61,7 @@ export interface Place {
 export type PlacesResponse = Record<string, Place>;
 
 /** The datasets this serves, named the way the app asks for them. */
-export type PlaceKind = 'taxi-rank' | 'taxi-office' | 'pharmacy';
+export type { PlaceKind };
 
 export interface PlacesPayload {
   kind: PlaceKind;

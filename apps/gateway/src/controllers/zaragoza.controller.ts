@@ -16,6 +16,7 @@ import {
   Station,
 } from '../models/zaragoza.interface';
 import { ErrorResponse } from '../models/error.interface';
+import { PLACE_KINDS, STATION_SOURCES, StationSource } from '@canopus/shared';
 import { ZaragozaService } from '../services/zaragoza.service';
 
 @ApiTags('Zaragoza')
@@ -34,7 +35,7 @@ export class ZaragozaController {
   @Get('bus/stations/:id')
   @ApiOperation({ summary: 'Get bus station by ID' })
   @ApiParam({ name: 'id', type: String })
-  @ApiQuery({ name: 'source', enum: ['api', 'web', 'backup'], required: false })
+  @ApiQuery({ name: 'source', enum: STATION_SOURCES, required: false })
   @ApiResponse({
     status: 200,
     description: 'Return bus station',
@@ -42,7 +43,7 @@ export class ZaragozaController {
   })
   async zaragozaBusStation(
     @Param('id') id: string,
-    @Query('source') source: 'api' | 'web' | 'backup',
+    @Query('source') source: StationSource,
   ) {
     return this.zaragozaService.getBusStation(id, source);
   }
@@ -88,20 +89,18 @@ export class ZaragozaController {
     return this.zaragozaService.getTramStations();
   }
 
+  // One road to a tram stop, so no `source` to pick between: the query this
+  // used to document reached a service that never read it.
   @Get('tram/stations/:id')
   @ApiOperation({ summary: 'Get tram station by ID' })
   @ApiParam({ name: 'id', type: String })
-  @ApiQuery({ name: 'source', enum: ['api', 'web', 'backup'], required: false })
   @ApiResponse({
     status: 200,
     description: 'Return tram station',
     type: Station,
   })
-  async zaragozaTramStation(
-    @Param('id') id: string,
-    @Query('source') source: 'api' | 'web' | 'backup',
-  ) {
-    return this.zaragozaService.getTramStation(id, source);
+  async zaragozaTramStation(@Param('id') id: string) {
+    return this.zaragozaService.getTramStation(id);
   }
 
   @Get('bizi/stations')
@@ -140,11 +139,7 @@ export class ZaragozaController {
    */
   @Get('places/:kind')
   @ApiOperation({ summary: 'Get places of one kind' })
-  @ApiParam({
-    name: 'kind',
-    type: String,
-    description: 'taxi-rank | taxi-office | pharmacy',
-  })
+  @ApiParam({ name: 'kind', enum: PLACE_KINDS })
   @ApiMapResponse(Place, 'Places keyed by id')
   async zaragozaPlaces(@Param('kind') kind: string) {
     return this.zaragozaService.getPlaces(kind);

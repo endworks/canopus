@@ -1,7 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ClientProxy } from '@nestjs/microservices';
 import { lastValueFrom } from 'rxjs';
-import { SERVICE_TOKENS, ZARAGOZA_PATTERNS } from '@canopus/shared';
+import {
+  SERVICE_TOKENS,
+  StationSource,
+  ZARAGOZA_PATTERNS,
+} from '@canopus/shared';
 
 @Injectable()
 export class ZaragozaService {
@@ -11,7 +15,7 @@ export class ZaragozaService {
     return lastValueFrom(this.client.send(ZARAGOZA_PATTERNS.busStations, {}));
   }
 
-  getBusStation(id: string, source: 'api' | 'web' | 'backup') {
+  getBusStation(id: string, source: StationSource) {
     return lastValueFrom(
       this.client.send(ZARAGOZA_PATTERNS.busStation, { id, source }),
     );
@@ -39,9 +43,9 @@ export class ZaragozaService {
     return lastValueFrom(this.client.send(ZARAGOZA_PATTERNS.tramStations, {}));
   }
 
-  getTramStation(id: string, source: 'api' | 'web' | 'backup') {
+  getTramStation(id: string) {
     return lastValueFrom(
-      this.client.send(ZARAGOZA_PATTERNS.tramStation, { id, source }),
+      this.client.send(ZARAGOZA_PATTERNS.tramStation, { id }),
     );
   }
 

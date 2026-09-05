@@ -6,19 +6,17 @@ import { lastValueFrom, timeout, TimeoutError } from 'rxjs';
 export const DEFAULT_REQUEST_TIMEOUT = 10000;
 
 /**
- * One GET with a deadline, for the scrapers. Every service was repeating this
- * pipe and its own copy of the timeout mapping; a timeout is the one failure
- * worth naming, so it is named here and nowhere else.
+ * One request with a deadline, for the scrapers. Every service was repeating
+ * this pipe and its own copy of the timeout mapping; a timeout is the one
+ * failure worth naming, so it is named here and nowhere else.
  *
  * It is named 504, not 408: the deadline that ran out is the one we set on a
  * request we made, and 408 would tell our own caller it was too slow sending
- * a request that arrived intact.
+ * a request that arrived intact. What the source does answer with is read by
+ * `upstreamFailure`, beside this.
  */
-/**
- * One form POST with a deadline. The same deadline and the same 504 as the GET
- * beside it, for what a site answers only to a form — a WordPress admin-ajax
- * action among them.
- */
+
+/** One form POST, for what a site answers only to a form. */
 export const postWithTimeout = async <T = any>(
   http: HttpService,
   url: string,
@@ -49,6 +47,7 @@ export const postWithTimeout = async <T = any>(
   }
 };
 
+/** One GET. */
 export const fetchWithTimeout = async <T = any>(
   http: HttpService,
   url: string,

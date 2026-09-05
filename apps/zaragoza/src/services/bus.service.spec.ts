@@ -599,6 +599,30 @@ describe('getStation', () => {
     });
   });
 
+  it('puts the bus at the stop first and the timetable guess last', async () => {
+    const { service } = build({
+      pages: {
+        [pasobusUrl('1')]: pasobus([
+          ['24', 'VALDESPARTERA', 'Sin estimación'],
+          ['21', 'BARRIO JESUS', '9 minutos'],
+          ['N6', 'LA CARTUJA', 'En parada'],
+        ]),
+      },
+    });
+
+    const resp = await service.getStation('1', 'web');
+
+    // What a reader wants in the order they want it, and the two the source
+    // words rather than counts kept as words.
+    expect(resp).toMatchObject({
+      times: [
+        { line: 'N6', destination: 'La Cartuja', time: 'En parada' },
+        { line: '21', destination: 'Barrio Jesús', time: '9 min.' },
+        { line: '24', destination: 'Valdespartera', time: 'Sin estimación' },
+      ],
+    });
+  });
+
   // The stop as a route update leaves it: where it is and what serves it,
   // which is everything about it except when the next bus is due.
   const stored = {

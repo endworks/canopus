@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { HttpService } from '@nestjs/axios';
 import { NotFoundException } from '@nestjs/common';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { PlacesService } from './places.service';
 import { PlacesResponse } from '../models/place.interface';
 
@@ -42,6 +42,20 @@ describe('PlacesService', () => {
     await expect(service.getPlaces('museum' as never)).rejects.toBeInstanceOf(
       NotFoundException,
     );
+  });
+
+  // The same answer the bus and the Bizi give for the same outage: the city
+  // fell over, and a 4xx would put that on whoever asked.
+  it("answers 502 when the city's own server fails", async () => {
+    const failed: Error & { response?: { status: number } } = new Error(
+      'Request failed with status code 500',
+    );
+    failed.response = { status: 500 };
+    get.mockReturnValueOnce(throwError(() => failed));
+
+    await expect(service.getPlaces('taxi-rank')).rejects.toMatchObject({
+      status: 502,
+    });
   });
 
   it('asks the city in WGS84, or the points are UTM metres', async () => {

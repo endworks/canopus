@@ -1,3 +1,5 @@
+import { HttpStatus, NotFoundException } from '@nestjs/common';
+
 export const capitalize = (text: string) =>
   text ? text.charAt(0).toUpperCase() + text.slice(1).toLowerCase() : null;
 
@@ -359,6 +361,34 @@ const lineCollator = new Intl.Collator('es', { numeric: true });
 
 export const compareLineIds = (a: string, b: string): number =>
   lineGroup(a) - lineGroup(b) || lineCollator.compare(a, b);
+
+/**
+ * The order a board shows its arrivals in: what is at the stop now, then the
+ * minutes as numbers, then everything the source says in words, with a
+ * timetable estimate last because it is the least of what anybody wants.
+ *
+ * Shared by the bus and the tram: the same board, the same words on it, and
+ * two copies of this were the two of them free to disagree about "En parada".
+ */
+export const compareArrivalTimes = (a: string, b: string): number => {
+  const weigh = (time: string): number => {
+    const said = time.trim().toLowerCase();
+    if (said.includes('parada')) return 0;
+    if (said.match(/^\d+/)) return parseInt(said);
+    if (said.includes('estimación')) return 9999;
+    return 999;
+  };
+  return weigh(a) - weigh(b);
+};
+
+/** The one wording the services use for an id nothing is stored under. */
+export const notFoundById = (id: string) => {
+  const message = `Resource with ID '${id}' was not found`;
+  return new NotFoundException(
+    { statusCode: HttpStatus.NOT_FOUND, message },
+    message,
+  );
+};
 
 const accentedChars = /[áéíóúüñÁÉÍÓÚÜÑ]/g;
 

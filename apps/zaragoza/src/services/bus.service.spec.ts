@@ -91,6 +91,10 @@ const today = () => {
   return `${now.getUTCDate()} ${months[now.getUTCMonth()]}, ${now.getUTCFullYear()}`;
 };
 
+// The two roads to one stop: the city's API, and the board pasobus draws.
+const busApiUrl = (id: string) =>
+  `https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/transporte-urbano/poste-autobus/tuzsa-${id}.json?srsname=wgs84`;
+
 // What pasobus serves for one stop: the arrivals table is the second one.
 const pasobusUrl = (id: string) =>
   `https://zaragoza-pasobus.avanzagrupo.com/frm_esquemaparadatime.php?poste=${id}`;
@@ -593,6 +597,92 @@ describe('getStation', () => {
         { line: 'N6', destination: 'La Cartuja', time: '7 min.' },
       ],
     });
+  });
+
+  // The stop as a route update leaves it: where it is and what serves it,
+  // which is everything about it except when the next bus is due.
+  const stored = {
+    id: '1',
+    street: 'Paseo Independencia',
+    lines: ['21', 'N6'],
+    coordinates: ['-0.88', '41.65'],
+    type: 'bus',
+  };
+
+  it('reads the board when the API is down', async () => {
+    const { service } = build({
+      pages: {
+        [pasobusUrl('1')]: pasobus([['21', 'BARRIO JESUS', '3 minutos']]),
+      },
+      unreachable: [busApiUrl('1')],
+      storedStations: [stored],
+    });
+
+    const resp = await service.getStation('1');
+
+    expect(resp).toMatchObject({
+      source: 'web',
+      times: [{ line: '21', time: '3 min.' }],
+    });
+  });
+
+  it('serves the stored stop when neither road answers', async () => {
+    const { service } = build({
+      unreachable: [busApiUrl('1'), pasobusUrl('1')],
+      storedStations: [stored],
+    });
+
+    const resp = await service.getStation('1');
+
+    expect(resp).toMatchObject({
+      source: 'backup',
+      street: 'Paseo Independencia',
+      lines: ['21', 'N6'],
+      // Nobody who knows the times is answering, and an empty board says so.
+      times: [],
+    });
+  });
+
+  it('blames the source, not the caller, when no road answers for a stop it has nothing stored for', async () => {
+    const { service } = build({
+      unreachable: [busApiUrl('9'), pasobusUrl('9')],
+    });
+
+    await expect(service.getStation('9')).rejects.toMatchObject({
+      response: { statusCode: 502 },
+    });
+  });
+
+  it('answers 404 for a stop neither the API nor any route file knows', async () => {
+    const { service, httpService } = build({});
+
+    await expect(service.getStation('99')).rejects.toMatchObject({
+      response: { statusCode: 404 },
+    });
+    // The board answers for a stop that does not exist with an empty table,
+    // which would read as a stop with no bus due rather than as no stop.
+    const requested = (httpService.get as jest.Mock).mock.calls.map(
+      ([url]) => url,
+    );
+    expect(requested).not.toContain(pasobusUrl('99'));
+  });
+
+  it('keeps a road asked for by name to itself', async () => {
+    const { service, httpService } = build({
+      pages: {
+        [pasobusUrl('1')]: pasobus([['21', 'BARRIO JESUS', '3 minutos']]),
+      },
+      unreachable: [busApiUrl('1')],
+      storedStations: [stored],
+    });
+
+    await expect(service.getStation('1', 'api')).rejects.toMatchObject({
+      response: { statusCode: 502 },
+    });
+    const requested = (httpService.get as jest.Mock).mock.calls.map(
+      ([url]) => url,
+    );
+    expect(requested).not.toContain(pasobusUrl('1'));
   });
 });
 

@@ -1,4 +1,4 @@
-import { RequestTimeoutException } from '@nestjs/common';
+import { GatewayTimeoutException } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { AxiosRequestConfig } from 'axios';
 import { lastValueFrom, timeout, TimeoutError } from 'rxjs';
@@ -7,11 +7,15 @@ export const DEFAULT_REQUEST_TIMEOUT = 10000;
 
 /**
  * One GET with a deadline, for the scrapers. Every service was repeating this
- * pipe and its own copy of the timeout-to-408 mapping; a timeout is the one
- * failure worth naming, so it is named here and nowhere else.
+ * pipe and its own copy of the timeout mapping; a timeout is the one failure
+ * worth naming, so it is named here and nowhere else.
+ *
+ * It is named 504, not 408: the deadline that ran out is the one we set on a
+ * request we made, and 408 would tell our own caller it was too slow sending
+ * a request that arrived intact.
  */
 /**
- * One form POST with a deadline. The same deadline and the same 408 as the GET
+ * One form POST with a deadline. The same deadline and the same 504 as the GET
  * beside it, for what a site answers only to a form — a WordPress admin-ajax
  * action among them.
  */
@@ -37,7 +41,7 @@ export const postWithTimeout = async <T = any>(
     return response.data;
   } catch (exception) {
     if (exception instanceof TimeoutError) {
-      throw new RequestTimeoutException(
+      throw new GatewayTimeoutException(
         'Request timeout: The API request took too long to complete',
       );
     }
@@ -58,7 +62,7 @@ export const fetchWithTimeout = async <T = any>(
     return response.data;
   } catch (exception) {
     if (exception instanceof TimeoutError) {
-      throw new RequestTimeoutException(
+      throw new GatewayTimeoutException(
         'Request timeout: The API request took too long to complete',
       );
     }

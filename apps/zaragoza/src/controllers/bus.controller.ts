@@ -15,13 +15,9 @@ export class BusController {
 
   @MessagePattern(ZARAGOZA_PATTERNS.busStation, Transport.TCP)
   async busStation(@Payload() data: BusStationPayload) {
-    // Fall back to the web source when the API source fails; a failure of the
-    // fallback propagates to the global RpcErrorFilter.
-    if (!data.source) {
-      return this.busService
-        .getStation(data.id, 'api')
-        .catch(() => this.busService.getStation(data.id, 'web'));
-    }
+    // Which road answers for a stop, and what a stop with none left is worth
+    // saying, is the service's to decide: it is the one that knows what it has
+    // stored for the stop.
     return this.busService.getStation(data.id, data.source);
   }
 

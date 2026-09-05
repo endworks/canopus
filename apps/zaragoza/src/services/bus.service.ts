@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { HttpService } from '@nestjs/axios';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import {
+  BadGatewayException,
   HttpException,
   HttpStatus,
   Inject,
@@ -314,6 +315,153 @@ const upsertById = <T extends { id: string }>(
   updateOne: { filter: { id }, update: { $set: data }, upsert: true },
 });
 
+const stationNotFound = (id: string) => {
+  const message = `Resource with ID '${id}' was not found`;
+  return new NotFoundException(
+    { statusCode: HttpStatus.NOT_FOUND, message },
+    message,
+  );
+};
+
+const isNotFound = (exception: unknown) =>
+  exception instanceof HttpException &&
+  exception.getStatus() === HttpStatus.NOT_FOUND;
+
+/**
+ * What a road's failure is worth answering with.
+ *
+ * A stop the source does not know is the caller's business and stays a 404.
+ * Everything else — an outage, a deadline missed, a refusal — happened at the
+ * source, and a 4xx for it would tell the caller to fix a request that was
+ * never wrong: 502, or the 504 a missed deadline already arrives as.
+ */
+const upstreamFailure = (id: string, exception: any) => {
+  if (exception instanceof HttpException) return exception;
+  if (exception.response?.status === HttpStatus.NOT_FOUND) {
+    return stationNotFound(id);
+  }
+  const message =
+    exception.response?.data?.mensaje ?? exception.message ?? String(exception);
+  return new BadGatewayException(
+    { statusCode: HttpStatus.BAD_GATEWAY, message },
+    message,
+  );
+};
+
+/** The times a stop is showing, out of whichever road served them. */
+const parseStation = (
+  id: string,
+  source: 'api' | 'web',
+  url: string,
+  data: any,
+  backup: BusStation | null,
+): BusStationResponse => {
+  const resp: BusStationResponse = {
+    id,
+    street: null,
+    lines: [],
+    times: [],
+    coordinates: [],
+    source,
+    sourceUrl: url,
+    type: 'bus',
+  };
+
+  if (backup) {
+    resp.street = backup.street;
+    resp.lines = [...backup.lines];
+    resp.coordinates = backup.coordinates;
+  }
+
+  if (source === 'api') {
+    resp.lastUpdated = data.lastUpdated;
+    if (!backup) {
+      resp.street = capitalizeEachWord(
+        fixWords(data.title.split(')')[1].slice(1).split('Lí')[0].trim()),
+      );
+      resp.coordinates = data.geometry.coordinates;
+    }
+    data.destinos.forEach((destination) => {
+      ['primero', 'segundo'].forEach((element) => {
+        const destinationRaw = destination.destino
+          .replace(/(^,)|(,$)/g, '')
+          .replace(/(^\.)|(\.$)/g, '');
+        const destinationFixed = destinationRaw
+          .split(' - ')
+          .map((item) => capitalizeEachWord(fixWords(item.trim())))
+          .join(' - ');
+        const transport = {
+          line: normalizeLineId(destination.linea),
+          destination: destinationFixed,
+          time: null,
+        };
+        if (destination[element].includes('minutos')) {
+          transport.time = `${destination[element]
+            .replace(' minutos', '')
+            .replace(/(^\.)|(\.$)/g, '')} min.`;
+        } else {
+          transport.time = capitalize(
+            fixWords(destination[element].replace(/(^\.)|(\.$)/g, '')),
+          );
+        }
+        resp.times.push(transport);
+      });
+    });
+  } else {
+    const $ = cheerio.load(data);
+    const rows = $('table').eq(1).find('tr');
+
+    rows.each((_, row) => {
+      const cells = $(row).find('td.digital');
+      if (cells.length >= 3) {
+        const line = normalizeLineId($(cells[0]).text().trim());
+        const destinationRaw = $(cells[1]).text().trim();
+        const destination = destinationRaw
+          .split(' - ')
+          .map((item) => capitalizeEachWord(fixWords(item.trim())))
+          .join(' - ');
+        let time = $(cells[2])
+          .text()
+          .trim()
+          .replace(/(^,)|(,$)/g, '')
+          .replace(/(^\.)|(\.$)/g, '');
+        if (time.includes('minutos')) {
+          time = `${time
+            .replace(' minutos', '')
+            .replace(/(^\.)|(\.$)/g, '')} min.`;
+        } else {
+          time = capitalize(fixWords(time).replace(/(^\.)|(\.$)/g, ''));
+        }
+
+        if (line) {
+          resp.times.push({ line, destination, time });
+        }
+      }
+    });
+
+    resp.lastUpdated = new Date().toISOString();
+  }
+
+  resp.times.forEach((time) => {
+    if (!resp.lines.includes(time.line)) {
+      resp.lines.push(time.line);
+    }
+  });
+  resp.lines.sort(compareLineIds);
+  resp.times.sort((a, b) => {
+    const normalize = (time: string) => time.trim().toLowerCase();
+    const getWeight = (time: string): number => {
+      if (time.includes('parada')) return 0;
+      if (time.match(/^\d+/)) return parseInt(time);
+      if (time.includes('estimación')) return 9999;
+      return 999;
+    };
+    return getWeight(normalize(a.time)) - getWeight(normalize(b.time));
+  });
+
+  return resp;
+};
+
 @Injectable()
 export class BusService {
   private readonly logger = new Logger(BusService.name);
@@ -357,191 +505,128 @@ export class BusService {
   }
 
   // Station
+  /**
+   * A stop, by whichever road can still answer for it.
+   *
+   * The two roads carry the same arrivals, and behind both of them is the stop
+   * the last route update stored, so an outage at one of them is not an outage
+   * of this endpoint: the API, then the board, then the stored stop with no
+   * times on it. Only when none of the three answers does this fail.
+   *
+   * A `source` asked for by name stays one road: it answers or it fails, so
+   * that a caller comparing the two is told the truth about the one it named.
+   */
   public async getStation(
     id: string,
     source?: string,
   ): Promise<BusStationResponse | ErrorResponse> {
-    const cache: BusStationResponse = await this.cacheManager.get(
-      `bus/stations/${id}/${source ?? 'api'}`,
-    );
+    const key = `bus/stations/${id}/${source ?? 'api'}`;
+    const cache: BusStationResponse = await this.cacheManager.get(key);
     if (cache) return cache;
+
+    const backup = await this.getStationById(id);
+    const resp = await this.readStation(id, source, backup);
+    await this.cacheManager.set(key, resp, 10000);
+    return resp;
+  }
+
+  private async readStation(
+    id: string,
+    source: string | undefined,
+    backup: BusStation | null,
+  ): Promise<BusStationResponse> {
+    if (source) {
+      if (source === 'backup') return this.storedStation(id, backup);
+      if (source !== 'api' && source !== 'web') throw stationNotFound(id);
+      return this.fetchStation(id, source, backup);
+    }
+
+    try {
+      return await this.fetchStation(id, 'api', backup);
+    } catch (fromApi) {
+      // A stop the API does not know and no route file ever drew is a stop
+      // that does not exist. The board answers for it with an empty table,
+      // which reads as a stop with no bus due rather than as no stop, so a
+      // 404 with nothing stored behind it ends the walk here.
+      if (isNotFound(fromApi) && !backup) throw fromApi;
+      try {
+        return await this.fetchStation(id, 'web', backup);
+      } catch (fromWeb) {
+        if (backup) {
+          this.logger.warn(
+            `Serving the stored stop ${id}: ${(fromApi as Error).message}`,
+          );
+          return this.storedStation(id, backup);
+        }
+        // Whichever of the two said something other than "no such stop",
+        // since that is the failure worth reporting.
+        throw isNotFound(fromWeb) ? fromApi : fromWeb;
+      }
+    }
+  }
+
+  /**
+   * The stop as the last route update left it: where it is, which lines serve
+   * it, what is altered on them. No times, because nobody who knows them is
+   * answering — an empty board is the honest thing to show.
+   */
+  private async storedStation(
+    id: string,
+    backup: BusStation | null,
+  ): Promise<BusStationResponse> {
+    if (!backup) throw stationNotFound(id);
+    const { _id, times, ...station } = backup as BusStation & { _id?: unknown };
+    return {
+      ...station,
+      times: [],
+      source: 'backup',
+      alerts: await this.alertsForStation(id, backup.lines),
+    };
+  }
+
+  /**
+   * One road, fetched and read. What the source refuses and what it serves
+   * unreadable come back alike as a failure of the source, for the caller
+   * above to decide whether another road can cover it.
+   */
+  private async fetchStation(
+    id: string,
+    source: 'api' | 'web',
+    backup: BusStation | null,
+  ): Promise<BusStationResponse> {
     const isWebSource = source === 'web';
     const url = isWebSource
       ? busWebURL + id
       : `${busApiURL + id}.json?srsname=wgs84`;
 
-    const backup = await this.getStationById(id);
-
+    let data: any;
     try {
       // pasobus serves iso-8859-1; axios would decode it as utf-8 and turn
       // every accented character into U+FFFD.
-      const data = await fetchWithTimeout<any>(
+      data = await fetchWithTimeout<any>(
         this.httpService,
         url,
         isWebSource ? { responseEncoding: 'latin1' } : undefined,
       );
-
-      try {
-        const resp: BusStationResponse = {
-          id: id,
-          street: null,
-          lines: [],
-          times: [],
-          coordinates: [],
-          source: null,
-          sourceUrl: null,
-          type: 'bus',
-        };
-
-        if (backup) {
-          resp.street = backup.street;
-          resp.lines = backup.lines;
-          resp.coordinates = backup.coordinates;
-        }
-
-        if (!source || source === 'api') {
-          resp.source = 'api';
-          resp.sourceUrl = url;
-          resp.lastUpdated = data.lastUpdated;
-          if (!backup) {
-            resp.street = capitalizeEachWord(
-              fixWords(data.title.split(')')[1].slice(1).split('Lí')[0].trim()),
-            );
-            resp.coordinates = data.geometry.coordinates;
-          }
-          const times = [];
-          data.destinos.map((destination) => {
-            ['primero', 'segundo'].map((element) => {
-              const destinationRaw = destination.destino
-                .replace(/(^,)|(,$)/g, '')
-                .replace(/(^\.)|(\.$)/g, '');
-              const destinationFixed = destinationRaw
-                .split(' - ')
-                .map((item) => capitalizeEachWord(fixWords(item.trim())))
-                .join(' - ');
-              const transport = {
-                line: normalizeLineId(destination.linea),
-                destination: destinationFixed,
-                time: null,
-              };
-              if (destination[element].includes('minutos')) {
-                transport.time = `${destination[element]
-                  .replace(' minutos', '')
-                  .replace(/(^\.)|(\.$)/g, '')} min.`;
-              } else {
-                transport.time = capitalize(
-                  fixWords(destination[element].replace(/(^\.)|(\.$)/g, '')),
-                );
-              }
-              times.push(transport);
-            });
-          });
-          resp.times = [...times];
-        } else if (source === 'web') {
-          const $ = cheerio.load(data);
-          const rows = $('table').eq(1).find('tr');
-
-          rows.each((_, row) => {
-            const cells = $(row).find('td.digital');
-            if (cells.length >= 3) {
-              const line = normalizeLineId($(cells[0]).text().trim());
-              const destinationRaw = $(cells[1]).text().trim();
-              const destination = destinationRaw
-                .split(' - ')
-                .map((item) => capitalizeEachWord(fixWords(item.trim())))
-                .join(' - ');
-              let time = $(cells[2])
-                .text()
-                .trim()
-                .replace(/(^,)|(,$)/g, '')
-                .replace(/(^\.)|(\.$)/g, '');
-              if (time.includes('minutos')) {
-                time = `${time
-                  .replace(' minutos', '')
-                  .replace(/(^\.)|(\.$)/g, '')} min.`;
-              } else {
-                time = capitalize(fixWords(time).replace(/(^\.)|(\.$)/g, ''));
-              }
-
-              if (line) {
-                resp.times.push({ line, destination, time });
-              }
-            }
-          });
-
-          resp.source = 'web';
-          resp.sourceUrl = url;
-          resp.lastUpdated = new Date().toISOString();
-        } else if (source === 'backup') {
-          return {
-            ...backup,
-            source: 'backup',
-            alerts: await this.alertsForStation(id, backup.lines),
-          };
-        } else {
-          throw new NotFoundException(
-            {
-              statusCode: HttpStatus.NOT_FOUND,
-              message: `Resource with ID '${id}' was not found`,
-            },
-            `Resource with ID '${id}' was not found`,
-          );
-        }
-        resp.times.forEach((time) => {
-          if (!resp.lines.includes(time.line)) {
-            resp.lines.push(time.line);
-          }
-        });
-        resp.lines.sort(compareLineIds);
-        resp.times.sort((a, b) => {
-          const normalize = (time: string) => time.trim().toLowerCase();
-          const getWeight = (time: string): number => {
-            if (time.includes('parada')) return 0;
-            if (time.match(/^\d+/)) return parseInt(time);
-            if (time.includes('estimación')) return 9999;
-            return 999;
-          };
-          return getWeight(normalize(a.time)) - getWeight(normalize(b.time));
-        });
-
-        resp.alerts = await this.alertsForStation(id, resp.lines);
-
-        await this.cacheManager.set(
-          `bus/stations/${id}/${source ?? 'api'}`,
-          resp,
-          10000,
-        );
-
-        return resp;
-      } catch (exception) {
-        throw new InternalServerErrorException(
-          {
-            statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-            message: exception.message,
-          },
-          exception.message,
-        );
-      }
     } catch (exception) {
-      if (exception instanceof HttpException) throw exception;
-      if (exception.response?.status === HttpStatus.NOT_FOUND) {
-        throw new NotFoundException(
-          {
-            statusCode: HttpStatus.NOT_FOUND,
-            message: `Resource with ID '${id}' was not found`,
-          },
-          `Resource with ID '${id}' was not found`,
-        );
-      } else {
-        throw new InternalServerErrorException(
-          {
-            statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-            message: exception.response?.data?.mensaje || exception.message,
-          },
-          exception.response?.data?.mensaje || exception.message,
-        );
-      }
+      throw upstreamFailure(id, exception);
     }
+
+    let resp: BusStationResponse;
+    try {
+      resp = parseStation(id, source, url, data, backup);
+    } catch (exception) {
+      // A page that will not parse is the source's doing as much as a page it
+      // refuses to serve, and it is covered the same way: by the other road.
+      const message = `The ${source} source served an unreadable answer for the stop ${id}: ${exception.message}`;
+      throw new BadGatewayException(
+        { statusCode: HttpStatus.BAD_GATEWAY, message },
+        message,
+      );
+    }
+
+    resp.alerts = await this.alertsForStation(id, resp.lines);
+    return resp;
   }
 
   // Lines

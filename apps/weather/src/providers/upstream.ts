@@ -32,7 +32,7 @@ export const upstreamGet = async <T>(
   try {
     return await fetchWithTimeout<T>(http, url, config);
   } catch (exception) {
-    // A timeout already arrives as the 408 `fetchWithTimeout` names it.
+    // A timeout already arrives as the 504 `fetchWithTimeout` names it.
     if (exception instanceof HttpException) throw exception;
     if (!isAxiosError(exception) || !exception.response) {
       throw new BadGatewayException(

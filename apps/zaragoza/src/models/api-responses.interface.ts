@@ -1,48 +1,35 @@
 /**
- * What the city answers for one bike rack.
+ * What the city answers for one Bizi station.
  *
- * This is `aparcamiento-bicicleta` — the municipal bike parking, the stands a
- * rider locks their own bike to. It is a record of street furniture: where the
- * rack is, how many bikes fit on it, and what kind of rack it is. There are no
- * bikes of its own to count, so there is nothing here that says how many are
- * free right now, and there never will be. Whatever counts this service serves
- * come from the operator's feed.
+ * The fields are the city's own, in its own language, as its published schema
+ * for `estacion-bicicleta` gives them. Every one of them is optional here and
+ * nothing reads a field without saying what to do when it is missing: the
+ * schema names a shape, not a guarantee that every row fills it in.
  */
 export interface BiziStationApiResponse {
-  /** Numbered, and numbered as a number. */
-  id: string | number;
-  /** Where it stands, shouted, which is all this set names it by. */
+  /** Numbered, and numbered as a number in some of these sets. */
+  id?: string | number;
+  /** The station's own URL in the city's catalogue. */
+  about?: string;
+  /** Names the station, with the street behind a dash. */
   title?: string;
-  /**
-   * What kind of rack: "Abierto" for one out in the open. A description of the
-   * furniture, not a state — nothing here says whether it can be used.
-   */
-  tipo?: string;
-  /** How many bikes fit on it. */
-  plazas?: number;
-  /** How many stands it has, each taking a bike either side. */
-  anclajes?: number;
+  estado?: string;
+  /** A second state field. Read only where `estado` says nothing. */
+  estadoEstacion?: string;
+  address?: string;
+  tipoEquipamiento?: string;
+  bicisDisponibles?: number;
+  anclajesDisponibles?: number;
   geometry?: {
     type?: string;
     coordinates?: number[];
   };
-  icon?: string;
-  about?: string;
   lastUpdated?: string;
-  /**
-   * The street in a field of its own. This set names the place in `title`
-   * instead; the others in the family carry both, so it is read where it is
-   * there.
-   */
+  description?: string;
+  descripcion?: string;
+  icon?: string;
+  /** Carried by the sibling sets in this family, which name the street. */
   calle?: string;
-  /**
-   * None of these three is in this set. They are what the retired
-   * `estacion-bicicleta` carried, and they are read where a row still has
-   * them so that a set which starts publishing them is served at once.
-   */
-  estado?: string;
-  bicisDisponibles?: number;
-  anclajesDisponibles?: number;
 }
 
 /** A page of them, in the envelope every one of these datasets is paged in. */

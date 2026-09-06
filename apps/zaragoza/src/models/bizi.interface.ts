@@ -15,11 +15,6 @@ export interface BiziStationResponse {
    */
   electricBikes?: number | null;
   openDocks?: number | null;
-  /**
-   * How many bikes the rack holds when it is full. Static — it is a count of
-   * the furniture, not of what is on it, which is why it is not `openDocks`.
-   */
-  capacity?: number | null;
   coordinates: string[];
   source?: string;
   sourceUrl?: string;

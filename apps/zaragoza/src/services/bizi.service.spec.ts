@@ -9,34 +9,39 @@ import { BiziStation } from '../schemas/bizi.schema';
 import { GbfsClient } from '../gbfs';
 
 /**
- * One rack, exactly as the city answers for it. Copied from a real response
- * rather than imagined: it is the shape of this set that the mapping has to be
- * right about, and every field it does not carry is as much of the answer as
- * the ones it does.
+ * One station, in the fields the city's published schema for
+ * `estacion-bicicleta` names. The values are this fixture's own — the schema
+ * gives types rather than a sample — so nothing here asserts a value the city
+ * has actually been seen to send, only that each field is read where it is.
  */
 const station = (extra: Record<string, unknown> = {}) => ({
-  id: 175,
-  title: 'UNO DE MAYO',
-  tipo: 'Abierto',
-  plazas: 16,
-  anclajes: 8,
+  id: '175',
+  about:
+    'https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/estacion-bicicleta/175',
+  title: 'Bizi - UNO DE MAYO',
+  estado: 'ABIERTA',
+  estadoEstacion: 'ABIERTA',
+  address: 'UNO DE MAYO',
+  tipoEquipamiento: 'Estación de bicicletas',
+  bicisDisponibles: 7,
+  anclajesDisponibles: 12,
   geometry: {
     type: 'Point',
     coordinates: [-0.8779718287858732, 41.63645740543034],
   },
-  icon: 'https://www.zaragoza.es/contenidos/iconos/aparcabici.png',
+  lastUpdated: '2026-09-06T04:18:02.583Z',
   ...extra,
 });
 
 /** The station the last update stored. */
 const stored = {
   _id: 'mongo-id',
-  id: '001',
+  id: '175',
   street: 'Paseo Echegaray y Caballero',
   coordinates: ['-0.8773', '41.6561'],
   source: 'api',
   sourceUrl:
-    'https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/equipamiento/aparcamiento-bicicleta/001.json?srsname=wgs84',
+    'https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/estacion-bicicleta/175.json?srsname=wgs84',
   type: 'bizi',
 } as unknown as BiziStation;
 
@@ -113,20 +118,20 @@ describe('BiziService', () => {
   describe('getStation', () => {
     // The same way every other call to the city is written: `.json`, and not
     // the `rf=html` a browser sends to be given a web page.
-    it('asks the bike-rack set the way the bus stops are asked', async () => {
+    it('asks the station set the way the bus stops are asked', async () => {
       get.mockReturnValueOnce(of({ data: station() }));
       await service.getStation('175');
 
       const url = get.mock.calls[0][0];
       expect(url).toBe(
-        'https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/equipamiento/aparcamiento-bicicleta/175.json?srsname=wgs84',
+        'https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/estacion-bicicleta/175.json?srsname=wgs84',
       );
       expect(url).not.toContain('rf=html');
     });
 
     it('asks the city in WGS84, or the point is UTM metres', async () => {
       get.mockReturnValueOnce(of({ data: station() }));
-      await service.getStation('001');
+      await service.getStation('175');
       expect(get.mock.calls[0][0]).toContain('srsname=wgs84');
     });
 
@@ -159,16 +164,21 @@ describe('BiziService', () => {
       );
     });
 
-    // The retired set wrote the street into the title behind the name of the
-    // service, and its siblings carry a field of their own. Both still read.
-    it('reads the street from a field or a title that has one', async () => {
+    // The street is written into the title behind the name of the station. A
+    // row whose title says nothing falls back to the fields that might.
+    it('reads the street from the title, then from a field', async () => {
       get.mockReturnValueOnce(
         of({ data: station({ title: 'Bizi - PASEO ECHEGARAY Y CABALLERO' }) }),
       );
       const fromTitle = (await service.getStation('1')) as BiziStationResponse;
 
       get.mockReturnValueOnce(
-        of({ data: station({ calle: 'PASEO ECHEGARAY Y CABALLERO' }) }),
+        of({
+          data: station({
+            title: undefined,
+            address: 'PASEO ECHEGARAY Y CABALLERO',
+          }),
+        }),
       );
       const fromField = (await service.getStation('2')) as BiziStationResponse;
 
@@ -176,54 +186,8 @@ describe('BiziService', () => {
       expect(fromField.street).toBe('Paseo Echegaray y Caballero');
     });
 
-    // The whole of what this set is: street furniture. It counts nothing that
-    // stands on it, and nought would be a rack somebody walks to and finds
-    // empty.
-    it('says nothing about bikes on a set that counts none', async () => {
+    it('reads the counts the city reports', async () => {
       get.mockReturnValueOnce(of({ data: station() }));
-      const resp = (await service.getStation('175')) as BiziStationResponse;
-
-      expect(resp.bikes).toBeNull();
-      expect(resp.openDocks).toBeNull();
-      expect(resp.state).toBeNull();
-    });
-
-    it('reads how many bikes the rack holds when it is full', async () => {
-      get.mockReturnValueOnce(of({ data: station() }));
-      const resp = (await service.getStation('175')) as BiziStationResponse;
-      expect(resp.capacity).toBe(16);
-    });
-
-    // `anclajes` is how many stands the rack has — a fact about the ironwork.
-    // `openDocks` is how many of them are free, which nothing here knows.
-    it('does not mistake the stands for free docks', async () => {
-      get.mockReturnValueOnce(of({ data: station() }));
-      const resp = (await service.getStation('175')) as BiziStationResponse;
-      expect(resp.openDocks).not.toBe(8);
-      expect(resp.openDocks).toBeNull();
-    });
-
-    // "Abierto" describes the furniture — a rack out in the open. Reading it
-    // as an operational state would put a word in the city's mouth.
-    it('does not read the kind of rack as whether it is open', async () => {
-      get.mockReturnValueOnce(of({ data: station() }));
-      const resp = (await service.getStation('175')) as BiziStationResponse;
-      expect(resp.state).toBeNull();
-    });
-
-    // Where a row does carry them — a set that starts publishing counts, or the
-    // one this replaced — they are read rather than thrown away.
-    it('reads counts from a row that has them', async () => {
-      get.mockReturnValueOnce(
-        of({
-          data: station({
-            estado: 'ABIERTA',
-            bicisDisponibles: 7,
-            anclajesDisponibles: 12,
-          }),
-        }),
-      );
-
       const resp = (await service.getStation('175')) as BiziStationResponse;
 
       expect(resp.bikes).toBe(7);
@@ -231,12 +195,44 @@ describe('BiziService', () => {
       expect(resp.state).toBe('IN_SERVICE');
     });
 
+    // Nought is a station somebody rides to and finds empty. A row that says
+    // nothing has not said that, so it must not come out looking as if it had.
+    it('says nothing about a count the row leaves out', async () => {
+      get.mockReturnValueOnce(
+        of({
+          data: station({
+            estado: undefined,
+            estadoEstacion: undefined,
+            bicisDisponibles: undefined,
+            anclajesDisponibles: undefined,
+          }),
+        }),
+      );
+
+      const resp = (await service.getStation('175')) as BiziStationResponse;
+
+      expect(resp.bikes).toBeNull();
+      expect(resp.openDocks).toBeNull();
+      expect(resp.state).toBeNull();
+    });
+
+    // Two state fields in the schema. The second is read only where the first
+    // says nothing, so a row that fills either is understood.
+    it('falls back to the second state field', async () => {
+      get.mockReturnValueOnce(
+        of({ data: station({ estado: undefined, estadoEstacion: 'CERRADA' }) }),
+      );
+
+      const resp = (await service.getStation('175')) as BiziStationResponse;
+      expect(resp.state).toBe('CLOSED');
+    });
+
     it('serves a rack the city gives no point for', async () => {
       get.mockReturnValueOnce(of({ data: station({ geometry: undefined }) }));
       const resp = (await service.getStation('175')) as BiziStationResponse;
 
       expect(resp.coordinates).toEqual([]);
-      expect(resp.capacity).toBe(16);
+      expect(resp.bikes).toBe(7);
     });
 
     // The id is the caller's, and a raw `%` in a path is what the city answers
@@ -252,7 +248,7 @@ describe('BiziService', () => {
       const resp = (await service.getStation('175')) as BiziStationResponse;
 
       expect(resp.source).toBe('api');
-      expect(resp.sourceUrl).toContain('aparcamiento-bicicleta/175.json');
+      expect(resp.sourceUrl).toBe(station().about);
       expect(resp.coordinates).toEqual([
         '-0.8779718287858732',
         '41.63645740543034',
@@ -284,7 +280,7 @@ describe('BiziService', () => {
       holds(null);
       get.mockReturnValueOnce(throwError(() => answered(500)));
 
-      await expect(service.getStation('001')).rejects.toMatchObject({
+      await expect(service.getStation('175')).rejects.toMatchObject({
         status: 502,
       });
     });
@@ -293,7 +289,7 @@ describe('BiziService', () => {
       holds(stored);
       get.mockReturnValueOnce(throwError(() => answered(500)));
 
-      const resp = (await service.getStation('001')) as BiziStationResponse;
+      const resp = (await service.getStation('175')) as BiziStationResponse;
 
       expect(resp.source).toBe('backup');
       expect(resp.street).toBe('Paseo Echegaray y Caballero');
@@ -310,35 +306,35 @@ describe('BiziService', () => {
     it('holds a stored station longer than a live one', async () => {
       holds(stored);
       get.mockReturnValueOnce(throwError(() => answered(500)));
-      await service.getStation('001');
+      await service.getStation('175');
       const stale = cache.set.mock.calls[0][2];
 
       cache.set.mockClear();
       get.mockReturnValueOnce(of({ data: station() }));
-      await service.getStation('001');
+      await service.getStation('175');
       const live = cache.set.mock.calls[0][2];
 
       expect(stale).toBeGreaterThan(live);
     });
 
     it('serves a cached answer without asking again', async () => {
-      cache.get.mockResolvedValue({ id: '001', source: 'api' });
-      await service.getStation('001');
+      cache.get.mockResolvedValue({ id: '175', source: 'api' });
+      await service.getStation('175');
       expect(get).not.toHaveBeenCalled();
     });
 
     it('says the same word about a state whichever road answered', async () => {
       get.mockReturnValueOnce(of({ data: station({ estado: 'ABIERTA' }) }));
-      const fromCity = (await service.getStation('001')) as BiziStationResponse;
+      const fromCity = (await service.getStation('175')) as BiziStationResponse;
 
       operatorHas({
-        station_id: '001',
+        station_id: '175',
         is_installed: true,
         is_renting: true,
         is_returning: true,
       });
       const fromOperator = (await service.getStation(
-        '001',
+        '175',
       )) as BiziStationResponse;
 
       expect(fromCity.state).toBe('IN_SERVICE');
@@ -352,12 +348,12 @@ describe('BiziService', () => {
     it('does not go near the city when the operator answers', async () => {
       holds(stored);
       operatorHas({
-        station_id: '001',
+        station_id: '175',
         num_bikes_available: 7,
         num_docks_available: 12,
       });
 
-      const resp = (await service.getStation('001')) as BiziStationResponse;
+      const resp = (await service.getStation('175')) as BiziStationResponse;
 
       expect(get).not.toHaveBeenCalled();
       expect(resp.source).toBe('operator');
@@ -371,7 +367,7 @@ describe('BiziService', () => {
     it('says how many of the bikes are electric', async () => {
       holds(stored);
       operatorHas({
-        station_id: '001',
+        station_id: '175',
         num_bikes_available: 7,
         vehicle_types_available: [
           { vehicle_type_id: 'electric_bike', count: 4 },
@@ -379,7 +375,7 @@ describe('BiziService', () => {
         ],
       });
 
-      const resp = (await service.getStation('001')) as BiziStationResponse;
+      const resp = (await service.getStation('175')) as BiziStationResponse;
       expect(resp.electricBikes).toBe(4);
     });
 
@@ -387,7 +383,7 @@ describe('BiziService', () => {
     // read as a rack with no electric bike on it.
     it('says nothing about electric bikes on the city road', async () => {
       get.mockReturnValueOnce(of({ data: station() }));
-      const resp = (await service.getStation('001')) as BiziStationResponse;
+      const resp = (await service.getStation('175')) as BiziStationResponse;
       expect(resp).not.toHaveProperty('electricBikes');
     });
 
@@ -395,12 +391,13 @@ describe('BiziService', () => {
       holds({ ...stored, gbfsId: 'zgz-42' } as BiziStation);
       operatorHas({ station_id: 'zgz-42', num_bikes_available: 3 });
 
-      const resp = (await service.getStation('001')) as BiziStationResponse;
+      const resp = (await service.getStation('175')) as BiziStationResponse;
 
       expect(resp.source).toBe('operator');
       expect(resp.bikes).toBe(3);
-      // The id the caller asked with is the id they get back.
-      expect(resp.id).toBe('001');
+      // The id the caller asked with is the id they get back, not the
+      // operator's own number for the rack.
+      expect(resp.id).toBe('175');
     });
 
     it('falls through to the city for a rack the operator has not got', async () => {
@@ -411,7 +408,7 @@ describe('BiziService', () => {
       const resp = (await service.getStation('175')) as BiziStationResponse;
 
       expect(resp.source).toBe('api');
-      expect(resp.capacity).toBe(16);
+      expect(resp.bikes).toBe(7);
     });
 
     it('falls through to the city when the feed will not answer', async () => {
@@ -420,7 +417,7 @@ describe('BiziService', () => {
       gbfs.stationStatus.mockRejectedValue(new Error('feed is down'));
       get.mockReturnValueOnce(of({ data: station() }));
 
-      const resp = (await service.getStation('001')) as BiziStationResponse;
+      const resp = (await service.getStation('175')) as BiziStationResponse;
 
       expect(resp.source).toBe('api');
     });
@@ -431,7 +428,7 @@ describe('BiziService', () => {
       gbfs.stationStatus.mockRejectedValue(new Error('feed is down'));
       get.mockReturnValueOnce(throwError(() => answered(500)));
 
-      const resp = (await service.getStation('001')) as BiziStationResponse;
+      const resp = (await service.getStation('175')) as BiziStationResponse;
 
       expect(resp.source).toBe('backup');
       expect(resp.bikes).toBeNull();
@@ -442,9 +439,9 @@ describe('BiziService', () => {
     // of in the first place.
     it('reads the whole system once rather than once a station', async () => {
       holds(stored);
-      operatorHas({ station_id: '001', num_bikes_available: 7 });
+      operatorHas({ station_id: '175', num_bikes_available: 7 });
 
-      await service.getStation('001');
+      await service.getStation('175');
 
       expect(cache.wrap).toHaveBeenCalledWith(
         'bizi/gbfs/status',
@@ -459,7 +456,7 @@ describe('BiziService', () => {
       gbfs.stationStatus.mockRejectedValue(new Error('feed is down'));
       get.mockReturnValueOnce(throwError(() => answered(500)));
 
-      const resp = (await service.getStation('001')) as BiziStationResponse;
+      const resp = (await service.getStation('175')) as BiziStationResponse;
 
       expect(resp.source).toBe('backup');
       expect(resp).not.toHaveProperty('gbfsId');
@@ -470,30 +467,33 @@ describe('BiziService', () => {
     const page = (totalCount: unknown, result: unknown[]) =>
       get.mockReturnValueOnce(of({ data: { totalCount, result } }));
 
-    it('asks the bike-rack set the way the taxi ranks are asked', async () => {
+    it('asks the station set the way the bus stops are asked', async () => {
       page(1, [station()]);
       await service.getStationsUpdate();
 
       const url = get.mock.calls[0][0];
       expect(url).toBe(
-        'https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/equipamiento/aparcamiento-bicicleta.json?srsname=wgs84&rows=500&start=0',
+        'https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/estacion-bicicleta.json?srsname=wgs84&rows=50&start=0',
       );
       expect(url).not.toContain('rf=html');
     });
 
-    // The city caps `rows` at five hundred however many are asked for, so a set
-    // larger than that comes back looking complete unless every page is read.
+    // A set larger than one page comes back looking complete unless every page
+    // is read.
     it('reads every page', async () => {
       page(
-        501,
-        Array.from({ length: 500 }, (_, i) => station({ id: `${i}` })),
+        60,
+        Array.from({ length: 50 }, (_, i) => station({ id: `${i}` })),
       );
-      page(501, [station({ id: '500' })]);
+      page(
+        60,
+        Array.from({ length: 10 }, (_, i) => station({ id: `${i + 50}` })),
+      );
 
       await service.getStationsUpdate();
 
       expect(get).toHaveBeenCalledTimes(2);
-      expect(get.mock.calls[1][0]).toContain('start=500');
+      expect(get.mock.calls[1][0]).toContain('start=50');
     });
 
     // The row ids of these sets are numbers, and the rest of the service keys
@@ -542,18 +542,6 @@ describe('BiziService', () => {
       expect(findOneAndUpdate).toHaveBeenCalledWith(
         { id: '175' },
         { $set: expect.objectContaining({ gbfsId: 'zgz-42' }) },
-        expect.anything(),
-      );
-    });
-
-    // Furniture, so it is stored beside where the rack is.
-    it('stores how many bikes the rack holds', async () => {
-      page(1, [station()]);
-      await service.getStationsUpdate();
-
-      expect(findOneAndUpdate).toHaveBeenCalledWith(
-        { id: '175' },
-        { $set: expect.objectContaining({ capacity: 16 }) },
         expect.anything(),
       );
     });

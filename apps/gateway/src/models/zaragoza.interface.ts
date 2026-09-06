@@ -218,7 +218,7 @@ export class Line {
 
 export class BiziStation {
   /**
-   * Station id, as the city numbers the rack in its bike-parking set.
+   * Station id.
    * @example '175'
    */
   id: string;
@@ -257,14 +257,6 @@ export class BiziStation {
    * @example 12
    */
   openDocks?: number | null;
-
-  /**
-   * How many bikes the rack holds when it is full. A count of the furniture,
-   * not of what is standing on it — the city publishes this for its bike
-   * parking, which is why it is here and `openDocks` may not be.
-   * @example 16
-   */
-  capacity?: number | null;
 
   /**
    * `[longitude, latitude]` as strings.

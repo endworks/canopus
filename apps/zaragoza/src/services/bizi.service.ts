@@ -37,7 +37,7 @@ import {
 } from '../gbfs';
 
 /**
- * The city's bike racks, in the `equipamiento` set the taxi ranks come from.
+ * The city's Bizi stations.
  *
  * `.json?srsname=wgs84`, the same way every other call to the city is written:
  * `rf=html` is the flag that asks this for a web page, which is what a browser
@@ -45,10 +45,10 @@ import {
  * UTM metres and are served as a longitude and a latitude.
  */
 const biziApiURL =
-  'https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/equipamiento/aparcamiento-bicicleta';
+  'https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/estacion-bicicleta';
 
-/** The city hands out 500 rows at a time however many are asked for. */
-const PAGE = 500;
+/** How many rows of this set the city hands out at a time. */
+const PAGE = 50;
 
 /** How long a count of bikes on a rack is worth showing. */
 const STATION_TTL = 10000;
@@ -72,15 +72,14 @@ const STALE_STATION_TTL = 60000;
  * name.
  */
 const cityStreet = (row: BiziStationApiResponse): string => {
-  // The bike parking names the place in its title. Its siblings in the family
-  // carry a field of their own, and the set this read before wrote the street
-  // into the title behind the name of the service — "Bizi - PASEO ECHEGARAY Y
-  // CABALLERO" — so both are read, and a title with no dash is the street.
-  const named = row.calle?.trim();
-  const title = row.title ?? '';
+  // This set writes the street into the title behind the name of the station —
+  // "Bizi - PASEO ECHEGARAY Y CABALLERO" — and a title with no dash in it is
+  // the street entire. Where the title says nothing, the fields the siblings in
+  // this family carry the street in, which this one sometimes fills too.
+  const title = row.title?.trim() ?? '';
   const parts = title.split('-');
-  const raw =
-    named || (parts.length > 1 ? parts.slice(1).join('-').trim() : title);
+  const fromTitle = parts.length > 1 ? parts.slice(1).join('-').trim() : title;
+  const raw = fromTitle || row.address?.trim() || row.calle?.trim() || '';
 
   return capitalizeEachWord(normalizeStreet(fixWords(raw))) ?? '';
 };
@@ -272,17 +271,12 @@ export class BiziService {
       return {
         id: id,
         street: backup?.street || cityStreet(row),
-        state: cityState(row.estado),
-        // Null rather than nought. This set is a record of street furniture and
-        // counts nothing that stands on it, so saying nothing is the only
-        // honest answer — nought is a rack somebody walks to and finds empty.
-        // The operator's feed is what fills these in.
-        //
-        // Not `row.anclajes`, which is how many stands the rack has and is a
-        // fact about the ironwork: `openDocks` is how many of them are free.
+        state: cityState(row.estado ?? row.estadoEstacion),
+        // Null rather than nought where the row does not carry a count: nought
+        // is a station somebody rides to and finds empty, and a row that says
+        // nothing has not said that.
         bikes: row.bicisDisponibles ?? null,
         openDocks: row.anclajesDisponibles ?? null,
-        capacity: row.plazas ?? backup?.capacity ?? null,
         coordinates: backup?.coordinates || cityPoint(row),
         source: 'api',
         sourceUrl: row.about || url,
@@ -342,10 +336,9 @@ export class BiziService {
           allStations.push({
             id,
             street: cityStreet(row),
-            state: cityState(row.estado),
+            state: cityState(row.estado ?? row.estadoEstacion),
             bikes: row.bicisDisponibles ?? null,
             openDocks: row.anclajesDisponibles ?? null,
-            capacity: row.plazas ?? null,
             coordinates: cityPoint(row),
             source: 'api',
             sourceUrl:
@@ -370,7 +363,6 @@ export class BiziService {
             id: station.id,
             street: station.street,
             coordinates: station.coordinates,
-            capacity: station.capacity ?? undefined,
             gbfsId: paired.get(station.id),
             source: station.source,
             sourceUrl: station.sourceUrl,

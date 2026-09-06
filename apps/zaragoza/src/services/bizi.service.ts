@@ -281,39 +281,56 @@ export class BiziService {
    *
    * The last update's pairing where there is one. Where there is not — a
    * station added since, or a deployment that has read the feed before it has
-   * run an update — the pairing is worked out here from the one thing both
-   * sources agree on, which is where the station stands. Otherwise turning the
-   * feed on would do nothing at all until somebody remembered to run the
-   * update, and doing nothing is indistinguishable from a feed that is down.
-   *
-   * The list of stations is furniture and cached as such: this costs one
-   * request every few hours, not one per reader.
+   * run an update — the pairing below stands in, so that turning the feed on
+   * does something before somebody remembers to run the update. A road that
+   * does nothing is indistinguishable from a road that is down.
    */
   private async operatorIdFor(
     id: string,
     backup: BiziStation | null,
   ): Promise<string> {
     if (backup?.gbfsId) return backup.gbfsId;
-    // Nothing to pair on. Some systems number their stations the way the city
-    // does, so the caller's id is still worth trying.
-    if (!backup?.coordinates?.length) return id;
+    // Some systems number their stations the way the city does, so the
+    // caller's id is worth trying when nothing else answers.
+    return (await this.pairings())[id] ?? id;
+  }
 
+  /**
+   * Every station paired with the operator's, worked out at once.
+   *
+   * At once, rather than a station at a time as it is asked for, because
+   * pairing is a competition: `pairByPosition` spends each of the operator's
+   * stations on its nearest claimant, and a station asked about on its own has
+   * nobody to lose to. One whose real counterpart is missing from the feed
+   * would take the neighbour forty metres away and serve that rack's bikes as
+   * its own — a wrong answer, where the whole point of this road is that it is
+   * a right one. Pairing the whole set is what makes a station either matched
+   * or unmatched rather than matched to whatever was nearest.
+   *
+   * So this is the same call the update makes, over the same two sets, and the
+   * two agree by construction. Cached six hours because where a rack stands is
+   * furniture: it costs one read of each source, not one per reader.
+   */
+  private async pairings(): Promise<Record<string, string>> {
     try {
-      const information = await this.cacheManager.wrap(
-        'bizi/gbfs/information',
-        () => this.gbfs.stationInformation(),
+      return await this.cacheManager.wrap(
+        'bizi/gbfs/pairings',
+        async () => {
+          const [stations, operator] = await Promise.all([
+            this.getAllStations(),
+            this.gbfs.stationInformation(),
+          ]);
+          // A plain object rather than the Map it is built as: this goes
+          // through a cache that a deployment is free to move off the heap.
+          return Object.fromEntries(pairByPosition(stations, operator));
+        },
         OPERATOR_INFO_TTL,
       );
-      const paired = pairByPosition(
-        [{ id, coordinates: backup.coordinates }],
-        information,
-      );
-      return paired.get(id) ?? id;
     } catch (exception) {
       this.logger.warn(
-        `Could not pair the station ${id} with the operator's feed: ${exception.message}`,
+        `Could not pair the stations with the operator's feed: ${exception.message}`,
       );
-      return id;
+      return {};
     }
   }
 

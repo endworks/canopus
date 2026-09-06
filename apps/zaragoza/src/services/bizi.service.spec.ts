@@ -60,6 +60,8 @@ describe('BiziService', () => {
   let cache: { get: jest.Mock; set: jest.Mock; wrap: jest.Mock };
   let findOne: jest.Mock;
   let findOneAndUpdate: jest.Mock;
+  /** What the collection holds, for the pairing to be worked out over. */
+  let all: BiziStation[];
   let gbfs: {
     enabled: boolean;
     stationStatus: jest.Mock;
@@ -87,9 +89,10 @@ describe('BiziService', () => {
       vehicleTypes: jest.fn().mockResolvedValue([]),
     };
 
+    all = [];
     const model = {
       find: () => ({
-        sort: () => ({ lean: () => ({ exec: () => Promise.resolve([]) }) }),
+        sort: () => ({ lean: () => ({ exec: () => Promise.resolve(all) }) }),
       }),
       findOne,
       findOneAndUpdate,
@@ -455,6 +458,7 @@ describe('BiziService', () => {
     // Turning the feed on must not wait on somebody remembering to run the
     // update: a road that does nothing looks exactly like a road that is down.
     it('pairs a station it has never paired, from where it stands', async () => {
+      all = [stored];
       holds(stored);
       operatorHas({ station_id: 'zgz-42', num_bikes_available: 5 });
       gbfs.stationInformation.mockResolvedValue([
@@ -468,8 +472,33 @@ describe('BiziService', () => {
       expect(get).not.toHaveBeenCalled();
     });
 
+    // Pairing is a competition, and a station asked about on its own has
+    // nobody to lose to. The one whose counterpart is in the feed must win it,
+    // or the other serves a neighbour's bikes as its own.
+    it("does not let a station take a nearer station's pairing", async () => {
+      const neighbour = {
+        ...stored,
+        id: '176',
+        coordinates: ['-0.87732', '41.65612'],
+      } as BiziStation;
+      all = [stored, neighbour];
+      holds(stored);
+      operatorHas({ station_id: 'zgz-42', num_bikes_available: 5 });
+      // Stands on the neighbour, not on 175 — and is the only one published.
+      gbfs.stationInformation.mockResolvedValue([
+        { station_id: 'zgz-42', lon: -0.87732, lat: 41.65612 },
+      ]);
+      get.mockReturnValueOnce(of({ data: station() }));
+
+      const resp = (await service.getStation('175')) as BiziStationResponse;
+
+      // 176 is nearer, so it takes zgz-42 and 175 goes to the city.
+      expect(resp.source).toBe('api');
+    });
+
     // Furniture: one request every few hours, not one per reader.
     it('holds the operator station list far longer than its counts', async () => {
+      all = [stored];
       holds(stored);
       operatorHas({ station_id: 'zgz-42', num_bikes_available: 5 });
       gbfs.stationInformation.mockResolvedValue([
@@ -480,12 +509,13 @@ describe('BiziService', () => {
 
       const ttl = (key: string) =>
         cache.wrap.mock.calls.find((call) => call[0] === key)?.[2];
-      expect(ttl('bizi/gbfs/information')).toBeGreaterThan(
+      expect(ttl('bizi/gbfs/pairings')).toBeGreaterThan(
         ttl('bizi/gbfs/status'),
       );
     });
 
     it('falls through to the city when nothing stands near enough', async () => {
+      all = [stored];
       holds(stored);
       operatorHas({ station_id: 'zgz-42', num_bikes_available: 5 });
       gbfs.stationInformation.mockResolvedValue([

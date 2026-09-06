@@ -77,6 +77,14 @@ export class ServiceAlert {
   stations: string[];
 
   /**
+   * Provisional stops the alteration puts on, named as the notice writes them
+   * rather than by id: they are on no route, so there is nothing to look them
+   * up in. Empty for most.
+   * @example ['Plaza del Pilar provisional']
+   */
+  addedStations: string[];
+
+  /**
    * `'stations'` when only those stops are affected and the rest of each
    * route runs as usual — the alert is then shown at those stops alone.
    * `'line'` when every stop of every line named is affected, which is also

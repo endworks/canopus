@@ -53,10 +53,11 @@ const STALE_STATION_TTL = 60000;
 /**
  * The street a rack stands on, however the set writes it.
  *
- * The `equipamiento` sets carry it in a field of its own. The set this service
- * read before wrote it into the title behind the name of the service — "Bizi -
- * PASEO ECHEGARAY Y CABALLERO" — so that is still read, and a title with no
- * dash in it is the street entire.
+ * The bike parking names the place in its title and shouts it — "UNO DE MAYO".
+ * Its siblings in the family carry a field of its own, and the set this read
+ * before wrote the street into the title behind the name of the service —
+ * "Bizi - PASEO ECHEGARAY Y CABALLERO" — so both are still read, and a title
+ * with no dash in it is the street entire.
  */
 const cityStreet = (row: BiziStationApiResponse): string => {
   const named = row.calle?.trim();
@@ -256,12 +257,16 @@ export class BiziService {
         id: id,
         street: backup?.street || cityStreet(row),
         state: cityState(row.estado),
-        // Null rather than absent, and null rather than nought: this set is a
-        // record of where the racks are, and where it does not count the bikes
-        // on one, saying nothing is the only honest answer. The operator's feed
-        // is what fills these in.
+        // Null rather than nought. This set is a record of street furniture and
+        // counts nothing that stands on it, so saying nothing is the only
+        // honest answer — nought is a rack somebody walks to and finds empty.
+        // The operator's feed is what fills these in.
+        //
+        // Not `row.anclajes`, which is how many stands the rack has and is a
+        // fact about the ironwork: `openDocks` is how many of them are free.
         bikes: row.bicisDisponibles ?? null,
         openDocks: row.anclajesDisponibles ?? null,
+        capacity: row.plazas ?? backup?.capacity ?? null,
         coordinates: backup?.coordinates || cityPoint(row),
         source: 'api',
         sourceUrl: row.about || url,
@@ -324,6 +329,7 @@ export class BiziService {
             state: cityState(row.estado),
             bikes: row.bicisDisponibles ?? null,
             openDocks: row.anclajesDisponibles ?? null,
+            capacity: row.plazas ?? null,
             coordinates: cityPoint(row),
             source: 'api',
             sourceUrl:
@@ -348,6 +354,7 @@ export class BiziService {
             id: station.id,
             street: station.street,
             coordinates: station.coordinates,
+            capacity: station.capacity ?? undefined,
             gbfsId: paired.get(station.id),
             source: station.source,
             sourceUrl: station.sourceUrl,

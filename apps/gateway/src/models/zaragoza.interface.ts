@@ -259,6 +259,14 @@ export class BiziStation {
   openDocks?: number | null;
 
   /**
+   * How many bikes the rack holds when it is full. A count of the furniture,
+   * not of what is standing on it — the city publishes this for its bike
+   * parking, which is why it is here and `openDocks` may not be.
+   * @example 16
+   */
+  capacity?: number | null;
+
+  /**
    * `[longitude, latitude]` as strings.
    * @example ['-0.8773', '41.6561']
    */

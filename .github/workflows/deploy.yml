@@ -33,6 +33,12 @@ env:
   # private key rather than stored — bump this, redeploy, ship the clients.
   # `pnpm --filter @canopus/weather client-key` prints the current one.
   WEATHER_CLIENT_KEY_VERSION: "1"
+  # The Bizi operator's GBFS discovery document. A repository variable rather
+  # than a 1Password reference because a published feed URL is not a secret,
+  # and empty rather than absent because that is the default: with no feed to
+  # ask, the Bizi endpoints read the city's dataset exactly as they always
+  # have. Set it in the repository's variables to turn the operator road on.
+  BIZI_GBFS_URL: ${{ vars.BIZI_GBFS_URL }}
 
 jobs:
   # Work out which deployable services this change affects. A service is
@@ -298,7 +304,7 @@ jobs:
           port: ${{ env.PORT }}
           username: ${{ env.USERNAME }}
           key: ${{ env.KEY }}
-          envs: IMAGE,CONTAINER,MONGODB_URI,TWITTER_CLIENT_TOKEN,THE_MOVIE_DB_API_KEY,GOOGLE_MAPS_API_KEY,ANTHROPIC_API_KEY,WEATHERKIT_TEAM_ID,WEATHERKIT_SERVICE_ID,WEATHERKIT_KEY_ID,WEATHERKIT_PRIVATE_KEY,WEATHER_CLIENT_KEY_VERSION
+          envs: IMAGE,CONTAINER,MONGODB_URI,TWITTER_CLIENT_TOKEN,THE_MOVIE_DB_API_KEY,GOOGLE_MAPS_API_KEY,ANTHROPIC_API_KEY,BIZI_GBFS_URL,WEATHERKIT_TEAM_ID,WEATHERKIT_SERVICE_ID,WEATHERKIT_KEY_ID,WEATHERKIT_PRIVATE_KEY,WEATHER_CLIENT_KEY_VERSION
           script: |
             docker pull "$IMAGE"
             # -t 1, because nothing here installs a SIGTERM handler: no app
@@ -310,7 +316,7 @@ jobs:
             if [ "$CONTAINER" = "canopus-zine" ]; then
               docker run --network canopus -p ${{ matrix.port }}/tcp -e MONGODB_URI="$MONGODB_URI" -e THE_MOVIE_DB_API_KEY="$THE_MOVIE_DB_API_KEY" -e GOOGLE_MAPS_API_KEY="$GOOGLE_MAPS_API_KEY" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
             elif [ "$CONTAINER" = "canopus-zaragoza" ]; then
-              docker run --network canopus -p ${{ matrix.port }}/tcp -e MONGODB_URI="$MONGODB_URI" -e ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
+              docker run --network canopus -p ${{ matrix.port }}/tcp -e MONGODB_URI="$MONGODB_URI" -e ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" -e BIZI_GBFS_URL="$BIZI_GBFS_URL" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
             elif [ "$CONTAINER" = "canopus-weather" ]; then
               docker run --network canopus -p ${{ matrix.port }}/tcp -e WEATHERKIT_TEAM_ID="$WEATHERKIT_TEAM_ID" -e WEATHERKIT_SERVICE_ID="$WEATHERKIT_SERVICE_ID" -e WEATHERKIT_KEY_ID="$WEATHERKIT_KEY_ID" -e WEATHERKIT_PRIVATE_KEY="$WEATHERKIT_PRIVATE_KEY" -e WEATHER_CLIENT_KEY_VERSION="$WEATHER_CLIENT_KEY_VERSION" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
             elif [ "$CONTAINER" = "canopus-twitter-downloader" ]; then

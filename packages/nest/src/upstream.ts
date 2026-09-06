@@ -19,7 +19,9 @@ import {
  * twice, and the last time this rule moved, only one of its copies moved.
  *
  * `notFound` is for the endpoints that can say something better than "the
- * source has nothing" — the id the caller asked for, most of the time.
+ * source has nothing" — the id the caller asked for, most of the time. It is
+ * also what marks a request whose only variable came from the caller, which is
+ * what lets a refused request be told apart from a broken source below.
  */
 export const upstreamFailure = (
   exception: any,
@@ -31,7 +33,18 @@ export const upstreamFailure = (
   if (exception instanceof HttpException) return exception;
 
   const status = exception?.response?.status;
-  if (status === HttpStatus.NOT_FOUND) {
+  // A source that refuses the request itself gets the same answer as one that
+  // says it has no such thing, but only where the caller wrote the request: on
+  // these lookups the id is the whole of what varies, so "that is not a valid
+  // request" and "that is not one of mine" are the source saying the same
+  // thing about the same id. 502 would blame the city for it and wake somebody
+  // up over a typo. Where no `notFound` was given the request was ours to
+  // build, and a source refusing one of those is a fault worth reporting as
+  // one.
+  if (
+    status === HttpStatus.NOT_FOUND ||
+    (status === HttpStatus.BAD_REQUEST && notFound)
+  ) {
     return notFound ?? new NotFoundException(`${source} has no such resource`);
   }
 

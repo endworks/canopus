@@ -1,5 +1,3 @@
-import { createHash } from 'node:crypto';
-
 import { HttpService } from '@nestjs/axios';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import {
@@ -24,6 +22,15 @@ import {
   BusStationResponse,
   BusStationsResponse,
 } from '../models/bus.interface';
+import {
+  activeAlerts,
+  AlertSource,
+  alertsForStation,
+  AlertStore,
+  toAlertResponse,
+} from '../alert-store';
+import { toLineResponse, toLinesResponse } from '../lines';
+import { parseKmlPath } from '../geo';
 import { ErrorResponse, mapWithLimit } from '@canopus/shared';
 import {
   fetchWithTimeout,
@@ -85,13 +92,6 @@ const busAlertsURL = 'https://zaragoza.avanzagrupo.com/wp-admin/admin-ajax.php';
 // paginator that never empties from walking the site until the run dies.
 const maxAlertPages = 20;
 
-// Articles come from the same WordPress site as everything else, so they are
-// read a few at a time. A run that suddenly has dozens of new alerts is a
-// listing that broke, not a city that stopped running: the cap keeps that from
-// becoming a bill.
-const maxConcurrentArticles = 3;
-const maxAnalyzedAlerts = 10;
-
 // avanzagrupo.com is a WordPress site: asking it for ~90 route files at once is
 // how a working update starts looking like an outage.
 const maxConcurrentLines = 6;
@@ -137,39 +137,6 @@ interface PublishedLines {
   routeFiles: Map<string, string[]>;
 }
 
-/**
- * The line drawn on the ground, as the route file already carries it.
- *
- * Every one of these files holds a single `LineString` beside its stop
- * placemarks — the shape the bus actually traces, kerb by kerb, which is not
- * the run of its stops joined up: a line that goes round a block between two
- * stops looks, drawn straight, like it goes through the buildings.
- *
- * Five decimal places, about a metre. The files carry seven, which is
- * centimetres — a precision nobody looking at a bus route can see and which
- * costs a third of the payload to send.
- */
-const parseKmlPath = (xml: string): number[][] => {
-  const $ = cheerio.load(xml, { xmlMode: true });
-  return $('LineString > coordinates')
-    .toArray()
-    .flatMap((el) =>
-      $(el)
-        .text()
-        .trim()
-        .split(/\s+/)
-        .flatMap((point) => {
-          // Longitude, latitude, and an altitude every one of these files
-          // writes as nought.
-          const [lon, lat] = point.split(',').map(Number);
-          if (!Number.isFinite(lon) || !Number.isFinite(lat)) return [];
-          return [[round5(lon), round5(lat)]];
-        }),
-    );
-};
-
-const round5 = (value: number): number => Math.round(value * 1e5) / 1e5;
-
 const parseKmlStations = (xml: string): StationBase[] => {
   const $ = cheerio.load(xml, { xmlMode: true });
   return $('Placemark')
@@ -188,75 +155,6 @@ const parseKmlStations = (xml: string): StationBase[] => {
         { id: match[1], street: match[2].trim(), coordinates: [lon, lat] },
       ];
     });
-};
-
-// `withdrawn` is how the two halves of `hidden` recover on their own terms; it
-// is bookkeeping, so it stays out of the response.
-//
-// The drawn shape is asked for rather than assumed. It is by far the largest
-// thing a line carries — a couple of hundred coordinate pairs per leg against
-// a couple of dozen stop ids — and the listing of every line is fetched by
-// every reader at startup, where fifty of those shapes would be several
-// hundred kilobytes nobody has asked to see. One line at a time, it is a few.
-const toLineResponse = (
-  { _id, withdrawn, path, pathReturn, ...line }: BusLine & { _id?: unknown },
-  { withPath = false }: { withPath?: boolean } = {},
-): BusLineResponse => ({
-  ...line,
-  ...(withPath ? { path: path ?? [], pathReturn: pathReturn ?? [] } : {}),
-  // Out of listings either because the source withdrew the line or because
-  // there is no route to draw for it.
-  hidden: !!withdrawn || !line.stations?.length,
-});
-
-// Everything else an alert carries — when it was first seen, what its article
-// hashed to, which lines came from that article — is how the record is kept up
-// to date, and stays out of the response.
-const toAlertResponse = (alert: BusAlert): BusAlertResponse => ({
-  id: alert.id,
-  title: alert.title,
-  url: alert.url,
-  date: alert.date ?? undefined,
-  startDate: alert.startDate ?? undefined,
-  endDate: alert.endDate ?? undefined,
-  lines: alert.lines ?? [],
-  stations: alert.stations ?? [],
-  addedStations: alert.addedStations ?? [],
-  scope: alert.scope ?? 'line',
-});
-
-/** A day, `YYYY-MM-DD`, so many days from today. */
-const dayFrom = (days: number) =>
-  new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-
-/**
- * An alert with nothing left for its article to tell us.
- *
- * It was read, and what it was read to say includes the day it ends: it will
- * take itself out of the listings when that day passes, so re-reading it every
- * morning buys nothing. Until the eve of that day, when the one edit that
- * would matter — an alteration extended — is worth a look.
- */
-const settled = (alert?: BusAlert): boolean =>
-  !!alert?.articleHash && !!alert.endDate && alert.endDate > dayFrom(1);
-
-/**
- * The alterations still in force, newest first.
- *
- * Being stored is most of the answer: a run only keeps what the site was still
- * showing, and drops the rest. So there is no age to judge here — an
- * alteration announced in January and still under way is still under way, and
- * guessing otherwise from its date is what used to hide it. An end date, where
- * an article gave one, retires it a day early rather than waiting for the
- * operator to take the notice down.
- */
-const activeAlerts = (alerts: BusAlert[]): BusAlert[] => {
-  const today = dayFrom(0);
-  const announced = (alert: BusAlert) =>
-    (alert.date ?? alert.firstSeen ?? '').slice(0, 10);
-  return alerts
-    .filter((alert) => !alert.endDate || alert.endDate >= today)
-    .sort((a, b) => announced(b).localeCompare(announced(a)));
 };
 
 /**
@@ -281,44 +179,6 @@ const routesOf = (
       .map(({ id, street }) => ({ id, street: normalizeStreet(street) }));
     return stops.length ? [{ line, stations: stops }] : [];
   });
-
-const articleHash = (article: string) =>
-  createHash('sha256').update(article).digest('hex');
-
-/**
- * The reading an alert carries, or the one an unread alert carries: no dates,
- * no stops, the whole line, and no text on record as having been read.
- */
-const readingOf = (alert?: BusAlert): ArticleReading => ({
-  startDate: alert?.startDate ?? null,
-  endDate: alert?.endDate ?? null,
-  stations: alert?.stations ?? [],
-  addedStations: alert?.addedStations ?? [],
-  scope: alert?.scope ?? 'line',
-  articleHash: alert?.articleHash,
-});
-
-/**
- * What an alert's article was read to say, and the text that was read. Every
- * field of it comes from one reading, so they cannot disagree about which
- * version of the notice they describe.
- */
-type ArticleReading = Pick<
-  BusAlert,
-  | 'startDate'
-  | 'endDate'
-  | 'stations'
-  | 'addedStations'
-  | 'scope'
-  | 'articleHash'
->;
-
-/**
- * What a run learned. An alert with no entry is one this run learned nothing
- * about — its text had not changed, or nobody could read it — and whatever is
- * stored for it stands.
- */
-type ArticleReadings = Map<string, ArticleReading>;
 
 const sameList = (a: string[], b: string[]) =>
   a.length === b.length && a.every((item, index) => item === b[index]);
@@ -432,6 +292,9 @@ const parseStation = (
 export class BusService {
   private readonly logger = new Logger(BusService.name);
 
+  /** The operator's alterations, kept the way both networks keep them. */
+  private readonly alerts: AlertStore;
+
   constructor(
     @Inject(CACHE_MANAGER)
     private cacheManager: Cache,
@@ -443,7 +306,13 @@ export class BusService {
     private busAlertModel: Model<BusAlertDocument>,
     private httpService: HttpService,
     private alertReader: AlertReader,
-  ) {}
+  ) {
+    this.alerts = new AlertStore(
+      this.busAlertModel,
+      this.alertReader,
+      this.logger,
+    );
+  }
 
   // Stations
   public async getStations(): Promise<BusStationsResponse | ErrorResponse> {
@@ -559,7 +428,7 @@ export class BusService {
       ...station,
       times: [],
       source: 'backup',
-      alerts: await this.alertsForStation(id, backup.lines),
+      alerts: alertsForStation(await this.getAlerts(), id, backup.lines),
     };
   }
 
@@ -606,14 +475,17 @@ export class BusService {
       );
     }
 
-    resp.alerts = await this.alertsForStation(id, resp.lines);
+    resp.alerts = alertsForStation(await this.getAlerts(), id, resp.lines);
     return resp;
   }
 
   // Lines
   public async getLines(): Promise<BusLinesResponse> {
     return this.cacheManager.wrap('bus/lines', async () =>
-      this.toLinesResponse(await this.getAllLines()),
+      // Numbered lines first, then the lettered ones, then the night lines —
+      // the order `compareLineIds` asks for, which survives the JSON round
+      // trip because keys that look like integers are enumerated first.
+      toLinesResponse(await this.getAllLines(), compareLineIds),
     );
   }
 
@@ -637,36 +509,9 @@ export class BusService {
    */
   public async getAlerts(): Promise<BusAlertResponse[]> {
     const stored = await this.cacheManager.wrap('bus/alerts', () =>
-      this.getAllAlerts(),
+      this.alerts.all(),
     );
     return activeAlerts(stored).map(toAlertResponse);
-  }
-
-  /**
-   * The alerts a stop should show.
-   *
-   * A notice is narrowed to particular stops only where reading its article
-   * established that the alteration stops there — some stops suppressed or
-   * moved, the rest of the route running as usual. Everything else stays a
-   * line-wide notice on every stop of every line it names, which is where an
-   * unread article, a diversion and a doubt all land: over-showing beats
-   * leaving somebody at a cut stop with nothing on screen.
-   *
-   * `direct` marks the stops the notice itself names, so a client can lead
-   * with those and fold the rest away.
-   */
-  private async alertsForStation(
-    id: string,
-    lines: string[] = [],
-  ): Promise<BusAlertResponse[]> {
-    const alerts = await this.getAlerts();
-    return alerts.flatMap((alert) => {
-      const direct = alert.stations.includes(id);
-      const onTheLine =
-        alert.scope !== 'stations' &&
-        alert.lines.some((line) => lines.includes(line));
-      return direct || onTheLine ? [{ ...alert, direct }] : [];
-    });
   }
 
   /**
@@ -713,7 +558,9 @@ export class BusService {
       `Updated ${lineOps.length} lines and ${stationOps.length} stops`,
     );
 
-    await this.syncAlerts(routes);
+    await this.alerts.sync(this.alertSource(), (lineIds) =>
+      routesOf(lineIds, routes),
+    );
 
     await this.cacheManager.clear();
     return this.getLines();
@@ -969,137 +816,17 @@ export class BusService {
   }
 
   /**
-   * Stores the alterations the site is publishing.
+   * Where the bus operator publishes its alterations, and how a notice reads.
    *
-   * An alert is an extra on top of the lines, so nothing it does can fail the
-   * run: a listing that cannot be read or parsed leaves the stored alerts
-   * alone, and they age out on their own from the day they were announced.
-   * Alerts are never deleted — one whose lines came back empty still has a
-   * headline and a link for the list.
+   * The storing, the reading and the ageing out are the store's, and the same
+   * for both networks; this is the half that is the bus's own.
    */
-  private async syncAlerts(routes: Map<string, FetchedRoute>): Promise<void> {
-    try {
-      const scraped = await this.fetchAlerts();
-      if (!scraped.length) {
-        this.logger.warn('Zaragoza published no service alerts to read');
-        return;
-      }
-
-      const stored = new Map(
-        (await this.getAllAlerts()).map((alert) => [alert.id, alert]),
-      );
-      const readings = await this.readArticles(scraped, stored, routes);
-      const now = new Date().toISOString();
-
-      await this.busAlertModel.bulkWrite(
-        scraped.map((alert) => {
-          const previous = stored.get(alert.id);
-          return upsertById<BusAlert>(alert.id, {
-            ...alert,
-            // This run's reading where it made one, and otherwise the one the
-            // alert already carried.
-            ...(readings.get(alert.id) ?? readingOf(previous)),
-            firstSeen: previous?.firstSeen ?? now,
-          });
-        }),
-        { ordered: false },
-      );
-
-      // What the site has stopped showing is over, and nothing else says so:
-      // these notices carry no end date and the ones that do are the minority.
-      // Dropping them here is what lets the responses stop guessing from a
-      // date. Only ever reached with a listing that answered — an endpoint
-      // that failed returns nothing at all and leaves the run before this.
-      const listed = new Set(scraped.map((alert) => alert.id));
-      const gone = [...stored.keys()].filter((id) => !listed.has(id));
-      if (gone.length) {
-        await this.busAlertModel.deleteMany({ id: { $in: gone } });
-      }
-
-      this.logger.log(
-        `Read ${scraped.length} service alerts, dropped ${gone.length}`,
-      );
-    } catch (exception) {
-      this.logger.warn(
-        `Could not update the service alerts: ${exception.message}`,
-      );
-    }
-  }
-
-  /**
-   * Reads the article behind each alert whose text has changed.
-   *
-   * The listing gives a headline and a line list; when an alteration ends and
-   * which stops it names are written in the prose of the article, differently
-   * by every author. A model reads that, and only for an article whose text is
-   * not the one already read — the same words cannot yield different dates.
-   *
-   * Nothing here can fail the run: with no model configured, or an article
-   * that will not load, or a reading that fails its checks, the alert keeps
-   * exactly what its listing said.
-   */
-  private async readArticles(
-    scraped: ScrapedAlert[],
-    stored: Map<string, BusAlert>,
-    routes: Map<string, FetchedRoute>,
-  ): Promise<ArticleReadings> {
-    const readings: ArticleReadings = new Map();
-    if (!this.alertReader.enabled) return readings;
-
-    // Most mornings this is empty: the alerts on the listing are the ones read
-    // yesterday, and an alert whose end date is known is not fetched at all.
-    const unsettled = scraped.filter((alert) => !settled(stored.get(alert.id)));
-    if (!unsettled.length) return readings;
-
-    const articles = await mapWithLimit(
-      unsettled,
-      maxConcurrentArticles,
-      async (alert) => ({
-        alert,
-        article: await this.fetchArticle(alert.url),
-      }),
-    );
-    // An article whose text is the one already read says nothing new; one that
-    // could not be fetched says nothing at all. Both leave the stored reading
-    // exactly where it is.
-    const pending = articles
-      .filter(
-        ({ alert, article }) =>
-          article && articleHash(article) !== stored.get(alert.id)?.articleHash,
-      )
-      .slice(0, maxAnalyzedAlerts);
-    if (!pending.length) return readings;
-
-    // The readings are independent of each other, and the model is not the
-    // WordPress site: they go out together.
-    await mapWithLimit(
-      pending,
-      maxConcurrentArticles,
-      async ({ alert, article }) => {
-        // What the article's words are resolved against: the stops of each line
-        // it affects, in the order the route runs them, so that "entre Gran Vía
-        // y Plaza España" can become the stops it actually means.
-        const details = await this.alertReader.read(
-          alert,
-          article,
-          routesOf(alert.lines, routes),
-        );
-        // Words nobody has read cannot hold a notice to a few stops, so an
-        // article that changed and could not be read clears what the last one
-        // said — its hash included, so the next run tries again.
-        readings.set(
-          alert.id,
-          details
-            ? { ...details, articleHash: articleHash(article) }
-            : readingOf(),
-        );
-      },
-    );
-    const read = [...readings.values()].filter(
-      (reading) => reading.articleHash,
-    ).length;
-    this.logger.log(`Read the article of ${read} service alerts`);
-    return readings;
+  private alertSource(): AlertSource {
+    return {
+      mode: 'bus',
+      list: () => this.fetchAlerts(),
+      article: (alert) => this.fetchArticle(alert.url),
+    };
   }
 
   private async fetchArticle(url: string): Promise<string> {
@@ -1200,20 +927,6 @@ export class BusService {
   private lineList = (ids: string[]) =>
     [...ids].sort(compareLineIds).join(', ');
 
-  /**
-   * Numbered lines first, then the lettered ones, then the night lines. Keys
-   * that look like integers are enumerated first and in ascending order
-   * whatever the insertion order — the same thing compareLineIds asks for, so
-   * the two agree and the order survives a JSON round trip.
-   */
-  private toLinesResponse(lines: BusLine[]): BusLinesResponse {
-    return Object.fromEntries(
-      [...lines]
-        .sort((a, b) => compareLineIds(a.id, b.id))
-        .map((line) => [line.id, toLineResponse(line)]),
-    );
-  }
-
   async getAllStations() {
     return this.busStationModel.find().sort({ id: 1 }).lean().exec();
   }
@@ -1223,7 +936,7 @@ export class BusService {
   }
 
   async getAllAlerts() {
-    return this.busAlertModel.find().sort({ id: 1 }).lean().exec();
+    return this.alerts.all();
   }
 
   async getStationById(id: string) {

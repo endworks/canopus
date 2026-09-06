@@ -1095,6 +1095,8 @@ describe('alert articles', () => {
           ],
         },
       ],
+      // Which network's notice it is, which is what the prompt is written for.
+      'bus',
     );
   });
 

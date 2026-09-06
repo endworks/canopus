@@ -10,7 +10,7 @@ import {
 import { ApiMapResponse } from '../swagger';
 import {
   BiziStation,
-  BusLine,
+  Line,
   Place,
   ServiceAlert,
   Station,
@@ -62,14 +62,14 @@ export class ZaragozaController {
 
   @Get('bus/lines')
   @ApiOperation({ summary: 'Get bus lines' })
-  @ApiMapResponse(BusLine, 'Bus lines keyed by id')
+  @ApiMapResponse(Line, 'Bus lines keyed by id')
   async zaragozaBusLines() {
     return this.zaragozaService.getBusLines();
   }
 
   @Get('bus/lines/update')
   @ApiOperation({ summary: 'Update bus line data' })
-  @ApiMapResponse(BusLine, 'Updated bus lines keyed by id')
+  @ApiMapResponse(Line, 'Updated bus lines keyed by id')
   async zaragozaBusLinesUpdate() {
     return this.zaragozaService.getBusLinesUpdate();
   }
@@ -77,9 +77,45 @@ export class ZaragozaController {
   @Get('bus/lines/:id')
   @ApiOperation({ summary: 'Get bus line by ID' })
   @ApiParam({ name: 'id', type: String })
-  @ApiResponse({ status: 200, description: 'Return bus line', type: BusLine })
+  @ApiResponse({ status: 200, description: 'Return bus line', type: Line })
   async zaragozaBusLine(@Param('id') id: string) {
     return this.zaragozaService.getBusLine(id);
+  }
+
+  @Get('tram/alerts')
+  @ApiOperation({ summary: 'Get tram service alerts' })
+  @ApiResponse({
+    status: 200,
+    description: 'Alterations in force, newest first',
+    type: ServiceAlert,
+    isArray: true,
+  })
+  async zaragozaTramAlerts() {
+    return this.zaragozaService.getTramAlerts();
+  }
+
+  @Get('tram/lines')
+  @ApiOperation({ summary: 'Get tram lines' })
+  @ApiMapResponse(Line, 'Tram lines keyed by id')
+  async zaragozaTramLines() {
+    return this.zaragozaService.getTramLines();
+  }
+
+  @Get('tram/lines/update')
+  @ApiOperation({ summary: 'Update tram line data' })
+  @ApiMapResponse(Line, 'Updated tram lines keyed by id')
+  async zaragozaTramLinesUpdate() {
+    return this.zaragozaService.getTramLinesUpdate();
+  }
+
+  // After `tram/lines/update`, or the update would be read as a line called
+  // "update" and answered with a 404.
+  @Get('tram/lines/:id')
+  @ApiOperation({ summary: 'Get tram line by ID' })
+  @ApiParam({ name: 'id', type: String })
+  @ApiResponse({ status: 200, description: 'Return tram line', type: Line })
+  async zaragozaTramLine(@Param('id') id: string) {
+    return this.zaragozaService.getTramLine(id);
   }
 
   @Get('tram/stations')

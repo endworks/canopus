@@ -39,6 +39,24 @@ export class ZaragozaService {
     );
   }
 
+  getTramLines() {
+    return lastValueFrom(this.client.send(ZARAGOZA_PATTERNS.tramLines, {}));
+  }
+
+  getTramLine(id: string) {
+    return lastValueFrom(this.client.send(ZARAGOZA_PATTERNS.tramLine, { id }));
+  }
+
+  getTramAlerts() {
+    return lastValueFrom(this.client.send(ZARAGOZA_PATTERNS.tramAlerts, {}));
+  }
+
+  getTramLinesUpdate() {
+    return lastValueFrom(
+      this.client.send(ZARAGOZA_PATTERNS.tramLinesUpdate, {}),
+    );
+  }
+
   getTramStations() {
     return lastValueFrom(this.client.send(ZARAGOZA_PATTERNS.tramStations, {}));
   }

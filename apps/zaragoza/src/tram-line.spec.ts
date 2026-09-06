@@ -2,10 +2,27 @@ import { StationBase } from './models/common.interface';
 import {
   buildTramLine,
   orderAlongLine,
+  orderAlongPath,
   stopKey,
   stopsOf,
   TRAM_LINE_ID,
 } from './tram-line';
+
+/**
+ * The route as the operator's map draws it: the corridor, north to south, with
+ * points between the stops the way a real one has them.
+ */
+const drawnRoute = (rows = corridor): number[][] =>
+  rows.flatMap(([, , lon, lat], index) => {
+    const next = rows[index + 1];
+    if (!next) return [[lon, lat]];
+    // A point at the stop and one halfway to the next, so the shape is not
+    // simply the stops over again.
+    return [
+      [lon, lat],
+      [(lon + next[2]) / 2, (lat + next[3]) / 2],
+    ];
+  });
 
 /**
  * A stretch of the real thing: five stops of the corridor the line runs, north
@@ -159,5 +176,82 @@ describe('buildTramLine', () => {
   it('builds nothing from stops that are not a line', () => {
     expect(buildTramLine([])).toBeNull();
     expect(buildTramLine(platforms(corridor[0]))).toBeNull();
+  });
+});
+
+describe('orderAlongPath', () => {
+  it('puts the stops in the order the drawn route reaches them', () => {
+    const shuffled = [corridor[3], corridor[0], corridor[4], corridor[2]];
+
+    const ordered = orderAlongPath(stopsOf(stations(shuffled)), drawnRoute());
+
+    expect(ordered.map((stop) => stop.street)).toEqual([
+      'Parque Goya',
+      'Margarita Xirgu',
+      'Legaz Lacambra',
+      'Clara Campoamor',
+    ]);
+  });
+
+  it('leaves out a stop the route does not pass', () => {
+    const ordered = orderAlongPath(
+      stopsOf([
+        ...stations(),
+        { id: '9991', street: 'Cocheras', coordinates: ['-0.95', '41.62'] },
+      ]),
+      drawnRoute(),
+    );
+
+    expect(ordered.map((stop) => stop.street)).not.toContain('Cocheras');
+  });
+
+  it('orders nothing against a route that is not one', () => {
+    expect(orderAlongPath(stopsOf(stations()), [[-0.9, 41.68]])).toEqual([]);
+  });
+});
+
+describe('buildTramLine with the route the operator draws', () => {
+  it('draws the line with the route rather than through its stops', () => {
+    const path = drawnRoute();
+
+    const line = buildTramLine(stations(), { path });
+
+    expect(line.path).toEqual(path);
+    // A tram runs the same track both ways, so the return leg is the way out
+    // reversed — which the stops joined up could only approximate.
+    expect(line.pathReturn).toEqual([...path].reverse());
+    expect(line.stations).toEqual(['1121', '1131', '1141', '1151', '1161']);
+  });
+
+  it('turns a route drawn south to north the right way round', () => {
+    const path = [...drawnRoute()].reverse();
+
+    const line = buildTramLine(stations(), { path });
+
+    // The stops and the shape are turned together, or the line lists its stops
+    // one way round and draws itself the other.
+    expect(line.stations[0]).toBe('1121');
+    expect(line.path[0]).toEqual(drawnRoute()[0]);
+  });
+
+  it("falls back to the stops when the route is somebody else's shape", () => {
+    // A shape a mile east: none of these stops is on it.
+    const elsewhere = drawnRoute().map(([lon, lat]) => [lon + 0.02, lat]);
+
+    const line = buildTramLine(stations(), { path: elsewhere });
+
+    expect(line.stations).toEqual(['1121', '1131', '1141', '1151', '1161']);
+    expect(line.path).toHaveLength(5);
+  });
+
+  it('falls back to the stops when the route reaches only some of them', () => {
+    // Drawn along the top two stops only: the rest of the line is not on it,
+    // and half a route in order is worse than the whole of it walked.
+    const partial = drawnRoute(corridor.slice(0, 2));
+
+    const line = buildTramLine(stations(), { path: partial });
+
+    expect(line.stations).toHaveLength(5);
+    expect(line.path).toHaveLength(5);
   });
 });

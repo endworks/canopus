@@ -30,6 +30,7 @@ import {
   toAlertResponse,
 } from '../alert-store';
 import { toLineResponse, toLinesResponse } from '../lines';
+import { parseKmlPath } from '../geo';
 import { ErrorResponse, mapWithLimit } from '@canopus/shared';
 import {
   fetchWithTimeout,
@@ -135,39 +136,6 @@ interface PublishedLines {
   lines: ValueLabel[];
   routeFiles: Map<string, string[]>;
 }
-
-/**
- * The line drawn on the ground, as the route file already carries it.
- *
- * Every one of these files holds a single `LineString` beside its stop
- * placemarks — the shape the bus actually traces, kerb by kerb, which is not
- * the run of its stops joined up: a line that goes round a block between two
- * stops looks, drawn straight, like it goes through the buildings.
- *
- * Five decimal places, about a metre. The files carry seven, which is
- * centimetres — a precision nobody looking at a bus route can see and which
- * costs a third of the payload to send.
- */
-const parseKmlPath = (xml: string): number[][] => {
-  const $ = cheerio.load(xml, { xmlMode: true });
-  return $('LineString > coordinates')
-    .toArray()
-    .flatMap((el) =>
-      $(el)
-        .text()
-        .trim()
-        .split(/\s+/)
-        .flatMap((point) => {
-          // Longitude, latitude, and an altitude every one of these files
-          // writes as nought.
-          const [lon, lat] = point.split(',').map(Number);
-          if (!Number.isFinite(lon) || !Number.isFinite(lat)) return [];
-          return [[round5(lon), round5(lat)]];
-        }),
-    );
-};
-
-const round5 = (value: number): number => Math.round(value * 1e5) / 1e5;
 
 const parseKmlStations = (xml: string): StationBase[] => {
   const $ = cheerio.load(xml, { xmlMode: true });

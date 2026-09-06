@@ -50,6 +50,33 @@ const storedStations = (rows = corridor): Partial<TramStation>[] =>
     },
   ]);
 
+/** The line page, with the route drawn into its map widget's script. */
+const mapPage = (rows = corridor) => {
+  const points = rows.flatMap(([, , lon, lat], index) => {
+    const next = rows[index + 1];
+    return next
+      ? [
+          [lon, lat],
+          [(lon + next[2]) / 2, (lat + next[3]) / 2],
+        ]
+      : [[lon, lat]];
+  });
+  // Padded out to the length a real drawn route has, by walking the last leg
+  // in smaller steps: a run too short to be a route is not read as one.
+  const [lastLon, lastLat] = points[points.length - 1];
+  const tail = Array.from({ length: 12 }, (_, i) => [
+    lastLon + (i + 1) * 0.0002,
+    lastLat - (i + 1) * 0.0002,
+  ]);
+  return `<html><body><div id="map"></div><script>
+      var route = new google.maps.Polyline({path: [${[...points, ...tail]
+        .map(([lon, lat]) => `{lat: ${lat}, lng: ${lon}}`)
+        .join(',')}]});
+    </script></body></html>`;
+};
+
+const linePageUrl = `${site}/nuestra-linea/`;
+
 const wpPost = (slug: string, title: string, date = '2026-09-04T10:12:31') => ({
   slug,
   link: `${site}/${slug}/`,
@@ -525,5 +552,66 @@ describe('getLine', () => {
     await expect(service.getLine('2')).rejects.toMatchObject({
       response: { statusCode: 404 },
     });
+  });
+});
+
+describe("the route the operator's map draws", () => {
+  it('draws the line with it, and orders the stops by it', async () => {
+    const { service } = build({
+      stations: storedStations(),
+      pages: { [linePageUrl]: mapPage() },
+    });
+
+    await service.getLinesUpdate();
+    const line = await service.getLine('1');
+
+    // Longer than the five stops: this is the track, not the stops joined up.
+    expect(line.path.length).toBeGreaterThan(5);
+    expect(line.pathReturn).toEqual([...line.path].reverse());
+    expect(line.stations).toEqual(['1121', '1131', '1141', '1151', '1161']);
+  });
+
+  it('draws the line through its stops when no page carries a route', async () => {
+    const { service } = build({ stations: storedStations() });
+
+    await service.getLinesUpdate();
+    const line = await service.getLine('1');
+
+    expect(line.path).toHaveLength(5);
+  });
+
+  it('reads a route from a map file the page points at', async () => {
+    const kml = `<?xml version="1.0"?><kml><Document><Placemark><LineString>
+        <coordinates>${corridor
+          .map(([, , lon, lat]) => `${lon},${lat},0.0`)
+          .join(' ')}</coordinates>
+      </LineString></Placemark></Document></kml>`;
+
+    const { service } = build({
+      stations: storedStations(),
+      pages: {
+        [linePageUrl]: `<html><body><script>
+            map.load("${site}/wp-content/uploads/linea1.kml");
+          </script></body></html>`,
+        [`${site}/wp-content/uploads/linea1.kml`]: kml,
+      },
+    });
+
+    await service.getLinesUpdate();
+    const line = await service.getLine('1');
+
+    expect(line.path).toEqual(corridor.map(([, , lon, lat]) => [lon, lat]));
+  });
+
+  it('costs the update nothing when the map cannot be read', async () => {
+    const { service } = build({
+      stations: storedStations(),
+      unreachable: [site],
+    });
+
+    const resp = await service.getLinesUpdate();
+
+    // The line is still built, from the stops, exactly as before.
+    expect(resp['1'].stations).toHaveLength(5);
   });
 });

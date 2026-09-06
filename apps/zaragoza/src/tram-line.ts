@@ -1,3 +1,4 @@
+import { distance, Point, projectOnPath, round5 } from './geo';
 import { StationBase } from './models/common.interface';
 
 /**
@@ -13,9 +14,6 @@ import { StationBase } from './models/common.interface';
  */
 export const TRAM_LINE_ID = '1';
 
-/** Five decimals, about a metre — the same precision the bus routes carry. */
-const round5 = (value: number): number => Math.round(value * 1e5) / 1e5;
-
 /**
  * A stop's point, or null when the record carries nothing that is one.
  *
@@ -23,7 +21,7 @@ const round5 = (value: number): number => Math.round(value * 1e5) / 1e5;
  * `Number('')` is nought and a stop stored with two empty strings for a point
  * would otherwise be put in the Gulf of Guinea and dragged the line with it.
  */
-const pointOf = (station: StationBase): [number, number] | null => {
+const pointOf = (station: StationBase): Point | null => {
   const [lon, lat] = (station.coordinates ?? []).map((part) =>
     `${part}`.trim() ? Number(part) : NaN,
   );
@@ -48,7 +46,7 @@ export interface TramStop {
   platforms: string[];
   street: string;
   /** Where the stop is: the platforms averaged, which are metres apart. */
-  point: [number, number];
+  point: Point;
 }
 
 /** The id without its platform digit, which is what a stop is known by. */
@@ -64,7 +62,7 @@ export const stopKey = (id: string): string => id.slice(0, -1);
 export const stopsOf = (stations: StationBase[]): TramStop[] => {
   const stops = new Map<
     string,
-    { platforms: string[]; streets: string[]; points: [number, number][] }
+    { platforms: string[]; streets: string[]; points: Point[] }
   >();
 
   [...stations]
@@ -95,17 +93,6 @@ export const stopsOf = (stations: StationBase[]): TramStop[] => {
   }));
 };
 
-// Longitude degrees are shorter than latitude ones, by the cosine of the
-// latitude. At Zaragoza's it is about 0.75, which is more than enough to put
-// two stops in the wrong order if it is ignored.
-const lonScale = Math.cos((41.65 * Math.PI) / 180);
-
-const distance = (a: [number, number], b: [number, number]): number => {
-  const dx = (a[0] - b[0]) * lonScale;
-  const dy = a[1] - b[1];
-  return Math.sqrt(dx * dx + dy * dy);
-};
-
 /**
  * The stops in the order the line runs them.
  *
@@ -125,7 +112,7 @@ const distance = (a: [number, number], b: [number, number]): number => {
 export const orderAlongLine = (stops: TramStop[]): TramStop[] => {
   if (stops.length < 3) return [...stops];
 
-  const centre: [number, number] = [
+  const centre: Point = [
     stops.reduce((sum, stop) => sum + stop.point[0], 0) / stops.length,
     stops.reduce((sum, stop) => sum + stop.point[1], 0) / stops.length,
   ];
@@ -163,6 +150,45 @@ export const orderAlongLine = (stops: TramStop[]): TramStop[] => {
     : ordered.reverse();
 };
 
+/**
+ * How far off the drawn route a stop may sit and still be a stop on it.
+ *
+ * A hundred metres, in degrees of latitude. The platforms of a stop stand
+ * either side of the track, so a stop is metres from the line it is on; a
+ * hundred is room for a widget that drew the route down the middle of a dual
+ * carriageway, and nowhere near enough to sweep in a stop of a line to come.
+ */
+const maxOffRoute = 100 / 111_320;
+
+/**
+ * The stops in the order the drawn route reaches them.
+ *
+ * Better than walking stop to stop, and for the reason the drawn shape is
+ * better than the stops joined up: this is the route itself, so the order it
+ * gives is the order the tram runs whatever the line does — a loop, a
+ * doubling back, a stop that is nearer the next line than the previous stop.
+ * The walk is what remains for the runs where nothing drew the route.
+ *
+ * A stop the route does not pass is left out entirely. That is the check that
+ * keeps a wrong shape from producing a confident wrong line: if the route read
+ * off the page is the city's ring road, no stop is within a hundred metres of
+ * it and this returns nothing, and the caller falls back rather than
+ * publishing a line in the wrong order.
+ */
+export const orderAlongPath = (
+  stops: TramStop[],
+  path: number[][],
+): TramStop[] => {
+  if (path.length < 2) return [];
+
+  const placed = stops.flatMap((stop) => {
+    const { along, off } = projectOnPath(path as Point[], stop.point);
+    return off <= maxOffRoute ? [{ stop, along }] : [];
+  });
+
+  return placed.sort((a, b) => a.along - b.along).map(({ stop }) => stop);
+};
+
 /** A line built from the stops that make it up. */
 export interface BuiltTramLine {
   id: string;
@@ -183,16 +209,37 @@ export interface BuiltTramLine {
  * side of the track. So the legs carry different ids for the same stop, which
  * is what makes the return list worth publishing at all.
  *
- * The drawn shape is the stops joined up, not a track file: the operator
- * publishes no geometry for the line, and a tram runs a reservation between
- * its stops, so the two differ by about the width of the road. Where a route
- * file exists — as it does for every bus line — the file is read instead.
+ * `path` is the route as the operator's own map widget draws it, kerb by kerb.
+ * Given one, it both orders the stops and is what the line is drawn with, and
+ * the return leg is it reversed — a tram runs the same track both ways, which
+ * is the one place a tram is simpler than a bus. Without one the stops are put
+ * in order by walking between them and the line is drawn through them, which
+ * for a tram in its own reservation is out by about the width of the road.
  */
 export const buildTramLine = (
   stations: StationBase[],
-  lineId: string = TRAM_LINE_ID,
+  { path, lineId = TRAM_LINE_ID }: { path?: number[][]; lineId?: string } = {},
 ): BuiltTramLine | null => {
-  const ordered = orderAlongLine(stopsOf(stations));
+  const stops = stopsOf(stations);
+  // The drawn route orders the stops, but only while it is a route these stops
+  // are on: one that reaches too few of them is somebody else's shape, and the
+  // walk is a better answer than a confident wrong one.
+  const drawn = path?.length ? orderAlongPath(stops, path) : [];
+  const routed = drawn.length >= Math.max(2, stops.length - 1);
+  if (!routed && stops.length < 2) return null;
+
+  // North to south, whichever way the drawn route happens to run, so the
+  // outbound leg is the same leg every time the line is rebuilt. The stops and
+  // the shape are turned together or the line lists its stops one way round
+  // and draws itself the other. `orderAlongLine` turns its own.
+  const southbound =
+    routed && drawn[0].point[1] < drawn[drawn.length - 1].point[1];
+  const ordered = routed
+    ? southbound
+      ? [...drawn].reverse()
+      : drawn
+    : orderAlongLine(stops);
+  const drawnPath = routed ? (southbound ? [...path].reverse() : path) : [];
   if (ordered.length < 2) return null;
 
   const outbound = ordered.map((stop) => stop.platforms[0]);
@@ -213,7 +260,11 @@ export const buildTramLine = (
     name: `${ordered[0].street} - ${ordered[ordered.length - 1].street}`,
     stations: outbound,
     stationsReturn: back,
-    path: outbound.flatMap(pointFor),
-    pathReturn: back.flatMap(pointFor),
+    // The track where it was drawn for us, and the stops joined up where it
+    // was not. `routed` is the difference between the two, and it is not a
+    // field on the line: what a reader does with a route is draw it, and both
+    // of these are the best shape available for that.
+    path: routed ? drawnPath : outbound.flatMap(pointFor),
+    pathReturn: routed ? [...drawnPath].reverse() : back.flatMap(pointFor),
   };
 };

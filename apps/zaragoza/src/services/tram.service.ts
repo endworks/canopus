@@ -47,6 +47,8 @@ import {
   TramStationDocument,
 } from '../schemas/tram.schema';
 import { BuiltTramLine, buildTramLine, TRAM_LINE_ID } from '../tram-line';
+import { parseGeoJsonPaths, parseKmlPath } from '../geo';
+import { mapDataLinks, parseMapPath, tramMapPages } from '../tram-map';
 import {
   alertCategoryIds,
   alertId,
@@ -56,6 +58,7 @@ import {
   postArticle,
   postsQuery,
   tramIncidentsURL,
+  tramSiteURL,
   WordPressCategory,
   WordPressPost,
 } from '../tram-alerts';
@@ -65,6 +68,15 @@ const tramStationURL =
 
 /** How long an arrival time is worth showing. */
 const STATION_TTL = 10000;
+
+/**
+ * How many of a page's map files are worth fetching.
+ *
+ * A WordPress site references `.json` everywhere — a block's settings, a
+ * theme's manifest, a plugin's translations — and the route, if it is in a
+ * file at all, is one of the first the page names.
+ */
+const maxMapFiles = 5;
 
 const upsertById = <T extends { id: string }>(
   id: string,
@@ -265,7 +277,10 @@ export class TramService {
     ]);
     const linesBackup = new Map(storedLines.map((line) => [line.id, line]));
 
-    const built = buildTramLine(this.stationsOfLine(stations, TRAM_LINE_ID));
+    const path = await this.fetchDrawnRoute();
+    const built = buildTramLine(this.stationsOfLine(stations, TRAM_LINE_ID), {
+      path,
+    });
     if (!built) {
       this.logger.warn(
         'Not enough stored tram stops to build the line; leaving it as it is',
@@ -294,6 +309,88 @@ export class TramService {
 
     await this.cacheManager.clear();
     return this.getLines();
+  }
+
+  /**
+   * The route the operator's own map draws, or nothing.
+   *
+   * The site puts a Google Maps widget on its line page, and a widget like
+   * that builds its map in the browser: whatever it draws has to be in the
+   * document by the time it loads, either written into the page's scripts or
+   * in a file the page points at. Both are read — the scripts first, because a
+   * page that carries its shape needs no second request — and the longest
+   * shape any of them yields is the route.
+   *
+   * It is the whole difference between a route drawn kerb by kerb and one
+   * drawn as its stops joined up, and between stops put in order by the line
+   * and stops put in order by walking between them. Failing at it costs
+   * exactly that: a run that reads no route builds the line from its stops,
+   * which is what every run did before this.
+   */
+  private async fetchDrawnRoute(): Promise<number[][]> {
+    const found: number[][][] = [];
+
+    for (const page of tramMapPages(tramSiteURL)) {
+      const html = await this.fetchPage(page);
+      if (!html) continue;
+
+      const drawn = parseMapPath(html);
+      if (drawn.length) found.push(drawn);
+
+      // A widget that fetches its shape rather than carrying it. These are the
+      // operator's own files, and a KML is the same thing the bus routes are.
+      // A handful of them: a WordPress site is full of `.json` that is a
+      // plugin's settings, and the route is not the twentieth one of those.
+      for (const link of mapDataLinks(html, page).slice(0, maxMapFiles)) {
+        found.push(...(await this.fetchMapFile(link)));
+      }
+    }
+
+    const best = found.sort((a, b) => b.length - a.length)[0] ?? [];
+    if (best.length) {
+      this.logger.log(`Read the tram route as ${best.length} points`);
+    } else {
+      this.logger.warn(
+        'No tram route could be read from the operator; drawing the line through its stops',
+      );
+    }
+    return best;
+  }
+
+  /**
+   * One map file, however it turns out to be written.
+   *
+   * What it is decides how it is read rather than what it is called: these are
+   * served under every extension there is, and axios has already turned a JSON
+   * body into an object by the time it arrives here.
+   */
+  private async fetchMapFile(url: string): Promise<number[][][]> {
+    const body = await this.fetch<unknown>(url);
+    if (!body) return [];
+    if (typeof body !== 'string') return parseGeoJsonPaths(body);
+
+    const kml = parseKmlPath(body);
+    if (kml.length) return [kml];
+    try {
+      return parseGeoJsonPaths(JSON.parse(body));
+    } catch {
+      return [];
+    }
+  }
+
+  private async fetchPage(url: string): Promise<string | undefined> {
+    const body = await this.fetch<unknown>(url);
+    return typeof body === 'string' ? body : undefined;
+  }
+
+  /** A read that costs the run nothing when it fails: the route is an extra. */
+  private async fetch<T>(url: string): Promise<T | undefined> {
+    try {
+      return await fetchWithTimeout<T>(this.httpService, url);
+    } catch (exception) {
+      this.logger.warn(`Could not read ${url}: ${exception.message}`);
+      return undefined;
+    }
   }
 
   /**

@@ -219,16 +219,16 @@ describe('getLinesUpdate', () => {
 
     const resp = await service.getLinesUpdate();
 
-    expect(Object.keys(resp)).toEqual(['1']);
-    expect(resp['1'].name).toBe('Parque Goya - Clara Campoamor');
-    expect(resp['1'].stations).toEqual([
+    expect(Object.keys(resp)).toEqual(['L1']);
+    expect(resp['L1'].name).toBe('Parque Goya - Clara Campoamor');
+    expect(resp['L1'].stations).toEqual([
       '1121',
       '1131',
       '1141',
       '1151',
       '1161',
     ]);
-    expect(resp['1'].hidden).toBe(false);
+    expect(resp['L1'].hidden).toBe(false);
   });
 
   it('publishes the return leg on the far platform of each stop', async () => {
@@ -237,7 +237,7 @@ describe('getLinesUpdate', () => {
     await service.getLinesUpdate();
 
     // Asked for by id, which is the only way the drawn shape is served.
-    const line = await service.getLine('1');
+    const line = await service.getLine('L1');
     expect(line.stationsReturn).toEqual([
       '1162',
       '1152',
@@ -254,8 +254,8 @@ describe('getLinesUpdate', () => {
 
     const resp = await service.getLinesUpdate();
 
-    expect(resp['1'].path).toBeUndefined();
-    expect(resp['1'].pathReturn).toBeUndefined();
+    expect(resp['L1'].path).toBeUndefined();
+    expect(resp['L1'].pathReturn).toBeUndefined();
   });
 
   it('tells each stop which line calls at it', async () => {
@@ -263,7 +263,7 @@ describe('getLinesUpdate', () => {
 
     await service.getLinesUpdate();
 
-    expect(stationModel.docs.every((doc) => doc.lines.includes('1'))).toBe(
+    expect(stationModel.docs.every((doc) => doc.lines.includes('L1'))).toBe(
       true,
     );
   });
@@ -271,7 +271,7 @@ describe('getLinesUpdate', () => {
   it('rebuilds from the stops that say they are on the line', async () => {
     const { service } = build({
       stations: [
-        ...storedStations().map((station) => ({ ...station, lines: ['1'] })),
+        ...storedStations().map((station) => ({ ...station, lines: ['L1'] })),
         // A stop nothing put on the line: a depot, a stop of a line to come.
         {
           id: '9991',
@@ -284,7 +284,7 @@ describe('getLinesUpdate', () => {
 
     const resp = await service.getLinesUpdate();
 
-    expect(resp['1'].stations).not.toContain('9991');
+    expect(resp['L1'].stations).not.toContain('9991');
   });
 
   it('leaves the stored line alone when there are no stops to build from', async () => {
@@ -292,7 +292,7 @@ describe('getLinesUpdate', () => {
       stations: [],
       lines: [
         {
-          id: '1',
+          id: 'L1',
           name: 'Parque Goya - Valdespartera',
           stations: ['1121'],
           stationsReturn: ['1122'],
@@ -303,8 +303,8 @@ describe('getLinesUpdate', () => {
 
     const resp = await service.getLinesUpdate();
 
-    expect(resp['1'].stations).toEqual(['1121']);
-    expect(resp['1'].lastUpdated).toBe('2026-01-01T00:00:00.000Z');
+    expect(resp['L1'].stations).toEqual(['1121']);
+    expect(resp['L1'].lastUpdated).toBe('2026-01-01T00:00:00.000Z');
   });
 
   it('does not restamp a line that has not changed', async () => {
@@ -334,7 +334,7 @@ describe('the alterations the operator publishes', () => {
         title: 'Corte en Plaza España',
         url: `${site}/corte-en-plaza-espana/`,
         date: '2026-09-04',
-        lines: ['1'],
+        lines: ['L1'],
         scope: 'line',
       }),
     ]);
@@ -368,7 +368,7 @@ describe('the alterations the operator publishes', () => {
           title: 'Corte',
           url: `${site}/corte/`,
           date: '2026-09-01',
-          lines: ['1'],
+          lines: ['L1'],
           stations: [],
           addedStations: [],
           scope: 'line',
@@ -393,7 +393,7 @@ describe('the alterations the operator publishes', () => {
           id: 'ya-terminado',
           title: 'Ya terminado',
           url: `${site}/ya-terminado/`,
-          lines: ['1'],
+          lines: ['L1'],
           stations: [],
           addedStations: [],
           scope: 'line',
@@ -434,7 +434,7 @@ describe('the alterations the operator publishes', () => {
       expect.stringContaining('Del 4 al 6 de septiembre'),
       [
         expect.objectContaining({
-          line: '1',
+          line: 'L1',
           stations: expect.arrayContaining([
             { id: '1141', street: 'Margarita Xirgu' },
           ]),
@@ -496,7 +496,7 @@ describe('a stop and what is altered on it', () => {
     build({
       stations: storedStations().map((station) => ({
         ...station,
-        lines: ['1'],
+        lines: ['L1'],
       })),
       alerts,
       pages: boards,
@@ -506,7 +506,7 @@ describe('a stop and what is altered on it', () => {
     title: 'Alteración',
     url: `${site}/${extra.id}/`,
     date: '2026-09-01',
-    lines: ['1'],
+    lines: ['L1'],
     stations: [],
     addedStations: [],
     scope: 'line',
@@ -534,6 +534,16 @@ describe('a stop and what is altered on it', () => {
     expect(stop(await service.getStation('1151')).alerts).toEqual([]);
   });
 
+  it('calls the line what the network calls it, not what the feed does', async () => {
+    const { service } = onTheLine([]);
+
+    const answered = stop(await service.getStation('1141'));
+
+    // The city's board says `1`; the line list says `L1`. A client matching
+    // an arrival to a line has to be given the same id by both.
+    expect(answered.times.map((time) => time.line)).toEqual(['L1', 'L1']);
+  });
+
   it('still answers with the stop when it has no alterations at all', async () => {
     const { service } = onTheLine([]);
 
@@ -549,7 +559,7 @@ describe('getLine', () => {
 
     await service.getLinesUpdate();
 
-    await expect(service.getLine('2')).rejects.toMatchObject({
+    await expect(service.getLine('L2')).rejects.toMatchObject({
       response: { statusCode: 404 },
     });
   });
@@ -563,7 +573,7 @@ describe("the route the operator's map draws", () => {
     });
 
     await service.getLinesUpdate();
-    const line = await service.getLine('1');
+    const line = await service.getLine('L1');
 
     // Longer than the five stops: this is the track, not the stops joined up.
     expect(line.path.length).toBeGreaterThan(5);
@@ -575,7 +585,7 @@ describe("the route the operator's map draws", () => {
     const { service } = build({ stations: storedStations() });
 
     await service.getLinesUpdate();
-    const line = await service.getLine('1');
+    const line = await service.getLine('L1');
 
     expect(line.path).toHaveLength(5);
   });
@@ -598,7 +608,7 @@ describe("the route the operator's map draws", () => {
     });
 
     await service.getLinesUpdate();
-    const line = await service.getLine('1');
+    const line = await service.getLine('L1');
 
     expect(line.path).toEqual(corridor.map(([, , lon, lat]) => [lon, lat]));
   });
@@ -612,6 +622,6 @@ describe("the route the operator's map draws", () => {
     const resp = await service.getLinesUpdate();
 
     // The line is still built, from the stops, exactly as before.
-    expect(resp['1'].stations).toHaveLength(5);
+    expect(resp['L1'].stations).toHaveLength(5);
   });
 });

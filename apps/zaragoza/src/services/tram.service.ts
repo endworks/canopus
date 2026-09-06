@@ -46,7 +46,12 @@ import {
   TramStation,
   TramStationDocument,
 } from '../schemas/tram.schema';
-import { BuiltTramLine, buildTramLine, TRAM_LINE_ID } from '../tram-line';
+import {
+  BuiltTramLine,
+  buildTramLine,
+  TRAM_LINE_ID,
+  tramLineId,
+} from '../tram-line';
 import { parseGeoJsonPaths, parseKmlPath } from '../geo';
 import { mapDataLinks, parseMapPath, tramMapPages } from '../tram-map';
 import {
@@ -210,7 +215,9 @@ export class TramService {
         resp.times.push(
           ...(station.destinos?.map((destino) => {
             return {
-              line: destino.linea,
+              // The feed says `1` where the network says `L1`, and a board
+              // that disagrees with the line list is a board nothing matches.
+              line: tramLineId(destino.linea),
               destination: capitalizeEachWord(fixWords(destino.destino)),
               time: `${destino.minutos} min.`,
             };

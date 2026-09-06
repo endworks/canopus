@@ -62,8 +62,9 @@ export class ServiceAlert {
   endDate?: string;
 
   /**
-   * Lines the alert names. Ids the network does not list are kept as
-   * published, so an event line still carries its alteration.
+   * Lines the alert names, as their own operators write them. Ids the network
+   * does not list are kept as published, so an event line still carries its
+   * alteration; every tram alteration names `L1`, the one line it runs.
    * @example ['21', '52', '53']
    */
   lines: string[];
@@ -107,7 +108,8 @@ export class Station {
   street: string;
 
   /**
-   * Lines serving the station.
+   * Lines serving the station, as their own operators write them: bus lines by
+   * number, the tram line with its letter.
    * @example ['23', '38']
    */
   lines: string[];
@@ -156,7 +158,9 @@ export class Station {
 /** A bus or tram line (both services return the same shape). */
 export class Line {
   /**
-   * Line id.
+   * Line id, as its own operator writes it. A tram line carries the letter the
+   * network gives it (`L1`), which is also what keeps it from colliding with
+   * the bus line of the same number.
    * @example '23'
    */
   id: string;

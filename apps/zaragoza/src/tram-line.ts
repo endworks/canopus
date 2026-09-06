@@ -2,7 +2,13 @@ import { distance, Point, projectOnPath, round5 } from './geo';
 import { StationBase } from './models/common.interface';
 
 /**
- * The tram network's one line.
+ * The tram network's one line, called what the operator calls it.
+ *
+ * `L1`, not `1`. The letter is how the network writes its own line — on the
+ * stops, on the maps and on the front of the tram — and it is also what keeps
+ * a tram line from colliding with a bus line in anything that holds both: the
+ * bus network runs a line 21 and would one day run a line 1, and two different
+ * lines under one id is a client showing bus alterations on a tram stop.
  *
  * Written down because there is nothing to read it from: the operator
  * publishes no route file and the city's stop dataset says which stops exist,
@@ -12,7 +18,26 @@ import { StationBase } from './models/common.interface';
  * go stale is the id, and it will not: the network has run a single line since
  * 2011 and a second one is a new entry here, not an edit to this one.
  */
-export const TRAM_LINE_ID = '1';
+export const TRAM_LINE_ID = 'L1';
+
+/**
+ * A tram line id, as this service writes one.
+ *
+ * The city's arrivals feed answers for a tram stop with the line as a bare
+ * number, and the network's own name for that line carries the letter. Both
+ * name the same line, so a bare number is given the letter here — otherwise a
+ * stop's board would list arrivals on a line no line list contains, and a
+ * client matching the two would match nothing.
+ *
+ * Anything that already carries the letter keeps it, whatever case it arrived
+ * in, and anything that is not a number at all is left exactly as it was: a
+ * label nobody here recognises is not improved by guessing at it.
+ */
+export const tramLineId = (raw: string): string => {
+  const said = `${raw ?? ''}`.trim();
+  const numbered = said.toUpperCase().match(/^L?0*(\d+)$/);
+  return numbered ? `L${numbered[1]}` : said;
+};
 
 /**
  * A stop's point, or null when the record carries nothing that is one.

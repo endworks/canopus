@@ -6,6 +6,7 @@ import {
   stopKey,
   stopsOf,
   TRAM_LINE_ID,
+  tramLineId,
 } from './tram-line';
 
 /**
@@ -49,6 +50,28 @@ const platforms = ([key, street, lon, lat]: [
 ];
 
 const stations = (rows = corridor): StationBase[] => rows.flatMap(platforms);
+
+describe('tramLineId', () => {
+  it.each([
+    ['the feed writes the line as a bare number', '1', 'L1'],
+    ['the network writes it with its letter', 'L1', 'L1'],
+    ['a feed shouting, or not', 'l1', 'L1'],
+    ['a number padded the way the bus feeds pad theirs', '01', 'L1'],
+  ])('%s', (_name, raw, expected) => {
+    expect(tramLineId(raw)).toBe(expected);
+  });
+
+  it('is what the network calls its line', () => {
+    expect(tramLineId('1')).toBe(TRAM_LINE_ID);
+  });
+
+  it('leaves alone a label it does not recognise', () => {
+    // Guessing at a name nobody here knows is how a line ends up under an id
+    // that is not any line's.
+    expect(tramLineId('Lanzadera')).toBe('Lanzadera');
+    expect(tramLineId('')).toBe('');
+  });
+});
 
 describe('stopKey', () => {
   it('drops the platform digit the arrivals lookup already relies on', () => {

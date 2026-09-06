@@ -100,8 +100,9 @@ describe('parseWordPressAlerts', () => {
         title: 'Corte en Plaza España',
         url: 'https://www.tranviasdezaragoza.es/corte-en-plaza-espana/',
         date: '2026-09-04',
-        // The network runs one line, so there is nothing else it is about.
-        lines: ['1'],
+        // The network runs one line, so there is nothing else it is about,
+        // and it is called what the operator calls it.
+        lines: ['L1'],
       },
     ]);
   });
@@ -168,7 +169,7 @@ describe('parseIncidentListing', () => {
         title: 'Servicio interrumpido',
         url: 'https://www.tranviasdezaragoza.es/servicio-interrumpido/',
         date: '2026-09-04',
-        lines: ['1'],
+        lines: ['L1'],
       },
     ]);
   });

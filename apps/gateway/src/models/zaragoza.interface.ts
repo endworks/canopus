@@ -218,8 +218,8 @@ export class Line {
 
 export class BiziStation {
   /**
-   * Station id.
-   * @example '001'
+   * Station id, as the city numbers the rack in its bike-parking set.
+   * @example '175'
    */
   id: string;
 

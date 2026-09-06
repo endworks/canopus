@@ -31,18 +31,53 @@ import {
   pairByPosition,
 } from '../gbfs';
 
+/**
+ * The city's bike racks, in the `equipamiento` set the taxi ranks come from.
+ *
+ * `.json?srsname=wgs84`, the same way every other call to the city is written:
+ * `rf=html` is the flag that asks this for a web page, which is what a browser
+ * sends and not what a client wants. Without `srsname` the points arrive as
+ * UTM metres and are served as a longitude and a latitude.
+ */
 const biziApiURL =
-  'https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/estacion-bicicleta.json';
-const biziStationApiURL =
-  'https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/estacion-bicicleta';
+  'https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/equipamiento/aparcamiento-bicicleta';
 
-/** The city hands out 50 rows of this set at a time. */
-const PAGE = 50;
+/** The city hands out 500 rows at a time however many are asked for. */
+const PAGE = 500;
 
 /** How long a count of bikes on a rack is worth showing. */
 const STATION_TTL = 10000;
 /** A stored station has no counts on it to go stale. */
 const STALE_STATION_TTL = 60000;
+
+/**
+ * The street a rack stands on, however the set writes it.
+ *
+ * The `equipamiento` sets carry it in a field of its own. The set this service
+ * read before wrote it into the title behind the name of the service — "Bizi -
+ * PASEO ECHEGARAY Y CABALLERO" — so that is still read, and a title with no
+ * dash in it is the street entire.
+ */
+const cityStreet = (row: BiziStationApiResponse): string => {
+  const named = row.calle?.trim();
+  if (named) return capitalizeEachWord(fixWords(named));
+
+  const title = row.title ?? '';
+  const parts = title.split('-');
+  const street = parts.length > 1 ? parts.slice(1).join('-').trim() : title;
+  return capitalizeEachWord(fixWords(street));
+};
+
+/**
+ * Where the rack is, as strings. Empty where the row carries no point that
+ * parses — the same rows `places` drops, except that here the rack is still
+ * worth serving: a reader who knows which station they mean wants its counts
+ * whether or not the city can say where it stands.
+ */
+const cityPoint = (row: BiziStationApiResponse): string[] =>
+  (row.geometry?.coordinates ?? [])
+    .filter((coord) => Number.isFinite(coord))
+    .map((coord) => coord.toString());
 
 @Injectable()
 export class BiziService {
@@ -209,32 +244,28 @@ export class BiziService {
     // The id is the caller's, so it is encoded rather than pasted: one that
     // carries a `%` or a space builds a URL the city answers 400 to, which used
     // to reach the caller as a 502 blaming Zaragoza for their typo.
-    const url = `${biziStationApiURL}/${encodeURIComponent(id)}.json?srsname=wgs84`;
+    const url = `${biziApiURL}/${encodeURIComponent(id)}.json?srsname=wgs84`;
 
     try {
-      const stationData = await fetchWithTimeout<BiziStationApiResponse>(
+      const row = await fetchWithTimeout<BiziStationApiResponse>(
         this.httpService,
         url,
       );
 
-      const titleParts = stationData.title.split('-');
-      const streetName =
-        titleParts.length > 1
-          ? titleParts.slice(1).join('-').trim()
-          : stationData.title;
-
       return {
         id: id,
-        street: backup?.street || capitalizeEachWord(fixWords(streetName)),
-        state: cityState(stationData.estado),
-        bikes: stationData.bicisDisponibles,
-        openDocks: stationData.anclajesDisponibles,
-        coordinates:
-          backup?.coordinates ||
-          stationData.geometry.coordinates.map((coord) => coord.toString()),
+        street: backup?.street || cityStreet(row),
+        state: cityState(row.estado),
+        // Null rather than absent, and null rather than nought: this set is a
+        // record of where the racks are, and where it does not count the bikes
+        // on one, saying nothing is the only honest answer. The operator's feed
+        // is what fills these in.
+        bikes: row.bicisDisponibles ?? null,
+        openDocks: row.anclajesDisponibles ?? null,
+        coordinates: backup?.coordinates || cityPoint(row),
         source: 'api',
-        sourceUrl: stationData.about || url,
-        lastUpdated: stationData.lastUpdated,
+        sourceUrl: row.about || url,
+        lastUpdated: row.lastUpdated,
         type: 'bizi',
       };
     } catch (exception) {
@@ -274,7 +305,7 @@ export class BiziService {
       while (start < total) {
         const data = await fetchWithTimeout<BiziApiResponse>(
           this.httpService,
-          `${biziApiURL}?start=${start}&rows=${PAGE}&srsname=wgs84`,
+          `${biziApiURL}.json?srsname=wgs84&rows=${PAGE}&start=${start}`,
         );
 
         const page = data?.result ?? [];
@@ -285,25 +316,20 @@ export class BiziService {
         total = data?.totalCount ?? start + page.length;
         if (!page.length) break;
 
-        page.forEach((station) => {
-          const titleParts = station.title.split('-');
-          const streetName =
-            titleParts.length > 1
-              ? titleParts.slice(1).join('-').trim()
-              : station.title;
-
+        page.forEach((row) => {
+          const id = String(row.id);
           allStations.push({
-            id: station.id,
-            street: capitalizeEachWord(fixWords(streetName)),
-            state: cityState(station.estado),
-            bikes: station.bicisDisponibles,
-            openDocks: station.anclajesDisponibles,
-            coordinates: station.geometry.coordinates.map((coord) =>
-              coord.toString(),
-            ),
+            id,
+            street: cityStreet(row),
+            state: cityState(row.estado),
+            bikes: row.bicisDisponibles ?? null,
+            openDocks: row.anclajesDisponibles ?? null,
+            coordinates: cityPoint(row),
             source: 'api',
-            sourceUrl: station.about || `${biziApiURL}?id=${station.id}`,
-            lastUpdated: station.lastUpdated,
+            sourceUrl:
+              row.about ||
+              `${biziApiURL}/${encodeURIComponent(id)}.json?srsname=wgs84`,
+            lastUpdated: row.lastUpdated,
             type: 'bizi',
           });
         });

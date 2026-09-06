@@ -8,10 +8,14 @@ import { BiziStationResponse } from '../models/bizi.interface';
 import { BiziStation } from '../schemas/bizi.schema';
 import { GbfsClient } from '../gbfs';
 
-/** What the city answers for one station. */
+/**
+ * One rack in the city's `equipamiento` envelope — the same shape the taxi
+ * ranks arrive in, which is the set this reads now.
+ */
 const station = (extra: Record<string, unknown> = {}) => ({
   id: '001',
-  title: 'Bizi - PASEO ECHEGARAY Y CABALLERO',
+  title: 'Aparcamiento de bicicletas',
+  calle: 'PASEO ECHEGARAY Y CABALLERO',
   estado: 'ABIERTA',
   bicisDisponibles: 7,
   anclajesDisponibles: 12,
@@ -27,7 +31,8 @@ const stored = {
   street: 'Paseo Echegaray y Caballero',
   coordinates: ['-0.8773', '41.6561'],
   source: 'api',
-  sourceUrl: 'https://www.zaragoza.es/sede/servicio/x/estacion-bicicleta/001',
+  sourceUrl:
+    'https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/equipamiento/aparcamiento-bicicleta/001.json?srsname=wgs84',
   type: 'bizi',
 } as unknown as BiziStation;
 
@@ -102,10 +107,72 @@ describe('BiziService', () => {
   };
 
   describe('getStation', () => {
+    // The same way every other call to the city is written: `.json`, and not
+    // the `rf=html` a browser sends to be given a web page.
+    it('asks the bike-rack set the way the bus stops are asked', async () => {
+      get.mockReturnValueOnce(of({ data: station() }));
+      await service.getStation('175');
+
+      const url = get.mock.calls[0][0];
+      expect(url).toBe(
+        'https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/equipamiento/aparcamiento-bicicleta/175.json?srsname=wgs84',
+      );
+      expect(url).not.toContain('rf=html');
+    });
+
     it('asks the city in WGS84, or the point is UTM metres', async () => {
       get.mockReturnValueOnce(of({ data: station() }));
       await service.getStation('001');
       expect(get.mock.calls[0][0]).toContain('srsname=wgs84');
+    });
+
+    it('reads the street from the field this set carries it in', async () => {
+      get.mockReturnValueOnce(of({ data: station() }));
+      const resp = (await service.getStation('001')) as BiziStationResponse;
+      expect(resp.street).toBe('Paseo Echegaray y Caballero');
+    });
+
+    // The set this read before wrote the street into the title behind the name
+    // of the service, and a row without `calle` is still read that way.
+    it('falls back to the street written into the title', async () => {
+      get.mockReturnValueOnce(
+        of({
+          data: station({
+            calle: undefined,
+            title: 'Bizi - PASEO ECHEGARAY Y CABALLERO',
+          }),
+        }),
+      );
+
+      const resp = (await service.getStation('001')) as BiziStationResponse;
+      expect(resp.street).toBe('Paseo Echegaray y Caballero');
+    });
+
+    // A record of where the racks are need not say how many bikes are in one.
+    // Nought would be a rack somebody walks to and finds empty.
+    it('says nothing about counts the set does not carry', async () => {
+      get.mockReturnValueOnce(
+        of({
+          data: station({
+            bicisDisponibles: undefined,
+            anclajesDisponibles: undefined,
+          }),
+        }),
+      );
+
+      const resp = (await service.getStation('001')) as BiziStationResponse;
+
+      expect(resp.bikes).toBeNull();
+      expect(resp.openDocks).toBeNull();
+      expect(resp.street).toBe('Paseo Echegaray y Caballero');
+    });
+
+    it('serves a rack the city gives no point for', async () => {
+      get.mockReturnValueOnce(of({ data: station({ geometry: undefined }) }));
+      const resp = (await service.getStation('001')) as BiziStationResponse;
+
+      expect(resp.coordinates).toEqual([]);
+      expect(resp.bikes).toBe(7);
     });
 
     // The id is the caller's, and a raw `%` in a path is what the city answers
@@ -338,20 +405,44 @@ describe('BiziService', () => {
     const page = (totalCount: unknown, result: unknown[]) =>
       get.mockReturnValueOnce(of({ data: { totalCount, result } }));
 
+    it('asks the bike-rack set the way the taxi ranks are asked', async () => {
+      page(1, [station()]);
+      await service.getStationsUpdate();
+
+      const url = get.mock.calls[0][0];
+      expect(url).toBe(
+        'https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/equipamiento/aparcamiento-bicicleta.json?srsname=wgs84&rows=500&start=0',
+      );
+      expect(url).not.toContain('rf=html');
+    });
+
+    // The city caps `rows` at five hundred however many are asked for, so a set
+    // larger than that comes back looking complete unless every page is read.
     it('reads every page', async () => {
       page(
-        60,
-        Array.from({ length: 50 }, (_, i) => station({ id: `${i}` })),
+        501,
+        Array.from({ length: 500 }, (_, i) => station({ id: `${i}` })),
       );
-      page(
-        60,
-        Array.from({ length: 10 }, (_, i) => station({ id: `${i + 50}` })),
-      );
+      page(501, [station({ id: '500' })]);
 
       await service.getStationsUpdate();
 
       expect(get).toHaveBeenCalledTimes(2);
-      expect(get.mock.calls[1][0]).toContain('start=50');
+      expect(get.mock.calls[1][0]).toContain('start=500');
+    });
+
+    // The row ids of these sets are numbers, and the rest of the service keys
+    // everything by string.
+    it('keys a rack the city numbers as a number', async () => {
+      page(1, [station({ id: 175 })]);
+
+      const stations = (await service.getStationsUpdate()) as Record<
+        string,
+        BiziStationResponse
+      >;
+
+      expect(Object.keys(stations)).toEqual(['175']);
+      expect(stations['175'].id).toBe('175');
     });
 
     // An envelope with no count in it used to walk `start` past the set until

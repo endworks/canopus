@@ -230,7 +230,10 @@ export class BiziStation {
   street: string;
 
   /**
-   * Operational state, when reported.
+   * Operational state, when reported. `IN_SERVICE`, `NOT_RENTING` (full, but
+   * it will still hand you a bike), `NOT_RETURNING` (empty, but it will take
+   * one back) or `CLOSED`. A value the city reports that does not map onto one
+   * of those is passed through as the city wrote it.
    * @example 'IN_SERVICE'
    */
   state?: string | null;
@@ -240,6 +243,14 @@ export class BiziStation {
    * @example 7
    */
   bikes?: number | null;
+
+  /**
+   * How many of `bikes` are electric. Only present where the road that
+   * answered breaks the count down — the city's dataset does not, so an absent
+   * value means unknown rather than none.
+   * @example 4
+   */
+  electricBikes?: number | null;
 
   /**
    * Free docks, when reported.

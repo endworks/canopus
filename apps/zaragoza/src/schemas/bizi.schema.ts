@@ -14,6 +14,15 @@ export class BiziStation {
   @Prop({ type: [String], default: [] })
   coordinates: string[];
 
+  /**
+   * The same rack's number in the operator's own feed, worked out by position
+   * when the stations were last updated. Stored rather than derived because
+   * pairing needs every station of both sources at once, and a reader asking
+   * after one station has neither.
+   */
+  @Prop()
+  gbfsId?: string;
+
   @Prop()
   source?: string;
 

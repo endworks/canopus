@@ -21,7 +21,12 @@ import {
 import { ErrorResponse } from '@canopus/shared';
 import { fetchWithTimeout, upstreamFailure } from '@canopus/nest';
 import { BiziStation, BiziStationDocument } from '../schemas/bizi.schema';
-import { capitalizeEachWord, fixWords, notFoundById } from '../utils';
+import {
+  capitalizeEachWord,
+  fixWords,
+  normalizeStreet,
+  notFoundById,
+} from '../utils';
 import {
   cityState,
   electricBikes,
@@ -51,22 +56,33 @@ const STATION_TTL = 10000;
 const STALE_STATION_TTL = 60000;
 
 /**
- * The street a rack stands on, however the set writes it.
+ * The place a rack stands, said the way a bus stop is said.
  *
- * The bike parking names the place in its title and shouts it — "UNO DE MAYO".
- * Its siblings in the family carry a field of its own, and the set this read
- * before wrote the street into the title behind the name of the service —
- * "Bizi - PASEO ECHEGARAY Y CABALLERO" — so both are still read, and a title
- * with no dash in it is the street entire.
+ * The city shouts its street names — "UNO DE MAYO" — and writes them without
+ * the accents, which in a list of sentence-cased stops reads as a different
+ * app. So a rack's name goes through the same three passes a stop's does, in
+ * the same order and out of the same tables: `fixWords` repairs the mojibake
+ * and the missing accents, `normalizeStreet` puts the spacing right, and
+ * `capitalizeEachWord` sentence-cases it while leaving "de" and "y" alone and
+ * a Roman numeral shouting.
+ *
+ * The spacing pass is the one this used to be missing, and it has to come
+ * before the casing rather than after: `capitalizeEachWord` splits on single
+ * spaces, so a doubled one reaches it as an empty word and survives into the
+ * name.
  */
 const cityStreet = (row: BiziStationApiResponse): string => {
+  // The bike parking names the place in its title. Its siblings in the family
+  // carry a field of their own, and the set this read before wrote the street
+  // into the title behind the name of the service — "Bizi - PASEO ECHEGARAY Y
+  // CABALLERO" — so both are read, and a title with no dash is the street.
   const named = row.calle?.trim();
-  if (named) return capitalizeEachWord(fixWords(named));
-
   const title = row.title ?? '';
   const parts = title.split('-');
-  const street = parts.length > 1 ? parts.slice(1).join('-').trim() : title;
-  return capitalizeEachWord(fixWords(street));
+  const raw =
+    named || (parts.length > 1 ? parts.slice(1).join('-').trim() : title);
+
+  return capitalizeEachWord(normalizeStreet(fixWords(raw))) ?? '';
 };
 
 /**

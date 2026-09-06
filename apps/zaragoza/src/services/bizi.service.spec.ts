@@ -136,6 +136,29 @@ describe('BiziService', () => {
       expect(resp.street).toBe('Uno de Mayo');
     });
 
+    // The same three passes a bus stop's name gets, out of the same tables:
+    // the city shouts, drops its accents and spaces things how it likes.
+    it('says a rack the way a bus stop is said', async () => {
+      const named = async (title: string) => {
+        get.mockReturnValueOnce(of({ data: station({ title }) }));
+        const resp = (await service.getStation('175')) as BiziStationResponse;
+        return resp.street;
+      };
+
+      // Accents restored from the shared table.
+      await expect(named('PLAZA DE ESPANA')).resolves.toBe('Plaza de España');
+      await expect(named('AVENIDA DE CATALUNA')).resolves.toBe(
+        'Avenida de Cataluña',
+      );
+      // Spacing put right. Without the pass this used to be missing, the
+      // doubled space reaches the casing as an empty word and survives.
+      await expect(named('GRAN   VIA')).resolves.toBe('Gran Vía');
+      // A Roman numeral keeps shouting, and the little words stay down.
+      await expect(named('SIGLO XXI Y LOS OLIVOS')).resolves.toBe(
+        'Siglo XXI y los Olivos',
+      );
+    });
+
     // The retired set wrote the street into the title behind the name of the
     // service, and its siblings carry a field of their own. Both still read.
     it('reads the street from a field or a title that has one', async () => {

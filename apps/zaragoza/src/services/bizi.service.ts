@@ -30,10 +30,12 @@ import {
 import {
   cityState,
   electricBikes,
+  electricTypeIds,
   gbfsState,
   GbfsClient,
   GbfsStationStatus,
   pairByPosition,
+  vehiclesAvailable,
 } from '../gbfs';
 
 /**
@@ -54,6 +56,8 @@ const PAGE = 50;
 const STATION_TTL = 10000;
 /** A stored station has no counts on it to go stale. */
 const STALE_STATION_TTL = 60000;
+/** Where the operator's stations stand changes about never. */
+const OPERATOR_INFO_TTL = 1000 * 60 * 60 * 6;
 
 /**
  * The place a rack stands, said the way a bus stop is said.
@@ -229,19 +233,16 @@ export class BiziService {
       return null;
     }
 
-    // The operator's own number for this rack where the last update paired
-    // them, and otherwise the caller's id — some systems number their stations
-    // the same way the city does, and where they do, no pairing is needed.
-    const wanted = backup?.gbfsId ?? id;
+    const wanted = await this.operatorIdFor(id, backup);
     const status = statuses.find((station) => station.station_id === wanted);
     if (!status) return null;
 
-    const electric = electricBikes(status);
+    const electric = electricBikes(status, await this.electricTypes());
     return {
       id,
       street: backup?.street ?? capitalizeEachWord(fixWords(id)),
       state: gbfsState(status),
-      bikes: status.num_bikes_available ?? null,
+      bikes: vehiclesAvailable(status),
       ...(electric === undefined ? {} : { electricBikes: electric }),
       openDocks: status.num_docks_available ?? null,
       coordinates: backup?.coordinates ?? [],
@@ -250,6 +251,87 @@ export class BiziService {
       lastUpdated: new Date().toISOString(),
       type: 'bizi',
     };
+  }
+
+  /**
+   * Which of the system's vehicle types are electric, as the system says.
+   *
+   * Which kinds a system runs is furniture too, so it is read on the same slow
+   * clock as the stations. An empty set means the feed declared nothing, and
+   * `electricBikes` falls back to reading the type's id — which is all anybody
+   * could do before, and is right only for a feed that names its types.
+   */
+  private async electricTypes(): Promise<Set<string>> {
+    try {
+      return await this.cacheManager.wrap(
+        'bizi/gbfs/vehicle-types',
+        async () => electricTypeIds(await this.gbfs.vehicleTypes()),
+        OPERATOR_INFO_TTL,
+      );
+    } catch (exception) {
+      this.logger.warn(
+        `Could not read the operator's vehicle types: ${exception.message}`,
+      );
+      return new Set();
+    }
+  }
+
+  /**
+   * The operator's own number for this station.
+   *
+   * The last update's pairing where there is one. Where there is not — a
+   * station added since, or a deployment that has read the feed before it has
+   * run an update — the pairing below stands in, so that turning the feed on
+   * does something before somebody remembers to run the update. A road that
+   * does nothing is indistinguishable from a road that is down.
+   */
+  private async operatorIdFor(
+    id: string,
+    backup: BiziStation | null,
+  ): Promise<string> {
+    if (backup?.gbfsId) return backup.gbfsId;
+    // Some systems number their stations the way the city does, so the
+    // caller's id is worth trying when nothing else answers.
+    return (await this.pairings())[id] ?? id;
+  }
+
+  /**
+   * Every station paired with the operator's, worked out at once.
+   *
+   * At once, rather than a station at a time as it is asked for, because
+   * pairing is a competition: `pairByPosition` spends each of the operator's
+   * stations on its nearest claimant, and a station asked about on its own has
+   * nobody to lose to. One whose real counterpart is missing from the feed
+   * would take the neighbour forty metres away and serve that rack's bikes as
+   * its own — a wrong answer, where the whole point of this road is that it is
+   * a right one. Pairing the whole set is what makes a station either matched
+   * or unmatched rather than matched to whatever was nearest.
+   *
+   * So this is the same call the update makes, over the same two sets, and the
+   * two agree by construction. Cached six hours because where a rack stands is
+   * furniture: it costs one read of each source, not one per reader.
+   */
+  private async pairings(): Promise<Record<string, string>> {
+    try {
+      return await this.cacheManager.wrap(
+        'bizi/gbfs/pairings',
+        async () => {
+          const [stations, operator] = await Promise.all([
+            this.getAllStations(),
+            this.gbfs.stationInformation(),
+          ]);
+          // A plain object rather than the Map it is built as: this goes
+          // through a cache that a deployment is free to move off the heap.
+          return Object.fromEntries(pairByPosition(stations, operator));
+        },
+        OPERATOR_INFO_TTL,
+      );
+    } catch (exception) {
+      this.logger.warn(
+        `Could not pair the stations with the operator's feed: ${exception.message}`,
+      );
+      return {};
+    }
   }
 
   /** The station as the city mirrors it: one request, for this rack alone. */

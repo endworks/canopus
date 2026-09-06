@@ -1,11 +1,14 @@
 import { HttpService } from '@nestjs/axios';
 import { of, throwError } from 'rxjs';
 import {
+  biziGbfs,
   cityState,
   electricBikes,
+  electricTypeIds,
   gbfsState,
   GbfsClient,
   pairByPosition,
+  vehiclesAvailable,
 } from './gbfs';
 
 const http = (get: jest.Mock) => ({ get }) as unknown as HttpService;
@@ -84,7 +87,90 @@ describe('cityState', () => {
   });
 });
 
+describe('vehiclesAvailable', () => {
+  // GBFS 3 renamed this, and the registered feed is a v3 one. Reading only the
+  // old name is a count that comes back null on every station while the feed is
+  // answering perfectly — which reads as an outage rather than as a bug.
+  it('reads the count under the name GBFS 3 gives it', () => {
+    expect(
+      vehiclesAvailable({ station_id: '1', num_vehicles_available: 7 }),
+    ).toBe(7);
+  });
+
+  it('still reads the name the versions before it gave', () => {
+    expect(vehiclesAvailable({ station_id: '1', num_bikes_available: 7 })).toBe(
+      7,
+    );
+  });
+
+  it('says nothing where the feed counted nothing', () => {
+    expect(vehiclesAvailable({ station_id: '1' })).toBeNull();
+  });
+
+  // Nought is a rack somebody rides to and finds empty, and it must survive.
+  it('keeps an empty rack apart from an uncounted one', () => {
+    expect(
+      vehiclesAvailable({ station_id: '1', num_vehicles_available: 0 }),
+    ).toBe(0);
+  });
+});
+
+describe('electricTypeIds', () => {
+  // A type id is opaque — PBSC numbers them — so the declaration is the only
+  // thing that says which is which.
+  it('reads which types run on a motor from what the feed declares', () => {
+    const electric = electricTypeIds([
+      { vehicle_type_id: '1', propulsion_type: 'human' },
+      { vehicle_type_id: '2', propulsion_type: 'electric_assist' },
+      { vehicle_type_id: '3', propulsion_type: 'electric' },
+    ]);
+
+    expect([...electric].sort()).toEqual(['2', '3']);
+  });
+
+  it('has nothing to say about a feed that declares no types', () => {
+    expect(electricTypeIds([]).size).toBe(0);
+  });
+});
+
 describe('electricBikes', () => {
+  // The case the id heuristic cannot do: numbered types, where nothing about
+  // "2" says it is the e-bike.
+  it('counts by what the system declared, not by the id', () => {
+    const electric = electricTypeIds([
+      { vehicle_type_id: '1', propulsion_type: 'human' },
+      { vehicle_type_id: '2', propulsion_type: 'electric_assist' },
+    ]);
+
+    expect(
+      electricBikes(
+        {
+          station_id: '1',
+          vehicle_types_available: [
+            { vehicle_type_id: '1', count: 3 },
+            { vehicle_type_id: '2', count: 4 },
+          ],
+        },
+        electric,
+      ),
+    ).toBe(4);
+  });
+
+  it('falls back to the id where the system declared nothing', () => {
+    expect(
+      electricBikes(
+        {
+          station_id: '1',
+          vehicle_types_available: [
+            { vehicle_type_id: 'electric_bike', count: 4 },
+            { vehicle_type_id: 'bike', count: 3 },
+          ],
+        },
+        new Set(),
+      ),
+    ).toBe(4);
+  });
+
   it('counts the types that declare themselves electric', () => {
     expect(
       electricBikes({
@@ -168,6 +254,47 @@ describe('pairByPosition', () => {
     );
 
     expect(paired.size).toBe(0);
+  });
+});
+
+describe('biziGbfs', () => {
+  /** The URL the client actually asks for its feed listing. */
+  const discoveryUrl = async (env: NodeJS.ProcessEnv) => {
+    const get = jest.fn().mockReturnValue(of({ data: { data: {} } }));
+    await biziGbfs(http(get), env)
+      .stationStatus()
+      .catch(() => undefined);
+    return get.mock.calls[0]?.[0];
+  };
+
+  // The URL is a fact about Bizi, not about a deployment: it is the one the
+  // system registers in the GBFS catalogue, published and unauthenticated.
+  it('reads the registered feed without being configured', async () => {
+    expect(biziGbfs(http(jest.fn()), {}).enabled).toBe(true);
+    await expect(discoveryUrl({})).resolves.toBe(
+      'https://zaragoza.publicbikesystem.net/customer/gbfs/v3.0/gbfs.json',
+    );
+  });
+
+  it('lets a deployment point somewhere else', async () => {
+    await expect(
+      discoveryUrl({ BIZI_GBFS_URL: 'https://elsewhere/gbfs.json' }),
+    ).resolves.toBe('https://elsewhere/gbfs.json');
+  });
+
+  // A repository variable rather than a revert, on the day the feed misbehaves.
+  it('can be switched off without a deploy', () => {
+    for (const off of ['off', 'none', 'FALSE', '0']) {
+      expect(biziGbfs(http(jest.fn()), { BIZI_GBFS_URL: off }).enabled).toBe(
+        false,
+      );
+    }
+  });
+
+  it('takes an empty variable to mean the default, not off', () => {
+    expect(biziGbfs(http(jest.fn()), { BIZI_GBFS_URL: '  ' }).enabled).toBe(
+      true,
+    );
   });
 });
 

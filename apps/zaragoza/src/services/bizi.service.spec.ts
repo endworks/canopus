@@ -60,10 +60,13 @@ describe('BiziService', () => {
   let cache: { get: jest.Mock; set: jest.Mock; wrap: jest.Mock };
   let findOne: jest.Mock;
   let findOneAndUpdate: jest.Mock;
+  /** What the collection holds, for the pairing to be worked out over. */
+  let all: BiziStation[];
   let gbfs: {
     enabled: boolean;
     stationStatus: jest.Mock;
     stationInformation: jest.Mock;
+    vehicleTypes: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -83,11 +86,13 @@ describe('BiziService', () => {
       enabled: false,
       stationStatus: jest.fn(),
       stationInformation: jest.fn(),
+      vehicleTypes: jest.fn().mockResolvedValue([]),
     };
 
+    all = [];
     const model = {
       find: () => ({
-        sort: () => ({ lean: () => ({ exec: () => Promise.resolve([]) }) }),
+        sort: () => ({ lean: () => ({ exec: () => Promise.resolve(all) }) }),
       }),
       findOne,
       findOneAndUpdate,
@@ -448,6 +453,145 @@ describe('BiziService', () => {
         expect.any(Function),
         expect.any(Number),
       );
+    });
+
+    // Turning the feed on must not wait on somebody remembering to run the
+    // update: a road that does nothing looks exactly like a road that is down.
+    it('pairs a station it has never paired, from where it stands', async () => {
+      all = [stored];
+      holds(stored);
+      operatorHas({ station_id: 'zgz-42', num_bikes_available: 5 });
+      gbfs.stationInformation.mockResolvedValue([
+        { station_id: 'zgz-42', lon: -0.8773, lat: 41.6561 },
+      ]);
+
+      const resp = (await service.getStation('175')) as BiziStationResponse;
+
+      expect(resp.source).toBe('operator');
+      expect(resp.bikes).toBe(5);
+      expect(get).not.toHaveBeenCalled();
+    });
+
+    // Pairing is a competition, and a station asked about on its own has
+    // nobody to lose to. The one whose counterpart is in the feed must win it,
+    // or the other serves a neighbour's bikes as its own.
+    it("does not let a station take a nearer station's pairing", async () => {
+      const neighbour = {
+        ...stored,
+        id: '176',
+        coordinates: ['-0.87732', '41.65612'],
+      } as BiziStation;
+      all = [stored, neighbour];
+      holds(stored);
+      operatorHas({ station_id: 'zgz-42', num_bikes_available: 5 });
+      // Stands on the neighbour, not on 175 — and is the only one published.
+      gbfs.stationInformation.mockResolvedValue([
+        { station_id: 'zgz-42', lon: -0.87732, lat: 41.65612 },
+      ]);
+      get.mockReturnValueOnce(of({ data: station() }));
+
+      const resp = (await service.getStation('175')) as BiziStationResponse;
+
+      // 176 is nearer, so it takes zgz-42 and 175 goes to the city.
+      expect(resp.source).toBe('api');
+    });
+
+    // Furniture: one request every few hours, not one per reader.
+    it('holds the operator station list far longer than its counts', async () => {
+      all = [stored];
+      holds(stored);
+      operatorHas({ station_id: 'zgz-42', num_bikes_available: 5 });
+      gbfs.stationInformation.mockResolvedValue([
+        { station_id: 'zgz-42', lon: -0.8773, lat: 41.6561 },
+      ]);
+
+      await service.getStation('175');
+
+      const ttl = (key: string) =>
+        cache.wrap.mock.calls.find((call) => call[0] === key)?.[2];
+      expect(ttl('bizi/gbfs/pairings')).toBeGreaterThan(
+        ttl('bizi/gbfs/status'),
+      );
+    });
+
+    it('falls through to the city when nothing stands near enough', async () => {
+      all = [stored];
+      holds(stored);
+      operatorHas({ station_id: 'zgz-42', num_bikes_available: 5 });
+      gbfs.stationInformation.mockResolvedValue([
+        { station_id: 'zgz-42', lon: -0.9235, lat: 41.6334 },
+      ]);
+      get.mockReturnValueOnce(of({ data: station() }));
+
+      const resp = (await service.getStation('175')) as BiziStationResponse;
+
+      expect(resp.source).toBe('api');
+    });
+
+    // A stored pairing is the cheap answer and must not be re-derived.
+    it('does not ask for the station list when the pairing is stored', async () => {
+      holds({ ...stored, gbfsId: 'zgz-42' } as BiziStation);
+      operatorHas({ station_id: 'zgz-42', num_bikes_available: 5 });
+
+      await service.getStation('175');
+
+      expect(gbfs.stationInformation).not.toHaveBeenCalled();
+    });
+
+    // The registered feed is a v3 one, which renamed the count. Reading only
+    // the old name is null on every station while the feed answers perfectly.
+    it('reads a v3 feed, which counts vehicles rather than bikes', async () => {
+      holds({ ...stored, gbfsId: 'zgz-42' } as BiziStation);
+      operatorHas({
+        station_id: 'zgz-42',
+        num_vehicles_available: 9,
+        num_docks_available: 4,
+        is_installed: true,
+        is_renting: true,
+        is_returning: true,
+      });
+
+      const resp = (await service.getStation('175')) as BiziStationResponse;
+
+      expect(resp.bikes).toBe(9);
+      expect(resp.openDocks).toBe(4);
+      expect(resp.state).toBe('IN_SERVICE');
+    });
+
+    // PBSC numbers its vehicle types, so nothing about "2" says it is the
+    // e-bike: the system's own declaration is the only thing that does.
+    it('counts the electric bikes by what the system declares', async () => {
+      holds({ ...stored, gbfsId: 'zgz-42' } as BiziStation);
+      operatorHas({
+        station_id: 'zgz-42',
+        num_vehicles_available: 7,
+        vehicle_types_available: [
+          { vehicle_type_id: '1', count: 3 },
+          { vehicle_type_id: '2', count: 4 },
+        ],
+      });
+      gbfs.vehicleTypes.mockResolvedValue([
+        { vehicle_type_id: '1', propulsion_type: 'human' },
+        { vehicle_type_id: '2', propulsion_type: 'electric_assist' },
+      ]);
+
+      const resp = (await service.getStation('175')) as BiziStationResponse;
+
+      expect(resp.bikes).toBe(7);
+      expect(resp.electricBikes).toBe(4);
+    });
+
+    // A system that runs one kind of vehicle publishes no `vehicle_types`, and
+    // that is not a reason to fail the road.
+    it('still serves counts when the feed declares no vehicle types', async () => {
+      holds({ ...stored, gbfsId: 'zgz-42' } as BiziStation);
+      operatorHas({ station_id: 'zgz-42', num_vehicles_available: 7 });
+      gbfs.vehicleTypes.mockResolvedValue([]);
+
+      const resp = (await service.getStation('175')) as BiziStationResponse;
+
+      expect(resp.bikes).toBe(7);
+      expect(resp).not.toHaveProperty('electricBikes');
     });
 
     it('keeps the operator id out of the answer', async () => {

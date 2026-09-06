@@ -13,69 +13,82 @@ import {
 } from '../schemas/tram.schema';
 import { TramService } from './tram.service';
 import { AlertDetails, AlertReader } from '../alert-reader';
-import { tramIncidentsURL } from '../tram-alerts';
+import { tramFrontPageURL } from '../tram-alerts';
 import { TramStationResponse } from '../models/tram.interface';
 
 /** The stop, as the service answers when it has one to answer with. */
 const stop = (resp: unknown) => resp as TramStationResponse;
 
 const site = 'https://www.tranviasdezaragoza.es';
-const categoriesUrl = `${site}/wp-json/wp/v2/categories`;
-const postsUrl = `${site}/wp-json/wp/v2/posts`;
+// The site serves the REST API under `/api/`, not `/wp-json/`.
+const categoriesUrl = `${site}/api/wp/v2/categories`;
+const postsUrl = `${site}/api/wp/v2/posts`;
 
-/** Five stops of the corridor, north to south, two platforms apiece. */
-const corridor: [string, string, number, number][] = [
-  ['112', 'Parque Goya', -0.90197, 41.68716],
-  ['113', 'Adolfo Aznar', -0.89959, 41.68172],
-  ['114', 'Margarita Xirgu', -0.89523, 41.67318],
-  ['115', 'Legaz Lacambra', -0.89224, 41.66702],
-  ['116', 'Clara Campoamor', -0.88938, 41.66104],
+const ajaxUrl = `${site}/wp-admin/admin-ajax.php`;
+
+/**
+ * Four places of the corridor, as the operator's own feed gives them: a stop
+ * each way at each, paired by `sibling_id`, in the order each direction runs
+ * them. The second is a place the two directions call at under different
+ * names, as seven of this line's places really do.
+ */
+const corridor: [string, string, string, string, number, number][] = [
+  ['2502', 'Mago de Oz', '2501', 'Mago de Oz', 41.62435, -0.93694],
+  [
+    '2402',
+    'Un Americano en París',
+    '2401',
+    'Cantando bajo la Lluvia',
+    41.63,
+    -0.93,
+  ],
+  ['1902', 'Casablanca', '1901', 'Casablanca', 41.64, -0.92],
+  [
+    '0102',
+    'Avenida de la Academia',
+    '0101',
+    'Avenida de la Academia',
+    41.68832,
+    -0.87074,
+  ],
 ];
 
+const operatorLine = (rows = corridor) => ({
+  stops_0: rows.map(([code, name, , , lat, lon], index) => ({
+    id: index + 1,
+    name: code,
+    displayName: name,
+    lat: `${lat}`,
+    lng: `${lon}`,
+    position: index + 1,
+    sibling_id: 100 + index,
+  })),
+  stops_1: [...rows].reverse().map(([, , code, name, lat, lon], index) => ({
+    id: 100 + (rows.length - 1 - index),
+    name: code,
+    displayName: name,
+    lat: `${lat}`,
+    lng: `${lon}`,
+    position: index + 1,
+    sibling_id: rows.length - index,
+  })),
+  points_0: rows.map(([, , , , lat, lon]) => [`${lat}`, `${lon}`]),
+  points_1: [...rows]
+    .reverse()
+    .map(([, , , , lat, lon]) => [`${lat}`, `${lon}`]),
+});
+
+/** The stop records an earlier run left behind. */
 const storedStations = (rows = corridor): Partial<TramStation>[] =>
-  rows.flatMap(([key, street, lon, lat]) => [
+  rows.flatMap(([out, name, back, , lat, lon]) => [
+    { id: out, street: name, lines: ['L1'], coordinates: [`${lon}`, `${lat}`] },
     {
-      id: `${key}1`,
-      street,
-      lines: [],
+      id: back,
+      street: name,
+      lines: ['L1'],
       coordinates: [`${lon}`, `${lat}`],
-      type: 'tram',
-    },
-    {
-      id: `${key}2`,
-      street,
-      lines: [],
-      coordinates: [`${lon + 0.0001}`, `${lat}`],
-      type: 'tram',
     },
   ]);
-
-/** The line page, with the route drawn into its map widget's script. */
-const mapPage = (rows = corridor) => {
-  const points = rows.flatMap(([, , lon, lat], index) => {
-    const next = rows[index + 1];
-    return next
-      ? [
-          [lon, lat],
-          [(lon + next[2]) / 2, (lat + next[3]) / 2],
-        ]
-      : [[lon, lat]];
-  });
-  // Padded out to the length a real drawn route has, by walking the last leg
-  // in smaller steps: a run too short to be a route is not read as one.
-  const [lastLon, lastLat] = points[points.length - 1];
-  const tail = Array.from({ length: 12 }, (_, i) => [
-    lastLon + (i + 1) * 0.0002,
-    lastLat - (i + 1) * 0.0002,
-  ]);
-  return `<html><body><div id="map"></div><script>
-      var route = new google.maps.Polyline({path: [${[...points, ...tail]
-        .map(([lon, lat]) => `{lat: ${lat}, lng: ${lon}}`)
-        .join(',')}]});
-    </script></body></html>`;
-};
-
-const linePageUrl = `${site}/nuestra-linea/`;
 
 const wpPost = (slug: string, title: string, date = '2026-09-04T10:12:31') => ({
   slug,
@@ -158,8 +171,10 @@ const build = (
     categories?: { id: number; slug: string }[];
     /** The posts filed under them. */
     posts?: ReturnType<typeof wpPost>[];
-    /** The incidents page, for a site whose REST API is shut. */
-    incidentsPage?: string;
+    /** The block at the top of the front page, when one is in force. */
+    frontPage?: string;
+    /** The line the operator publishes; absent means it published none. */
+    line?: ReturnType<typeof operatorLine> | null;
     /** Any other URL a source serves, already decoded as axios would. */
     pages?: Record<string, unknown>;
     /** URLs the site answers with a server error. */
@@ -177,7 +192,26 @@ const build = (
     (options.alerts ?? []) as TramAlert[],
   );
 
+  const line = options.line === undefined ? operatorLine() : options.line;
+
   const httpService = {
+    post: jest.fn((url: string, body: string) => {
+      if (url !== ajaxUrl) return throwError(() => httpError(404));
+      if (options.unreachable?.some((blocked) => url.startsWith(blocked))) {
+        return throwError(() => httpError(500));
+      }
+      const action = new URLSearchParams(body).get('action');
+      if (action === 'dosnet_tranvias_get_nonce') {
+        return of({ data: { success: true, data: 'test-nonce' } });
+      }
+      // The endpoint answers 403 to a request that carries no nonce.
+      if (!new URLSearchParams(body).get('_ajax_nonce')) {
+        return throwError(() => httpError(403));
+      }
+      return line
+        ? of({ data: line })
+        : of({ data: { stops_0: [], stops_1: [] } });
+    }),
     get: jest.fn((url: string) => {
       if (options.unreachable?.some((blocked) => url.startsWith(blocked))) {
         return throwError(() => httpError(500));
@@ -190,8 +224,10 @@ const build = (
       if (url.startsWith(postsUrl)) {
         return of({ data: options.posts ?? [] });
       }
-      if (url === tramIncidentsURL && options.incidentsPage) {
-        return of({ data: options.incidentsPage });
+      if (url === tramFrontPageURL) {
+        return options.frontPage
+          ? of({ data: options.frontPage })
+          : throwError(() => httpError(404));
       }
       if (options.pages && url in options.pages) {
         return of({ data: options.pages[url] });
@@ -214,43 +250,32 @@ const build = (
 };
 
 describe('getLinesUpdate', () => {
-  it('builds the line from the stops it holds', async () => {
-    const { service } = build({ stations: storedStations() });
+  it('takes the line the operator publishes', async () => {
+    const { service } = build();
 
     const resp = await service.getLinesUpdate();
 
     expect(Object.keys(resp)).toEqual(['L1']);
-    expect(resp['L1'].name).toBe('Parque Goya - Clara Campoamor');
-    expect(resp['L1'].stations).toEqual([
-      '1121',
-      '1131',
-      '1141',
-      '1151',
-      '1161',
-    ]);
+    expect(resp['L1'].name).toBe('Mago de Oz - Avenida de la Academia');
+    expect(resp['L1'].stations).toEqual(['2502', '2402', '1902', '0102']);
     expect(resp['L1'].hidden).toBe(false);
   });
 
-  it('publishes the return leg on the far platform of each stop', async () => {
-    const { service } = build({ stations: storedStations() });
+  it('publishes the return leg as its own run of stops', async () => {
+    const { service } = build();
 
     await service.getLinesUpdate();
-
-    // Asked for by id, which is the only way the drawn shape is served.
     const line = await service.getLine('L1');
-    expect(line.stationsReturn).toEqual([
-      '1162',
-      '1152',
-      '1142',
-      '1132',
-      '1122',
-    ]);
-    expect(line.path).toHaveLength(5);
-    expect(line.pathReturn).toHaveLength(5);
+
+    // Not the outbound list reversed: at the far end the two directions call
+    // at different places altogether.
+    expect(line.stationsReturn).toEqual(['0101', '1901', '2401', '2501']);
+    expect(line.path).toHaveLength(4);
+    expect(line.pathReturn).toEqual([...line.path].reverse());
   });
 
   it('leaves the drawn shape out of the listing of every line', async () => {
-    const { service } = build({ stations: storedStations() });
+    const { service } = build();
 
     const resp = await service.getLinesUpdate();
 
@@ -258,57 +283,94 @@ describe('getLinesUpdate', () => {
     expect(resp['L1'].pathReturn).toBeUndefined();
   });
 
+  it('calls a stop by both names where the two directions differ', async () => {
+    const { service, stationModel } = build({ stations: [] });
+
+    await service.getLinesUpdate();
+    const byId = new Map(stationModel.docs.map((doc) => [doc.id, doc]));
+
+    // Both stops of the split place carry both names, so a traveller reading
+    // either is told where they are whichever way they are going.
+    expect(byId.get('2402').street).toBe(
+      'Cantando bajo la Lluvia / Un Americano en París',
+    );
+    expect(byId.get('2401').street).toBe(
+      'Cantando bajo la Lluvia / Un Americano en París',
+    );
+    expect(byId.get('1902').street).toBe('Casablanca');
+  });
+
   it('tells each stop which line calls at it', async () => {
-    const { service, stationModel } = build({ stations: storedStations() });
+    const { service, stationModel } = build({ stations: [] });
 
     await service.getLinesUpdate();
 
+    expect(stationModel.docs).toHaveLength(8);
     expect(stationModel.docs.every((doc) => doc.lines.includes('L1'))).toBe(
       true,
     );
   });
 
-  it('rebuilds from the stops that say they are on the line', async () => {
-    const { service } = build({
+  it('takes the line off a stop the operator no longer runs to', async () => {
+    const { service, stationModel } = build({
       stations: [
-        ...storedStations().map((station) => ({ ...station, lines: ['L1'] })),
-        // A stop nothing put on the line: a depot, a stop of a line to come.
-        {
-          id: '9991',
-          street: 'Cocheras',
-          lines: [],
-          coordinates: ['-0.95', '41.62'],
-        },
+        ...storedStations(),
+        { id: '9999', street: 'Cocheras', lines: ['L1'], coordinates: [] },
       ],
     });
 
-    const resp = await service.getLinesUpdate();
+    await service.getLinesUpdate();
 
-    expect(resp['L1'].stations).not.toContain('9991');
+    const cocheras = stationModel.docs.find((doc) => doc.id === '9999');
+    // Its record stays — it may still be asked for by id — but it stops
+    // claiming a line that does not call there.
+    expect(cocheras.lines).toEqual([]);
   });
 
-  it('leaves the stored line alone when there are no stops to build from', async () => {
-    const { service } = build({
-      stations: [],
+  it('drops a stored line this network no longer runs', async () => {
+    const { service, lineModel } = build({
       lines: [
         {
-          id: 'L1',
-          name: 'Parque Goya - Valdespartera',
-          stations: ['1121'],
-          stationsReturn: ['1122'],
-          lastUpdated: '2026-01-01T00:00:00.000Z',
+          id: '1',
+          name: 'Mago de Oz - Avenida de la Academia',
+          stations: ['2502'],
+          lastUpdated: '2026-09-01T00:00:00.000Z',
         },
       ],
     });
 
     const resp = await service.getLinesUpdate();
 
-    expect(resp['L1'].stations).toEqual(['1121']);
-    expect(resp['L1'].lastUpdated).toBe('2026-01-01T00:00:00.000Z');
+    expect(Object.keys(resp)).toEqual(['L1']);
+    expect(lineModel.docs.map((doc) => doc.id)).toEqual(['L1']);
+  });
+
+  it('leaves everything alone on a run that could not read the line', async () => {
+    const { service, lineModel, stationModel } = build({
+      line: null,
+      stations: storedStations(),
+      lines: [
+        {
+          id: '1',
+          name: 'Mago de Oz - Avenida de la Academia',
+          stations: ['2502'],
+          lastUpdated: '2026-09-01T00:00:00.000Z',
+        },
+      ],
+    });
+
+    const resp = await service.getLinesUpdate();
+
+    // A run that read nothing is not evidence that anything is stale.
+    expect(lineModel.docs.map((doc) => doc.id)).toEqual(['1']);
+    expect(resp['1'].stations).toEqual(['2502']);
+    expect(stationModel.docs.every((doc) => doc.lines.includes('L1'))).toBe(
+      true,
+    );
   });
 
   it('does not restamp a line that has not changed', async () => {
-    const { service, lineModel } = build({ stations: storedStations() });
+    const { service, lineModel } = build();
 
     await service.getLinesUpdate();
     const first = lineModel.docs[0].lastUpdated;
@@ -316,13 +378,30 @@ describe('getLinesUpdate', () => {
 
     expect(lineModel.docs[0].lastUpdated).toBe(first);
   });
+
+  it('will not ask for the line without the nonce the endpoint demands', async () => {
+    const { service, httpService } = build();
+
+    await service.getLinesUpdate();
+
+    const asked = (httpService.post as jest.Mock).mock.calls.map(([, body]) =>
+      new URLSearchParams(body).get('action'),
+    );
+    expect(asked).toEqual([
+      'dosnet_tranvias_get_nonce',
+      'dosnet_tranvias_lineas',
+    ]);
+    // And a referer, without which the endpoint answers 403.
+    const [, , config] = (httpService.post as jest.Mock).mock.calls[1];
+    expect(config.headers.Referer).toBe(`${site}/`);
+  });
 });
 
 describe('the alterations the operator publishes', () => {
   it('stores what the site is showing', async () => {
     const { service } = build({
       stations: storedStations(),
-      categories: [{ id: 4, slug: 'incidencias' }],
+      categories: [{ id: 10, slug: 'home' }],
       posts: [wpPost('corte-en-plaza-espana', 'Corte en Plaza España')],
     });
 
@@ -340,23 +419,45 @@ describe('the alterations the operator publishes', () => {
     ]);
   });
 
-  it('reads the incidents page when the REST API is shut', async () => {
+  it('reads the block at the top when the service is altered right now', async () => {
     const { service } = build({
       stations: storedStations(),
-      // No categories: the API answers 404.
-      incidentsPage: `<article class="post">
-          <h2 class="entry-title">
-            <a href="${site}/obras-en-la-via/">Obras en la vía</a>
-          </h2>
-          <time datetime="2026-09-05T08:00:00+02:00">5 septiembre</time>
-        </article>`,
+      // No categories: nothing announced. The block still answers.
+      frontPage: `<div class="tranvias_dosnet_avisos tranvias_dosnet_avisos_1">
+          <div class="tranvias_dosnet_avisos_title"><h2><span>Avisos</span></h2></div>
+          <div class="tranvias_dosnet_avisos_list">
+            <div class="tranvias_dosnet_avisos_aviso">Servicio interrumpido</div>
+          </div>
+        </div>`,
     });
 
     await service.getLinesUpdate();
 
     expect((await service.getAlerts())[0]).toEqual(
-      expect.objectContaining({ id: 'obras-en-la-via', date: '2026-09-05' }),
+      expect.objectContaining({
+        title: 'Servicio interrumpido',
+        lines: ['L1'],
+      }),
     );
+  });
+
+  it('counts an alteration once when it is both in force and announced', async () => {
+    const { service } = build({
+      stations: storedStations(),
+      // The block links to the post that announced it, so they are one.
+      frontPage: `<div class="tranvias_dosnet_avisos_aviso">
+          <a href="${site}/corte/">Corte en Plaza España</a>
+        </div>`,
+      categories: [{ id: 10, slug: 'home' }],
+      posts: [wpPost('corte', 'Corte en Plaza España')],
+    });
+
+    await service.getLinesUpdate();
+    const alerts = await service.getAlerts();
+
+    expect(alerts.map((alert) => alert.id)).toEqual(['corte']);
+    // The post's date survives the merge; the block carries none.
+    expect(alerts[0].date).toBe('2026-09-04');
   });
 
   it('leaves the stored alerts alone when neither road answers', async () => {
@@ -400,7 +501,7 @@ describe('the alterations the operator publishes', () => {
           firstSeen: '2026-08-01T00:00:00.000Z',
         },
       ],
-      categories: [{ id: 4, slug: 'incidencias' }],
+      categories: [{ id: 10, slug: 'home' }],
       posts: [wpPost('corte', 'Corte')],
     });
 
@@ -412,13 +513,13 @@ describe('the alterations the operator publishes', () => {
   it('reads the notice the listing handed over, without fetching it again', async () => {
     const { service, reader, httpService } = build({
       stations: storedStations(),
-      categories: [{ id: 4, slug: 'incidencias' }],
-      posts: [wpPost('corte', 'Corte en Margarita Xirgu')],
+      categories: [{ id: 10, slug: 'home' }],
+      posts: [wpPost('corte', 'Corte en Casablanca')],
       articles: {
         corte: {
           startDate: '2026-09-04',
           endDate: '2026-09-06',
-          stations: ['1141'],
+          stations: ['1902'],
           addedStations: [],
           scope: 'stations',
         },
@@ -436,7 +537,7 @@ describe('the alterations the operator publishes', () => {
         expect.objectContaining({
           line: 'L1',
           stations: expect.arrayContaining([
-            { id: '1141', street: 'Margarita Xirgu' },
+            { id: '1902', street: 'Casablanca' },
           ]),
         }),
       ],
@@ -450,7 +551,7 @@ describe('the alterations the operator publishes', () => {
     expect((await service.getAlerts())[0]).toEqual(
       expect.objectContaining({
         endDate: '2026-09-06',
-        stations: ['1141'],
+        stations: ['1902'],
         scope: 'stations',
       }),
     );
@@ -459,7 +560,7 @@ describe('the alterations the operator publishes', () => {
   it('offers both platforms of a stop to the reader', async () => {
     const { service, reader } = build({
       stations: storedStations(),
-      categories: [{ id: 4, slug: 'incidencias' }],
+      categories: [{ id: 10, slug: 'home' }],
       posts: [wpPost('corte', 'Corte')],
       articles: {},
     });
@@ -471,7 +572,7 @@ describe('the alterations the operator publishes', () => {
     // something the words settle, so both are on offer — each of them once.
     const ids = routes[0].stations.map((station) => station.id);
     expect(ids).toHaveLength(new Set(ids).size);
-    expect(ids).toEqual(expect.arrayContaining(['1141', '1142']));
+    expect(ids).toEqual(expect.arrayContaining(['1902', '1901']));
   });
 });
 
@@ -479,14 +580,14 @@ describe('a stop and what is altered on it', () => {
   const boardUrl = (id: string) =>
     `https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/transporte-urbano/parada-tranvia/${id}`;
 
-  // The city's board for every platform on the corridor, so that asking about
-  // a stop is about the alterations on it rather than about the arrivals.
+  // The city's board for every platform code on the corridor, so that asking
+  // about a stop is about the alterations on it rather than the arrivals.
   const boards = Object.fromEntries(
-    corridor.flatMap(([key, street]) =>
-      ['1', '2'].map((platform) => [
-        boardUrl(`${key}${platform}`),
+    corridor.flatMap(([out, name, back]) =>
+      [out, back].map((code) => [
+        boardUrl(code),
         {
-          destinos: [{ linea: '1', destino: street.toUpperCase(), minutos: 4 }],
+          destinos: [{ linea: '1', destino: name.toUpperCase(), minutos: 4 }],
         },
       ]),
     ),
@@ -494,10 +595,7 @@ describe('a stop and what is altered on it', () => {
 
   const onTheLine = (alerts: Partial<TramAlert>[]) =>
     build({
-      stations: storedStations().map((station) => ({
-        ...station,
-        lines: ['L1'],
-      })),
+      stations: storedStations(),
       alerts,
       pages: boards,
     });
@@ -517,27 +615,27 @@ describe('a stop and what is altered on it', () => {
   it('shows the alterations in force on the line it is on', async () => {
     const { service } = onTheLine([alert({ id: 'corte' })]);
 
-    expect(stop(await service.getStation('1141')).alerts).toEqual([
+    expect(stop(await service.getStation('1902')).alerts).toEqual([
       expect.objectContaining({ id: 'corte', direct: false }),
     ]);
   });
 
   it('marks the stop a notice names as one it names', async () => {
     const { service } = onTheLine([
-      alert({ id: 'suprimida', stations: ['1141'], scope: 'stations' }),
+      alert({ id: 'suprimida', stations: ['1902'], scope: 'stations' }),
     ]);
 
-    expect(stop(await service.getStation('1141')).alerts).toEqual([
+    expect(stop(await service.getStation('1902')).alerts).toEqual([
       expect.objectContaining({ id: 'suprimida', direct: true }),
     ]);
     // Narrowed to that stop, so the one down the line shows nothing.
-    expect(stop(await service.getStation('1151')).alerts).toEqual([]);
+    expect(stop(await service.getStation('1901')).alerts).toEqual([]);
   });
 
   it('calls the line what the network calls it, not what the feed does', async () => {
     const { service } = onTheLine([]);
 
-    const answered = stop(await service.getStation('1141'));
+    const answered = stop(await service.getStation('1902'));
 
     // The city's board says `1`; the line list says `L1`. A client matching
     // an arrival to a line has to be given the same id by both.
@@ -547,7 +645,7 @@ describe('a stop and what is altered on it', () => {
   it('still answers with the stop when it has no alterations at all', async () => {
     const { service } = onTheLine([]);
 
-    const answered = stop(await service.getStation('1141'));
+    const answered = stop(await service.getStation('1902'));
     expect(answered.alerts).toEqual([]);
     expect(answered.times).toHaveLength(2);
   });
@@ -562,66 +660,5 @@ describe('getLine', () => {
     await expect(service.getLine('L2')).rejects.toMatchObject({
       response: { statusCode: 404 },
     });
-  });
-});
-
-describe("the route the operator's map draws", () => {
-  it('draws the line with it, and orders the stops by it', async () => {
-    const { service } = build({
-      stations: storedStations(),
-      pages: { [linePageUrl]: mapPage() },
-    });
-
-    await service.getLinesUpdate();
-    const line = await service.getLine('L1');
-
-    // Longer than the five stops: this is the track, not the stops joined up.
-    expect(line.path.length).toBeGreaterThan(5);
-    expect(line.pathReturn).toEqual([...line.path].reverse());
-    expect(line.stations).toEqual(['1121', '1131', '1141', '1151', '1161']);
-  });
-
-  it('draws the line through its stops when no page carries a route', async () => {
-    const { service } = build({ stations: storedStations() });
-
-    await service.getLinesUpdate();
-    const line = await service.getLine('L1');
-
-    expect(line.path).toHaveLength(5);
-  });
-
-  it('reads a route from a map file the page points at', async () => {
-    const kml = `<?xml version="1.0"?><kml><Document><Placemark><LineString>
-        <coordinates>${corridor
-          .map(([, , lon, lat]) => `${lon},${lat},0.0`)
-          .join(' ')}</coordinates>
-      </LineString></Placemark></Document></kml>`;
-
-    const { service } = build({
-      stations: storedStations(),
-      pages: {
-        [linePageUrl]: `<html><body><script>
-            map.load("${site}/wp-content/uploads/linea1.kml");
-          </script></body></html>`,
-        [`${site}/wp-content/uploads/linea1.kml`]: kml,
-      },
-    });
-
-    await service.getLinesUpdate();
-    const line = await service.getLine('L1');
-
-    expect(line.path).toEqual(corridor.map(([, , lon, lat]) => [lon, lat]));
-  });
-
-  it('costs the update nothing when the map cannot be read', async () => {
-    const { service } = build({
-      stations: storedStations(),
-      unreachable: [site],
-    });
-
-    const resp = await service.getLinesUpdate();
-
-    // The line is still built, from the stops, exactly as before.
-    expect(resp['L1'].stations).toHaveLength(5);
   });
 });

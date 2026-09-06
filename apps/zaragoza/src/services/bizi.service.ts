@@ -21,7 +21,12 @@ import {
 import { ErrorResponse } from '@canopus/shared';
 import { fetchWithTimeout, upstreamFailure } from '@canopus/nest';
 import { BiziStation, BiziStationDocument } from '../schemas/bizi.schema';
-import { capitalizeEachWord, fixWords, notFoundById } from '../utils';
+import {
+  capitalizeEachWord,
+  fixWords,
+  normalizeStreet,
+  notFoundById,
+} from '../utils';
 import {
   cityState,
   electricBikes,
@@ -31,18 +36,64 @@ import {
   pairByPosition,
 } from '../gbfs';
 
+/**
+ * The city's Bizi stations.
+ *
+ * `.json?srsname=wgs84`, the same way every other call to the city is written:
+ * `rf=html` is the flag that asks this for a web page, which is what a browser
+ * sends and not what a client wants. Without `srsname` the points arrive as
+ * UTM metres and are served as a longitude and a latitude.
+ */
 const biziApiURL =
-  'https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/estacion-bicicleta.json';
-const biziStationApiURL =
   'https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/estacion-bicicleta';
 
-/** The city hands out 50 rows of this set at a time. */
+/** How many rows of this set the city hands out at a time. */
 const PAGE = 50;
 
 /** How long a count of bikes on a rack is worth showing. */
 const STATION_TTL = 10000;
 /** A stored station has no counts on it to go stale. */
 const STALE_STATION_TTL = 60000;
+
+/**
+ * The place a rack stands, said the way a bus stop is said.
+ *
+ * The city shouts its street names — "UNO DE MAYO" — and writes them without
+ * the accents, which in a list of sentence-cased stops reads as a different
+ * app. So a rack's name goes through the same three passes a stop's does, in
+ * the same order and out of the same tables: `fixWords` repairs the mojibake
+ * and the missing accents, `normalizeStreet` puts the spacing right, and
+ * `capitalizeEachWord` sentence-cases it while leaving "de" and "y" alone and
+ * a Roman numeral shouting.
+ *
+ * The spacing pass is the one this used to be missing, and it has to come
+ * before the casing rather than after: `capitalizeEachWord` splits on single
+ * spaces, so a doubled one reaches it as an empty word and survives into the
+ * name.
+ */
+const cityStreet = (row: BiziStationApiResponse): string => {
+  // This set writes the street into the title behind the name of the station —
+  // "Bizi - PASEO ECHEGARAY Y CABALLERO" — and a title with no dash in it is
+  // the street entire. Where the title says nothing, the fields the siblings in
+  // this family carry the street in, which this one sometimes fills too.
+  const title = row.title?.trim() ?? '';
+  const parts = title.split('-');
+  const fromTitle = parts.length > 1 ? parts.slice(1).join('-').trim() : title;
+  const raw = fromTitle || row.address?.trim() || row.calle?.trim() || '';
+
+  return capitalizeEachWord(normalizeStreet(fixWords(raw))) ?? '';
+};
+
+/**
+ * Where the rack is, as strings. Empty where the row carries no point that
+ * parses — the same rows `places` drops, except that here the rack is still
+ * worth serving: a reader who knows which station they mean wants its counts
+ * whether or not the city can say where it stands.
+ */
+const cityPoint = (row: BiziStationApiResponse): string[] =>
+  (row.geometry?.coordinates ?? [])
+    .filter((coord) => Number.isFinite(coord))
+    .map((coord) => coord.toString());
 
 @Injectable()
 export class BiziService {
@@ -209,32 +260,27 @@ export class BiziService {
     // The id is the caller's, so it is encoded rather than pasted: one that
     // carries a `%` or a space builds a URL the city answers 400 to, which used
     // to reach the caller as a 502 blaming Zaragoza for their typo.
-    const url = `${biziStationApiURL}/${encodeURIComponent(id)}.json?srsname=wgs84`;
+    const url = `${biziApiURL}/${encodeURIComponent(id)}.json?srsname=wgs84`;
 
     try {
-      const stationData = await fetchWithTimeout<BiziStationApiResponse>(
+      const row = await fetchWithTimeout<BiziStationApiResponse>(
         this.httpService,
         url,
       );
 
-      const titleParts = stationData.title.split('-');
-      const streetName =
-        titleParts.length > 1
-          ? titleParts.slice(1).join('-').trim()
-          : stationData.title;
-
       return {
         id: id,
-        street: backup?.street || capitalizeEachWord(fixWords(streetName)),
-        state: cityState(stationData.estado),
-        bikes: stationData.bicisDisponibles,
-        openDocks: stationData.anclajesDisponibles,
-        coordinates:
-          backup?.coordinates ||
-          stationData.geometry.coordinates.map((coord) => coord.toString()),
+        street: backup?.street || cityStreet(row),
+        state: cityState(row.estado ?? row.estadoEstacion),
+        // Null rather than nought where the row does not carry a count: nought
+        // is a station somebody rides to and finds empty, and a row that says
+        // nothing has not said that.
+        bikes: row.bicisDisponibles ?? null,
+        openDocks: row.anclajesDisponibles ?? null,
+        coordinates: backup?.coordinates || cityPoint(row),
         source: 'api',
-        sourceUrl: stationData.about || url,
-        lastUpdated: stationData.lastUpdated,
+        sourceUrl: row.about || url,
+        lastUpdated: row.lastUpdated,
         type: 'bizi',
       };
     } catch (exception) {
@@ -274,7 +320,7 @@ export class BiziService {
       while (start < total) {
         const data = await fetchWithTimeout<BiziApiResponse>(
           this.httpService,
-          `${biziApiURL}?start=${start}&rows=${PAGE}&srsname=wgs84`,
+          `${biziApiURL}.json?srsname=wgs84&rows=${PAGE}&start=${start}`,
         );
 
         const page = data?.result ?? [];
@@ -285,25 +331,20 @@ export class BiziService {
         total = data?.totalCount ?? start + page.length;
         if (!page.length) break;
 
-        page.forEach((station) => {
-          const titleParts = station.title.split('-');
-          const streetName =
-            titleParts.length > 1
-              ? titleParts.slice(1).join('-').trim()
-              : station.title;
-
+        page.forEach((row) => {
+          const id = String(row.id);
           allStations.push({
-            id: station.id,
-            street: capitalizeEachWord(fixWords(streetName)),
-            state: cityState(station.estado),
-            bikes: station.bicisDisponibles,
-            openDocks: station.anclajesDisponibles,
-            coordinates: station.geometry.coordinates.map((coord) =>
-              coord.toString(),
-            ),
+            id,
+            street: cityStreet(row),
+            state: cityState(row.estado ?? row.estadoEstacion),
+            bikes: row.bicisDisponibles ?? null,
+            openDocks: row.anclajesDisponibles ?? null,
+            coordinates: cityPoint(row),
             source: 'api',
-            sourceUrl: station.about || `${biziApiURL}?id=${station.id}`,
-            lastUpdated: station.lastUpdated,
+            sourceUrl:
+              row.about ||
+              `${biziApiURL}/${encodeURIComponent(id)}.json?srsname=wgs84`,
+            lastUpdated: row.lastUpdated,
             type: 'bizi',
           });
         });

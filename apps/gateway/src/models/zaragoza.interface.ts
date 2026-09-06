@@ -219,7 +219,7 @@ export class Line {
 export class BiziStation {
   /**
    * Station id.
-   * @example '001'
+   * @example '175'
    */
   id: string;
 

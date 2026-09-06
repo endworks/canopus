@@ -18,7 +18,13 @@ export class StationTime {
   time: string;
 }
 
-/** A service alteration published by the operator. */
+/**
+ * A service alteration published by an operator.
+ *
+ * The bus and the tram publish one on different sites, in different words, and
+ * they arrive here in the same shape: a client showing a traveller what is
+ * altered on their journey should not have to read two.
+ */
 export class ServiceAlert {
   /**
    * Alert id, the slug of the article it links to.
@@ -140,13 +146,15 @@ export class Station {
   type?: string;
 
   /**
-   * Alterations in force on the lines that serve this stop. Bus stops only:
-   * matching is by line, so an alert reaches every stop of a named line.
+   * Alterations in force on the lines that serve this stop. Matching is by
+   * line, so an alert reaches every stop of a named line unless reading the
+   * notice narrowed it to particular stops.
    */
   alerts?: ServiceAlert[];
 }
 
-export class BusLine {
+/** A bus or tram line (both services return the same shape). */
+export class Line {
   /**
    * Line id.
    * @example '23'
@@ -172,10 +180,27 @@ export class BusLine {
   stations: string[];
 
   /**
-   * Station ids along the return direction.
+   * Station ids along the return direction, in that direction's own order.
+   *
+   * Not the outbound list reversed: the return leg calls at the stop on the
+   * other side of the road, or at the tram stop's other platform, and a
+   * traveller sent to the wrong one watches their ride go past.
    * @example ['tuzsa-2', 'tuzsa-1']
    */
   stationsReturn?: string[];
+
+  /**
+   * The shape each leg traces, `[longitude, latitude]` pairs in route order.
+   *
+   * Only on a line asked for by id — the listing of every line leaves them out,
+   * because fifty routes' worth of geometry is not what a reader listing the
+   * network has asked for.
+   * @example [[-0.8891, 41.6488], [-0.8894, 41.6501]]
+   */
+  path?: number[][];
+
+  /** @example [[-0.8894, 41.6501], [-0.8891, 41.6488]] */
+  pathReturn?: number[][];
 
   /**
    * Whether the line is hidden from listings: it was withdrawn, or there is

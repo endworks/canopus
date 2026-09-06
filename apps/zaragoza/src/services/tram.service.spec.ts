@@ -268,15 +268,17 @@ describe('getLinesUpdate', () => {
     );
   });
 
-  it('rebuilds from the stops that say they are on the line', async () => {
+  it('leaves out a stop that belongs to another line', async () => {
     const { service } = build({
       stations: [
         ...storedStations().map((station) => ({ ...station, lines: ['L1'] })),
-        // A stop nothing put on the line: a depot, a stop of a line to come.
+        // Belonging to another line is the one thing a stop can say that
+        // keeps it off this one. A stop that says nothing is a stop no run
+        // has placed yet, and is offered — see below.
         {
           id: '9991',
           street: 'Cocheras',
-          lines: [],
+          lines: ['L2'],
           coordinates: ['-0.95', '41.62'],
         },
       ],
@@ -285,6 +287,98 @@ describe('getLinesUpdate', () => {
     const resp = await service.getLinesUpdate();
 
     expect(resp['L1'].stations).not.toContain('9991');
+  });
+
+  it('leaves out a stop the drawn route does not pass', async () => {
+    const { service } = build({
+      stations: [
+        ...storedStations(),
+        // Nothing on the record says this is not on the line; the route says
+        // it, by not going anywhere near it.
+        {
+          id: '9991',
+          street: 'Cocheras',
+          lines: [],
+          coordinates: ['-0.95', '41.62'],
+        },
+      ],
+      pages: { [linePageUrl]: mapPage() },
+    });
+
+    const resp = await service.getLinesUpdate();
+
+    expect(resp['L1'].stations).not.toContain('9991');
+  });
+
+  it('drops a stored line this network no longer runs', async () => {
+    const { service, lineModel } = build({
+      stations: storedStations(),
+      // What an update under the old name left behind: the same line, under
+      // an id nothing uses now.
+      lines: [
+        {
+          id: '1',
+          name: 'Parque Goya - Clara Campoamor',
+          stations: ['1121'],
+          lastUpdated: '2026-09-01T00:00:00.000Z',
+        },
+      ],
+    });
+
+    const resp = await service.getLinesUpdate();
+
+    expect(Object.keys(resp)).toEqual(['L1']);
+    expect(lineModel.docs.map((doc) => doc.id)).toEqual(['L1']);
+  });
+
+  it('stops a station carrying a line id the network has dropped', async () => {
+    const { service, stationModel } = build({
+      stations: storedStations().map((station) => ({
+        ...station,
+        lines: ['1'],
+      })),
+    });
+
+    await service.getLinesUpdate();
+
+    // The lines at a stop are the ones this run built, not those added to
+    // whatever was stored — which is what would have kept `1` there for good.
+    expect(stationModel.docs.map((doc) => doc.lines)).toEqual(
+      stationModel.docs.map(() => ['L1']),
+    );
+  });
+
+  it('offers a stop that no run has placed back to the line', async () => {
+    const { service, stationModel } = build({
+      stations: storedStations().map((station, index) => ({
+        ...station,
+        // One stop left off by an earlier run; the rest already placed.
+        lines: index === 4 ? [] : ['L1'],
+      })),
+    });
+
+    await service.getLinesUpdate();
+
+    expect(stationModel.docs[4].lines).toEqual(['L1']);
+  });
+
+  it('deletes nothing on a run that could not build the line', async () => {
+    const { service, lineModel } = build({
+      stations: [],
+      lines: [
+        {
+          id: '1',
+          name: 'Parque Goya - Clara Campoamor',
+          stations: ['1121'],
+          lastUpdated: '2026-09-01T00:00:00.000Z',
+        },
+      ],
+    });
+
+    await service.getLinesUpdate();
+
+    // A run that read nothing is not evidence that anything is stale.
+    expect(lineModel.docs.map((doc) => doc.id)).toEqual(['1']);
   });
 
   it('leaves the stored line alone when there are no stops to build from', async () => {

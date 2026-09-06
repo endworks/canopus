@@ -297,6 +297,23 @@ export class TramService {
       if (lineOps.length) {
         await this.tramLineModel.bulkWrite(lineOps, { ordered: false });
       }
+
+      // Anything stored that this run did not build is not a line this
+      // network runs. Deleted rather than hidden, which is what the bus does
+      // with a line its source stopped offering: a withdrawn bus line may
+      // come back and wants its stops kept, whereas everything here is
+      // derived from the stops on every run, so a stored line the run did not
+      // produce is not a line at all — it is the same line under a name we
+      // have stopped using, and leaving it would put it in every listing
+      // beside the one that replaced it. Only ever reached with a line built,
+      // so a run that could read nothing deletes nothing.
+      const stale = [...linesBackup.keys()].filter((id) => id !== built.id);
+      if (stale.length) {
+        await this.tramLineModel.deleteMany({ id: { $in: stale } });
+        this.logger.log(
+          `Dropped the tram line${stale.length > 1 ? 's' : ''} ${stale.join(', ')}: not a line this network runs`,
+        );
+      }
       // A stop is on the line the moment the line is built from it. Stored
       // here so a stop knows its own line without the line being read back,
       // which is what puts a line-wide alteration on a stop's board.
@@ -403,16 +420,24 @@ export class TramService {
   /**
    * The stops that make up a line.
    *
-   * A stop says which lines call at it, and that is what is used — except on a
-   * network whose stops have never been told, where every tram stop is on the
-   * only line there is. The second half of that is what a first run is: the
-   * link is written by this update, so before the first one nothing carries it.
+   * A stop that belongs to another line is left out; everything else is
+   * offered, and what is actually on the route is settled by the route. On a
+   * network whose stops have never been told anything, that is every tram
+   * stop there is — which is what a first run reads, since the link between a
+   * stop and its line is written by this update.
    */
   private stationsOfLine(stations: TramStation[], lineId: string) {
-    const assigned = stations.filter((station) =>
-      station.lines?.includes(lineId),
+    // A stop is a candidate for this line if it says it is on it, or if it
+    // says nothing at all: a stop with no lines is one no run has placed yet,
+    // or one a run left off, and either way the way back onto the line is to
+    // be offered to it again. Only a stop that belongs to some other line is
+    // left out, which is the one thing this filter can say with certainty —
+    // "is already on this line" would be circular, and would strand for good
+    // any stop a single bad run dropped.
+    const candidates = stations.filter(
+      (station) => !station.lines?.length || station.lines.includes(lineId),
     );
-    return assigned.length ? assigned : stations;
+    return candidates.length ? candidates : stations;
   }
 
   private lineUpdates(
@@ -441,14 +466,19 @@ export class TramService {
     ];
   }
 
+  /**
+   * Which lines call at each stop, as this run worked them out.
+   *
+   * What the run built, rather than what the run built added to whatever was
+   * stored. Every tram line here is derived from the stops themselves on every
+   * run, so there is no line at a stop this update does not know about, and a
+   * union with history could only ever accumulate: a stop that was told it was
+   * on `1` kept it and gained `L1`, and would have carried both for good.
+   */
   private stationUpdates(built: BuiltTramLine, stations: TramStation[]) {
     const onTheLine = new Set([...built.stations, ...built.stationsReturn]);
     return stations.flatMap((station) => {
-      const lines = onTheLine.has(station.id)
-        ? [...new Set([...(station.lines ?? []), built.id])].sort(
-            compareLineIds,
-          )
-        : (station.lines ?? []).filter((line) => line !== built.id);
+      const lines = onTheLine.has(station.id) ? [built.id] : [];
       return sameList(station.lines ?? [], lines)
         ? []
         : [upsertById<TramStation>(station.id, { lines })];

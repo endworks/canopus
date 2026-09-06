@@ -1,6 +1,7 @@
 import { HttpService } from '@nestjs/axios';
 import { of, throwError } from 'rxjs';
 import {
+  biziGbfs,
   cityState,
   electricBikes,
   gbfsState,
@@ -168,6 +169,47 @@ describe('pairByPosition', () => {
     );
 
     expect(paired.size).toBe(0);
+  });
+});
+
+describe('biziGbfs', () => {
+  /** The URL the client actually asks for its feed listing. */
+  const discoveryUrl = async (env: NodeJS.ProcessEnv) => {
+    const get = jest.fn().mockReturnValue(of({ data: { data: {} } }));
+    await biziGbfs(http(get), env)
+      .stationStatus()
+      .catch(() => undefined);
+    return get.mock.calls[0]?.[0];
+  };
+
+  // The URL is a fact about Bizi, not about a deployment: it is the one the
+  // system registers in the GBFS catalogue, published and unauthenticated.
+  it('reads the registered feed without being configured', async () => {
+    expect(biziGbfs(http(jest.fn()), {}).enabled).toBe(true);
+    await expect(discoveryUrl({})).resolves.toBe(
+      'https://zaragoza.publicbikesystem.net/customer/gbfs/v3.0/gbfs.json',
+    );
+  });
+
+  it('lets a deployment point somewhere else', async () => {
+    await expect(
+      discoveryUrl({ BIZI_GBFS_URL: 'https://elsewhere/gbfs.json' }),
+    ).resolves.toBe('https://elsewhere/gbfs.json');
+  });
+
+  // A repository variable rather than a revert, on the day the feed misbehaves.
+  it('can be switched off without a deploy', () => {
+    for (const off of ['off', 'none', 'FALSE', '0']) {
+      expect(biziGbfs(http(jest.fn()), { BIZI_GBFS_URL: off }).enabled).toBe(
+        false,
+      );
+    }
+  });
+
+  it('takes an empty variable to mean the default, not off', () => {
+    expect(biziGbfs(http(jest.fn()), { BIZI_GBFS_URL: '  ' }).enabled).toBe(
+      true,
+    );
   });
 });
 

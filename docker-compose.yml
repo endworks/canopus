@@ -34,10 +34,11 @@ services:
       # Optional: without it the service alerts are stored exactly as the
       # operator lists them, with no article read for dates or stops.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      # Optional: the Bizi operator's own GBFS discovery document
-      # (`gbfs.json`), which the bike counts are read from in preference to
-      # the city's mirror of them. Without it the Bizi endpoints ask the city
-      # exactly as they always have.
+      # Optional override. The Bizi operator's GBFS discovery document is the
+      # registered one by default, and the bike counts are read from it in
+      # preference to the city's mirror of them. Point this somewhere else for
+      # a mirror, or set it to `off` to take that road out and ask only the
+      # city, which is the lever for the day the operator's feed misbehaves.
       BIZI_GBFS_URL: ${BIZI_GBFS_URL:-}
     networks:
       - canopus

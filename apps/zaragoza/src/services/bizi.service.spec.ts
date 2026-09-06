@@ -450,6 +450,62 @@ describe('BiziService', () => {
       );
     });
 
+    // Turning the feed on must not wait on somebody remembering to run the
+    // update: a road that does nothing looks exactly like a road that is down.
+    it('pairs a station it has never paired, from where it stands', async () => {
+      holds(stored);
+      operatorHas({ station_id: 'zgz-42', num_bikes_available: 5 });
+      gbfs.stationInformation.mockResolvedValue([
+        { station_id: 'zgz-42', lon: -0.8773, lat: 41.6561 },
+      ]);
+
+      const resp = (await service.getStation('175')) as BiziStationResponse;
+
+      expect(resp.source).toBe('operator');
+      expect(resp.bikes).toBe(5);
+      expect(get).not.toHaveBeenCalled();
+    });
+
+    // Furniture: one request every few hours, not one per reader.
+    it('holds the operator station list far longer than its counts', async () => {
+      holds(stored);
+      operatorHas({ station_id: 'zgz-42', num_bikes_available: 5 });
+      gbfs.stationInformation.mockResolvedValue([
+        { station_id: 'zgz-42', lon: -0.8773, lat: 41.6561 },
+      ]);
+
+      await service.getStation('175');
+
+      const ttl = (key: string) =>
+        cache.wrap.mock.calls.find((call) => call[0] === key)?.[2];
+      expect(ttl('bizi/gbfs/information')).toBeGreaterThan(
+        ttl('bizi/gbfs/status'),
+      );
+    });
+
+    it('falls through to the city when nothing stands near enough', async () => {
+      holds(stored);
+      operatorHas({ station_id: 'zgz-42', num_bikes_available: 5 });
+      gbfs.stationInformation.mockResolvedValue([
+        { station_id: 'zgz-42', lon: -0.9235, lat: 41.6334 },
+      ]);
+      get.mockReturnValueOnce(of({ data: station() }));
+
+      const resp = (await service.getStation('175')) as BiziStationResponse;
+
+      expect(resp.source).toBe('api');
+    });
+
+    // A stored pairing is the cheap answer and must not be re-derived.
+    it('does not ask for the station list when the pairing is stored', async () => {
+      holds({ ...stored, gbfsId: 'zgz-42' } as BiziStation);
+      operatorHas({ station_id: 'zgz-42', num_bikes_available: 5 });
+
+      await service.getStation('175');
+
+      expect(gbfs.stationInformation).not.toHaveBeenCalled();
+    });
+
     it('keeps the operator id out of the answer', async () => {
       holds({ ...stored, gbfsId: 'zgz-42' } as BiziStation);
       gbfs.enabled = true;

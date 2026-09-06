@@ -21,7 +21,14 @@ import { fetchWithTimeout } from '@canopus/nest';
 /** What `station_information` carries, of what this service reads. */
 export interface GbfsStationInfo {
   station_id: string;
-  name?: string;
+  /**
+   * GBFS 3 writes this as a list of localised strings where every version
+   * before it wrote one. Nothing here reads it — the street this service
+   * serves is the city's, so that the two roads name a station alike — but it
+   * is typed as both so that nobody reads it as a string and is right only
+   * until the feed's version moves.
+   */
+  name?: string | { text?: string; language?: string }[];
   lat?: number;
   lon?: number;
   capacity?: number;
@@ -315,13 +322,36 @@ export class GbfsClient {
 }
 
 /**
- * The feed this deployment can reach: none, without a discovery URL for it.
+ * Where Bizi's operator publishes its feed.
  *
- * Unset is the default on purpose. Until somebody points this at a real feed
- * the service asks the city exactly as it always has, so this can ship and sit
- * dormant rather than waiting on a URL to be merged.
+ * Bizi runs on PBSC's platform — the `publicbikesystem.net` that Bilbao and
+ * Donostia are on too — which Lyft bought in 2022, and which is why the app the
+ * city points riders at is a Lyft app. This URL is the one the system itself
+ * registers in MobilityData's GBFS catalogue: published, unauthenticated, and
+ * meant to be read. So it is written down here beside every other source this
+ * service reads rather than configured into a deployment, and nothing had to be
+ * pulled out of the app to find it.
+ */
+const zaragozaGbfsURL =
+  'https://zaragoza.publicbikesystem.net/customer/gbfs/v3.0/gbfs.json';
+
+/** What turns the road off, for the deployment that needs it off in a hurry. */
+const disabled = /^(off|none|false|0)$/i;
+
+/**
+ * The feed this deployment reads.
+ *
+ * The registered URL by default, because it is a fact about Bizi rather than
+ * about a deployment. `BIZI_GBFS_URL` still overrides it — for a system that
+ * moves, or a mirror — and setting it to `off` takes the operator road out
+ * altogether, which is a repository variable rather than a revert on the day
+ * the feed misbehaves.
  */
 export const biziGbfs = (
   http: HttpService,
   env: NodeJS.ProcessEnv = process.env,
-): GbfsClient => new GbfsClient(http, env.BIZI_GBFS_URL || undefined);
+): GbfsClient => {
+  const configured = (env.BIZI_GBFS_URL ?? '').trim();
+  if (disabled.test(configured)) return new GbfsClient(http, undefined);
+  return new GbfsClient(http, configured || zaragozaGbfsURL);
+};

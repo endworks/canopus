@@ -54,6 +54,8 @@ const PAGE = 50;
 const STATION_TTL = 10000;
 /** A stored station has no counts on it to go stale. */
 const STALE_STATION_TTL = 60000;
+/** Where the operator's stations stand changes about never. */
+const OPERATOR_INFO_TTL = 1000 * 60 * 60 * 6;
 
 /**
  * The place a rack stands, said the way a bus stop is said.
@@ -229,10 +231,7 @@ export class BiziService {
       return null;
     }
 
-    // The operator's own number for this rack where the last update paired
-    // them, and otherwise the caller's id — some systems number their stations
-    // the same way the city does, and where they do, no pairing is needed.
-    const wanted = backup?.gbfsId ?? id;
+    const wanted = await this.operatorIdFor(id, backup);
     const status = statuses.find((station) => station.station_id === wanted);
     if (!status) return null;
 
@@ -250,6 +249,47 @@ export class BiziService {
       lastUpdated: new Date().toISOString(),
       type: 'bizi',
     };
+  }
+
+  /**
+   * The operator's own number for this station.
+   *
+   * The last update's pairing where there is one. Where there is not — a
+   * station added since, or a deployment that has read the feed before it has
+   * run an update — the pairing is worked out here from the one thing both
+   * sources agree on, which is where the station stands. Otherwise turning the
+   * feed on would do nothing at all until somebody remembered to run the
+   * update, and doing nothing is indistinguishable from a feed that is down.
+   *
+   * The list of stations is furniture and cached as such: this costs one
+   * request every few hours, not one per reader.
+   */
+  private async operatorIdFor(
+    id: string,
+    backup: BiziStation | null,
+  ): Promise<string> {
+    if (backup?.gbfsId) return backup.gbfsId;
+    // Nothing to pair on. Some systems number their stations the way the city
+    // does, so the caller's id is still worth trying.
+    if (!backup?.coordinates?.length) return id;
+
+    try {
+      const information = await this.cacheManager.wrap(
+        'bizi/gbfs/information',
+        () => this.gbfs.stationInformation(),
+        OPERATOR_INFO_TTL,
+      );
+      const paired = pairByPosition(
+        [{ id, coordinates: backup.coordinates }],
+        information,
+      );
+      return paired.get(id) ?? id;
+    } catch (exception) {
+      this.logger.warn(
+        `Could not pair the station ${id} with the operator's feed: ${exception.message}`,
+      );
+      return id;
+    }
   }
 
   /** The station as the city mirrors it: one request, for this rack alone. */

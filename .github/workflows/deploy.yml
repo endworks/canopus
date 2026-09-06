@@ -33,11 +33,11 @@ env:
   # private key rather than stored — bump this, redeploy, ship the clients.
   # `pnpm --filter @canopus/weather client-key` prints the current one.
   WEATHER_CLIENT_KEY_VERSION: "1"
-  # The Bizi operator's GBFS discovery document. A repository variable rather
-  # than a 1Password reference because a published feed URL is not a secret,
-  # and empty rather than absent because that is the default: with no feed to
-  # ask, the Bizi endpoints read the city's dataset exactly as they always
-  # have. Set it in the repository's variables to turn the operator road on.
+  # Override for the Bizi operator's GBFS discovery document, which the service
+  # knows the registered URL of. A repository variable rather than a 1Password
+  # reference because a published feed URL is not a secret, and empty by design:
+  # empty means the registered feed. Set it to another URL for a mirror, or to
+  # `off` to take the operator road out without a revert.
   BIZI_GBFS_URL: ${{ vars.BIZI_GBFS_URL }}
 
 jobs:

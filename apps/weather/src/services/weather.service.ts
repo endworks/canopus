@@ -17,6 +17,7 @@ import {
 } from '../models/weather.interface';
 import {
   collapse,
+  dayByDay,
   emmaCodes,
   filterAlerts,
   plain,
@@ -228,10 +229,20 @@ export class WeatherService {
     // Whoever answered instead of the provider, in the order they rank.
     const borrowedAir = measured ?? modelledAir;
 
-    const warnings = ownAlerts
+    const answered = ownAlerts
       ? this.issued(reading, payload)
       : await (feed ??
           this.alerts(payload, reading.location.country, language, cell));
+    // Ordered here and nowhere earlier, because this is the first point that
+    // knows what day it is where the reader is standing: the offset is the
+    // one going out in `location`, and neither the cached national feed nor
+    // the provider's own list was ever asked about a cell.
+    const warnings = answered && {
+      ...answered,
+      alerts: [...answered.alerts].sort(
+        dayByDay(reading.location.timezoneOffset, Date.now() / 1000),
+      ),
+    };
     // The warnings actually on show, or nothing. Nobody is credited for an
     // empty list — not the feed that said so, not a provider that issued its
     // own — because a credit beside no data has a client drawing a met office,

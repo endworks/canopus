@@ -154,7 +154,10 @@ export class MeteoAlarmProvider {
   }
 
   /**
-   * Every warning in force over a country, most severe first.
+   * Every warning in force over a country, most severe first — which is the
+   * order it is held in, not the order a reader gets: one national list
+   * serves every cell in the country, and the day a warning falls on is
+   * the reader's own. The service orders what it hands back.
    *
    * Cached already narrowed and already in one language rather than as the
    * feed came: Spain answers with two megabytes covering five days, of which

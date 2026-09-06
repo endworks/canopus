@@ -448,9 +448,13 @@ export class WeatherReading {
   forecast: ForecastStep[];
 
   /**
-   * Warnings in force, most severe first. Present only when
-   * `X-Weather-Alerts` asked for them and a feed answered — an empty array
-   * means MeteoAlarm was asked and holds nothing for the country.
+   * Warnings in force, day by day and worst first within each day. Present
+   * only when `X-Weather-Alerts` asked for them and a feed answered — an empty
+   * array means MeteoAlarm was asked and holds nothing for the country.
+   *
+   * Today's lead, whatever their band, since a client drawing a time rather
+   * than a date reads the top card as now; a warning already under way counts
+   * as today's. The day is the place's, by `location.timezoneOffset`.
    *
    * Narrowed to the regions the cell falls in where that is possible, and to
    * the country where it is not — see `alertScope`, and narrow further with

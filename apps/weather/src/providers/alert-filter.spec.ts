@@ -1,5 +1,11 @@
 import { WeatherAlert } from '../models/weather.interface';
-import { collapse, filterAlerts, inForce, rankAlert } from './alert-filter';
+import {
+  collapse,
+  dayByDay,
+  filterAlerts,
+  inForce,
+  rankAlert,
+} from './alert-filter';
 
 const HOUR = 3600;
 const NOON = 1_756_900_800;
@@ -181,6 +187,84 @@ describe('collapse', () => {
     expect(collapse(alerts)).toEqual(alerts);
     // Untouched rather than rebuilt: a lone warning keeps its own identity.
     expect(collapse(alerts)[0]).toBe(alerts[0]);
+  });
+});
+
+describe('dayByDay', () => {
+  const yellow = { level: 'yellow', severity: 'Moderate' };
+
+  it('puts today before tomorrow, whichever band each is', () => {
+    // The case that started it: a yellow afternoon and an orange one the next
+    // day. Ranked on severity alone the orange led, and a reader glancing at
+    // the top card read tomorrow's warning as now.
+    const ordered = [
+      warning('tomorrow-orange', {
+        onset: NOON + 24 * HOUR,
+        expires: NOON + 32 * HOUR,
+      }),
+      warning('today-yellow', yellow),
+    ].sort(dayByDay(0, NOON));
+
+    expect(ordered.map((alert) => alert.id)).toEqual([
+      'today-yellow',
+      'tomorrow-orange',
+    ]);
+  });
+
+  it('keeps the worst of a day first within it', () => {
+    // The band still decides the day's own order, so the worst thing about
+    // today is the first thing about today.
+    const ordered = [
+      warning('today-yellow', { ...yellow, onset: NOON }),
+      warning('today-orange', { onset: NOON + HOUR }),
+    ].sort(dayByDay(0, NOON));
+
+    expect(ordered.map((alert) => alert.id)).toEqual([
+      'today-orange',
+      'today-yellow',
+    ]);
+  });
+
+  it('counts a warning already under way as today s', () => {
+    // One running since Tuesday is happening to the reader on Thursday, so it
+    // belongs to Thursday rather than sorting above it into a day gone by.
+    const ordered = [
+      warning('today-orange', { onset: NOON }),
+      warning('since-tuesday', {
+        ...yellow,
+        onset: NOON - 48 * HOUR,
+        expires: NOON + 2 * HOUR,
+      }),
+    ].sort(dayByDay(0, NOON));
+
+    expect(ordered.map((alert) => alert.id)).toEqual([
+      'today-orange',
+      'since-tuesday',
+    ]);
+  });
+
+  it('draws the day boundary where the place does', () => {
+    // Half past ten in the evening in London is half past midnight in Zaragoza,
+    // and the same warning is today in one and tomorrow in the other. The
+    // offset is the one the response carries, so the group a warning lands in
+    // and the day the client labels it are decided by the same number.
+    const late = warning('late', {
+      ...yellow,
+      onset: NOON + 10.5 * HOUR,
+      expires: NOON + 14 * HOUR,
+    });
+    const now = warning('now-orange', { onset: NOON });
+
+    expect(
+      [late, now].sort(dayByDay(0, NOON)).map((alert) => alert.id),
+    ).toEqual(['now-orange', 'late']);
+    // The same warning two hours east has crossed midnight, so it is
+    // tomorrow's and sorts under today's whatever its band.
+    expect(
+      [late, warning('today-yellow', yellow)]
+        .sort(dayByDay(2 * HOUR, NOON))
+        .map((alert) => alert.id),
+    ).toEqual(['today-yellow', 'late']);
   });
 });
 

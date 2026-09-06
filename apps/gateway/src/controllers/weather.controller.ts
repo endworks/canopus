@@ -182,7 +182,7 @@ export class WeatherController {
     name: 'X-Weather-Alerts',
     required: false,
     description:
-      'Set to include the official weather warnings in force. Off by default. Where they come ' +
+      'Set to include the official weather warnings in force, ordered day by day — whatever is in force today leads whatever its band, and the worst of each day comes first within it. Off by default. Where they come ' +
       'from depends on the provider: Apple issues its own, for the coordinate asked about and ' +
       'for most of the world, in the same request as the reading. Every other provider borrows ' +
       "MeteoAlarm's (EUMETNET, no key needed), which is another party in the request and is " +

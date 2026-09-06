@@ -70,7 +70,9 @@ export interface ProviderReading {
   current: CurrentWeather;
   forecast: ForecastStep[];
   /**
-   * The warnings the provider itself issues, unfiltered and most severe first.
+   * The warnings the provider itself issues, unfiltered and most severe
+   * first. The order the reader gets is settled by the service, which is
+   * the only part that knows what day it is where they are standing.
    *
    * Present only from a provider whose `info.alerts` is true and only when the
    * caller asked. The distinction the response cares about survives here: an

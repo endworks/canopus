@@ -54,9 +54,43 @@ export const rankAlert = (alert: WeatherAlert): number =>
   BANDS[plain(alert.severity)] ??
   0;
 
-/** The order a list of warnings is read in: worst first, soonest after. */
+/** The order the copies of one story are held in: worst first, soonest after. */
 const worstFirst = (a: WeatherAlert, b: WeatherAlert): number =>
   rankAlert(b) - rankAlert(a) || a.onset - b.onset;
+
+/** Which local day an instant falls on, counted from the epoch. */
+const dayOf = (instant: number, offset: number): number =>
+  Math.floor((instant + offset) / 86400);
+
+/**
+ * The order a reader takes the warnings in: today's before tomorrow's, and
+ * the worst of each day before the rest of it.
+ *
+ * Severity alone put a yellow afternoon under an orange one two days out, and
+ * a reader glancing at the top card read the orange as now. The day comes
+ * first because it is the question a warning answers first — is this happening
+ * to me today — and the band decides the day's own order, so the worst thing
+ * about today is still the first thing about today.
+ *
+ * A warning already under way belongs to today whenever it started, so one
+ * running since Tuesday leads on Thursday rather than sorting below a warning
+ * that has not begun.
+ *
+ * The day is the place's, not the reader's: the offset is the one the response
+ * carries in `location`, so a warning the client labels tomorrow is a warning
+ * this puts in tomorrow's group. Where that offset is a guess — WeatherKit
+ * states no time zone, so it is worked out from the longitude — the sort is
+ * wrong exactly where the label is, and the two stay saying the same thing,
+ * which is what a reader actually needs of them.
+ */
+export const dayByDay =
+  (offset: number, now: number) =>
+  (a: WeatherAlert, b: WeatherAlert): number => {
+    const today = dayOf(now, offset);
+    const day = (alert: WeatherAlert) =>
+      Math.max(dayOf(alert.onset, offset), today);
+    return day(a) - day(b) || worstFirst(a, b);
+  };
 
 /**
  * The warning with its band named, whichever of the band's two names it came

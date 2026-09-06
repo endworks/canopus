@@ -996,6 +996,61 @@ describe('getWeather', () => {
     ]);
   });
 
+  it('reads day by day, with the worst of each day first', async () => {
+    // A yellow afternoon today and an orange one later in the week. Ranked on
+    // severity alone the orange led, and the top card — which says a time and
+    // not a date — read as though tomorrow's warning were now.
+    const band = (colour: string, severity: string, rank: number) => ({
+      severity,
+      parameter: [
+        {
+          value: `${rank}; ${colour}; ${severity}`,
+          valueName: 'awareness_level',
+        },
+        { value: '4; high-temperature', valueName: 'awareness_type' },
+      ],
+    });
+    const heat = 'Aviso por temperaturas maximas';
+
+    const { service } = build({
+      ...routes,
+      'feeds.meteoalarm.org': {
+        warnings: [
+          warning('orange-later', [
+            info('en-GB', heat, {
+              ...band('orange', 'Severe', 3),
+              onset: iso(NOW + 48 * HOUR),
+              expires: iso(NOW + 56 * HOUR),
+            }),
+          ]),
+          warning('yellow-today', [
+            info('en-GB', heat, {
+              ...band('yellow', 'Moderate', 2),
+              onset: iso(NOW - HOUR),
+              expires: iso(NOW + HOUR),
+            }),
+          ]),
+        ],
+      },
+    });
+
+    const reading = await service.getWeather({
+      apiKey: 'key',
+      latitude: 41.6,
+      longitude: -0.9,
+      includeAlerts: true,
+    });
+
+    expect(reading.alerts?.map((alert) => alert.id)).toEqual([
+      'yellow-today',
+      'orange-later',
+    ]);
+    expect(reading.alerts?.map((alert) => alert.level)).toEqual([
+      'yellow',
+      'orange',
+    ]);
+  });
+
   it('keeps only the warnings at or above the safety band asked for', async () => {
     const { service } = build(routes);
 

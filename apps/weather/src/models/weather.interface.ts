@@ -293,8 +293,15 @@ export interface WeatherResponse {
   current: CurrentWeather;
   forecast: ForecastStep[];
   /**
-   * Warnings in force, most severe first — present only when the caller asked
-   * for them and a feed answered.
+   * Warnings in force, day by day and worst first within each day — present
+   * only when the caller asked for them and a feed answered.
+   *
+   * The day leads because it is the question a warning answers first: is this
+   * happening to me today. Severity alone put a yellow afternoon under an
+   * orange one two days out, and a client drawing a time rather than a date
+   * read the top card as now. One already under way counts as today's,
+   * whenever it started. The day is the place's, by the offset in `location`,
+   * so the group a warning sorts into is the day a client labels it.
    *
    * From the weather provider itself where it issues warnings — Apple does,
    * for the coordinate asked about and for most of the world — and from

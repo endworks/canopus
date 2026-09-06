@@ -323,7 +323,7 @@ credited only for it.
 
 ## Warnings
 
-`X-Weather-Alerts` adds the official warnings in force, most severe first, from
+`X-Weather-Alerts` adds the official warnings in force, day by day, from
 [MeteoAlarm](https://meteoalarm.org/) — EUMETNET's aggregator, which collects
 what the national met offices issue as CAP and publishes it without a key. Each
 warning names the office that issued it and links where that office publishes
@@ -421,6 +421,29 @@ expiry has passed are dropped, and an office that updates a warning issues a new
 message naming the one it replaces — both are in the feed, only the update comes
 back. A warning with no expiry at all is kept, since some offices issue those
 and an absent end is not a lapsed one.
+
+### The order they come in
+
+Day by day, and the worst of each day first within it.
+
+The day leads because it is the question a warning answers first: is this
+happening to me today. Sorted on severity alone — which is what this did — a
+yellow afternoon sat under an orange one two days out, and since a client draws
+a time rather than a date, the top card read as though the orange were now.
+
+A warning already under way belongs to today whenever it started, so one
+running since Tuesday leads on Thursday rather than sorting above it into a day
+that has gone.
+
+The day is the place's, not the reader's: the offset is the one going out in
+`location`, so the group a warning sorts into is the day a client labels it
+from. Where that offset is a guess — WeatherKit states no time zone, so it is
+worked out from the longitude — the order is wrong exactly where the label is,
+and the two go on agreeing, which is what a reader needs of them.
+
+The order is settled at the end, in the service. Nothing earlier could: the
+national feed is cached whole for a country and serves every cell in it, and no
+provider was ever asked what day it is where the reader is standing.
 
 ### One warning per warning
 

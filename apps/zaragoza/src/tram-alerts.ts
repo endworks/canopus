@@ -1,6 +1,8 @@
+import { createHash } from 'node:crypto';
+
 import * as cheerio from 'cheerio';
 
-import { articleText, parseAlertDate, ScrapedAlert } from './alerts';
+import { articleText, ScrapedAlert } from './alerts';
 import { TRAM_LINE_ID } from './tram-line';
 
 /**
@@ -10,27 +12,43 @@ import { TRAM_LINE_ID } from './tram-line';
  */
 export const tramSiteURL = 'https://www.tranviasdezaragoza.es';
 
-/** The page a traveller is sent to, and the one this falls back to reading. */
-export const tramIncidentsURL = `${tramSiteURL}/incidencias/`;
-
-const wpApiURL = `${tramSiteURL}/wp-json/wp/v2`;
+/**
+ * The front page, which is where a live alteration is shown.
+ *
+ * With a query string on it, and not for cache-busting: the site answers the
+ * bare `/` with a 302 to `http://127.0.0.1`, which is a redirect rule of
+ * theirs that matches the path exactly and is plainly not meant for anybody.
+ * Any query at all goes past it to the page a reader sees.
+ */
+export const tramFrontPageURL = `${tramSiteURL}/?canopus=1`;
 
 /**
- * The categories an alteration is filed under, in the order they are tried.
+ * The WordPress REST API, under `/api/`.
  *
- * The site files its incidents somewhere; which slug it uses is the site's
- * business and has changed before on the bus side. Asking for several at once
- * costs one request and survives a rename that would otherwise silently empty
- * the listing — WordPress ignores the slugs it does not have.
+ * Not `/wp-json/`, which this site answers 404: the prefix is configurable and
+ * theirs is changed. It is the site's own pages that give it away — they link
+ * their oembed endpoint under `/api/`, so that is what is asked.
  */
-const alertCategorySlugs = ['incidencias', 'avisos', 'alteraciones'];
+const restBase = `${tramSiteURL}/api/wp/v2`;
+
+/**
+ * The categories a service alteration is filed under.
+ *
+ * `home` is the one that exists, and it is the operator's own featured set:
+ * every alteration they publish is in it — the extended hours for a festival,
+ * the reinforcement for a match, the special services for the fiestas — while
+ * the general press releases stay in `noticias` alone. It is not named for
+ * what it holds, so the others are asked for too, against the day somebody
+ * files these where their name says.
+ */
+const alertCategorySlugs = ['home', 'incidencias', 'avisos', 'alteraciones'];
 
 /**
  * How many notices back a listing is read.
  *
- * What is on the listing is what the operator is still showing, and an
- * alteration that is over comes off it; a page of fifty is well past the point
- * where the rest is history rather than news.
+ * These are what the operator is still showing below the fold, and an
+ * alteration that is over drops off the list on its own end date; a page of
+ * fifty is well past the point where the rest is history rather than news.
  */
 export const maxTramAlerts = 50;
 
@@ -43,7 +61,6 @@ export interface WordPressPost {
   date_gmt?: string;
   title?: { rendered?: string };
   content?: { rendered?: string };
-  excerpt?: { rendered?: string };
 }
 
 export interface WordPressCategory {
@@ -64,10 +81,10 @@ export const alertCategoryIds = (
     .map((category) => category.id);
 
 export const categoriesQuery = () =>
-  `${wpApiURL}/categories?slug=${alertCategorySlugs.join(',')}&per_page=${alertCategorySlugs.length}&_fields=id,slug`;
+  `${restBase}/categories?per_page=100&_fields=id,slug`;
 
 export const postsQuery = (categoryIds: number[]) =>
-  `${wpApiURL}/posts?categories=${categoryIds.join(',')}&per_page=${maxTramAlerts}&_fields=slug,link,date,title,content`;
+  `${restBase}/posts?categories=${categoryIds.join(',')}&per_page=${maxTramAlerts}&_fields=slug,link,date,title,content`;
 
 /** WordPress renders `&amp;` and friends into the titles it hands back. */
 const decodeEntities = (text: string): string =>
@@ -97,12 +114,33 @@ export const alertId = (link: string, slug?: string): string | undefined => {
 };
 
 /**
+ * A link on this site, or nothing: an alert points at its own operator.
+ *
+ * `base` is given only where a relative href is a real possibility — the
+ * markup of the block at the top is somebody's hand-written HTML. A post's
+ * `link` is always absolute, and resolving it against the site would turn a
+ * field of junk into a page of ours that does not exist.
+ */
+const ownLink = (href: string | undefined, base?: string): URL | undefined => {
+  if (!href) return undefined;
+  let url: URL;
+  try {
+    url = new URL(href, base);
+  } catch {
+    return undefined;
+  }
+  if (url.host !== new URL(tramSiteURL).host) return undefined;
+  url.hash = '';
+  return url;
+};
+
+/**
  * The alterations the REST API lists, in this service's shape.
  *
  * Every one of them is about the one line the network runs — the site does not
  * say so on each notice because there is nothing else it could be about — so
  * they are all filed against it. That is what puts an alteration on the stops
- * of line 1 rather than nowhere.
+ * of L1 rather than nowhere.
  *
  * A post is dropped rather than half-read: without a link there is nothing to
  * send a reader to, and without a headline there is nothing to show them.
@@ -113,23 +151,13 @@ export const parseWordPressAlerts = (
   const alerts = new Map<string, ScrapedAlert>();
 
   (posts ?? []).forEach((post) => {
-    const link = post.link?.trim();
-    if (!link) return;
-    // Somebody else's HTML: a notice is a post on this site, and a link
-    // anywhere else is not one.
-    let url: URL;
-    try {
-      url = new URL(link);
-    } catch {
-      return;
-    }
-    if (url.host !== new URL(tramSiteURL).host) return;
+    const url = ownLink(post.link?.trim());
+    if (!url) return;
 
-    const id = alertId(link, post.slug);
+    const id = alertId(url.href, post.slug);
     const title = clean(decodeEntities(post.title?.rendered ?? ''));
     if (!id || !title) return;
 
-    url.hash = '';
     alerts.set(id, {
       id,
       title,
@@ -149,60 +177,60 @@ export const postArticle = (post: WordPressPost | undefined): string =>
   post?.content?.rendered ? articleText(post.content.rendered) : '';
 
 /**
- * The alterations a listing page shows, for a site whose REST API is shut.
+ * An alteration in force, as the block at the top of the front page shows it.
  *
- * Read from the markup WordPress themes agree on rather than this theme's own
- * classes: a post is an `<article>` (or something classed `post`), its
- * headline is the first heading in it, and its date is a `<time>`. A theme
- * that departs from all three yields nothing here, which leaves the stored
- * alerts exactly as they were.
+ * That block is the operator's own — their plugin renders it, and its markup
+ * is theirs rather than the theme's: a `tranvias_dosnet_avisos` container with
+ * one `tranvias_dosnet_avisos_aviso` per alteration inside it. Which is why
+ * these are read by those class names and not by shape: the heading beside
+ * them and the hairline between them are elements too, and reading "AVISOS"
+ * as an alteration would put a notice on every stop that says nothing.
+ *
+ * There is normally nothing here. The block appears when something is wrong
+ * with the service right now and goes when it is over, which is exactly what
+ * makes it worth reading — the posts below the fold are what was announced,
+ * and this is what is happening.
  */
-export const parseIncidentListing = (
-  html: string,
-  pageUrl: string = tramIncidentsURL,
-): ScrapedAlert[] => {
+export const parseLiveAlerts = (html: string): ScrapedAlert[] => {
   const $ = cheerio.load(html);
   const alerts = new Map<string, ScrapedAlert>();
-  const host = new URL(pageUrl).host;
 
-  const entries = $('article, .post, .type-post').toArray();
+  $('.tranvias_dosnet_avisos_aviso').each((_, element) => {
+    const aviso = $(element);
+    const title = clean(aviso.text());
+    if (!title) return;
 
-  entries.forEach((element) => {
-    const entry = $(element);
-    const anchor = entry
-      .find('h1 a[href], h2 a[href], h3 a[href], .entry-title a[href]')
-      .first();
-    const href = anchor.attr('href');
-    if (!href) return;
-
-    let url: URL;
-    try {
-      url = new URL(href, pageUrl);
-    } catch {
-      return;
-    }
-    if (url.host !== host) return;
-    url.hash = '';
-
-    const id = alertId(url.href);
-    const title = clean(anchor.text());
-    if (!id || !title) return;
-
-    // A machine-readable date where the theme prints one, and the words it
-    // shows a reader where it does not.
-    const time = entry.find('time[datetime]').first().attr('datetime');
-    const printed = clean(
-      entry.find('time, .entry-date, .published, .post-date').first().text(),
+    // Where the notice links to its own article, that article's slug is its
+    // id and the two are one alert rather than two — the same alteration is
+    // often both the block at the top and the post below it.
+    const url = ownLink(
+      aviso.find('a[href]').first().attr('href'),
+      tramSiteURL,
     );
+    const id = url ? alertId(url.href) : liveAlertId(title);
+    if (!id) return;
 
     alerts.set(id, {
       id,
       title,
-      url: url.href,
-      date: time?.slice(0, 10) ?? parseAlertDate(printed),
+      // With nothing linked, the page that is showing it is where a reader
+      // goes to read it.
+      url: url?.href ?? `${tramSiteURL}/`,
       lines: [TRAM_LINE_ID],
     });
   });
 
   return [...alerts.values()];
 };
+
+/**
+ * The id of a notice that links to nothing.
+ *
+ * Taken from its own words, because there is nothing else: the block carries
+ * no slug, no date and no id of its own. It holds while the wording does,
+ * which is what an id has to do here — a run stores what the site is showing
+ * and drops the rest, so an alert whose id changed would come back as a new
+ * one rather than the same one going on.
+ */
+const liveAlertId = (title: string): string =>
+  `aviso-${createHash('sha256').update(title.toLowerCase()).digest('hex').slice(0, 12)}`;

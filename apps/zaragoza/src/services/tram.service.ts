@@ -58,11 +58,11 @@ import {
   alertCategoryIds,
   alertId,
   categoriesQuery,
-  parseIncidentListing,
+  parseLiveAlerts,
   parseWordPressAlerts,
   postArticle,
   postsQuery,
-  tramIncidentsURL,
+  tramFrontPageURL,
   tramSiteURL,
   WordPressCategory,
   WordPressPost,
@@ -530,15 +530,17 @@ export class TramService {
   /**
    * Where the tram operator publishes its alterations, and how a notice reads.
    *
-   * Two roads to the same listing. The REST API the site's own WordPress
-   * serves is the first: it dates and identifies each notice itself and hands
-   * over its words with the listing, so reading one costs no second request.
-   * The incidents page is the second, for a site that has shut the API off —
-   * read from the markup every WordPress theme shares rather than this one's
-   * classes, because a theme is redesigned and `<article>` is not.
+   * Two places, and they are not two roads to the same thing — they are two
+   * different halves of it, so both are read on every run and merged.
    *
-   * The notices the API handed over are kept for the duration of one listing,
-   * so an alteration is fetched at most once whichever road answered.
+   * The block at the top of the front page is what is wrong with the service
+   * right now: it appears when something happens and goes when it is over. The
+   * posts are what was announced — the extended hours for a festival, the
+   * reinforcement for a match — and stay up afterwards. A traveller wants the
+   * first; a client listing what is on wants both.
+   *
+   * Where the block links to its own post the two are one alert, because they
+   * are keyed on the same slug.
    */
   private alertSource(): AlertSource {
     const articles = new Map<string, string>();
@@ -546,15 +548,37 @@ export class TramService {
       mode: 'tram',
       list: async () => {
         articles.clear();
-        const published = await this.fetchApiAlerts(articles);
-        return published.length ? published : this.fetchListedAlerts();
+        const [live, published] = await Promise.all([
+          this.fetchLiveAlerts(),
+          this.fetchPublishedAlerts(articles),
+        ]);
+        // The live block first, so that where the same alteration is in both
+        // it is the post's date and words that are kept — the block carries
+        // neither — and the reading is done against the fuller of the two.
+        const alerts = new Map(live.map((alert) => [alert.id, alert]));
+        published.forEach((alert) => alerts.set(alert.id, alert));
+        return [...alerts.values()];
       },
       article: async (alert) =>
         articles.get(alert.id) ?? this.fetchArticle(alert.url),
     };
   }
 
-  private async fetchApiAlerts(
+  /** What is wrong with the service right now, from the operator's own block. */
+  private async fetchLiveAlerts(): Promise<ScrapedAlert[]> {
+    const html = await this.fetchPage(tramFrontPageURL);
+    if (!html) return [];
+    const live = parseLiveAlerts(html);
+    if (live.length) {
+      this.logger.log(
+        `The tram is showing ${live.length} alterations in force`,
+      );
+    }
+    return live;
+  }
+
+  /** What the operator has announced, from the posts it files them under. */
+  private async fetchPublishedAlerts(
     articles: Map<string, string>,
   ): Promise<ScrapedAlert[]> {
     try {
@@ -565,8 +589,8 @@ export class TramService {
       const ids = alertCategoryIds(categories);
       if (!ids.length) {
         // Every post on the site would be an alteration if this fell through
-        // to an unfiltered listing, so it does not: no category, no alerts
-        // from here, and the page is read instead.
+        // to an unfiltered listing, so it does not: no category, nothing from
+        // here, and the block at the top still answers for what is in force.
         this.logger.warn(
           'The tram site lists no category an alteration is filed under',
         );
@@ -586,21 +610,6 @@ export class TramService {
     } catch (exception) {
       this.logger.warn(
         `Could not read the tram alterations from the site's API: ${exception.message}`,
-      );
-      return [];
-    }
-  }
-
-  private async fetchListedAlerts(): Promise<ScrapedAlert[]> {
-    try {
-      const html = await fetchWithTimeout<string>(
-        this.httpService,
-        tramIncidentsURL,
-      );
-      return parseIncidentListing(html);
-    } catch (exception) {
-      this.logger.warn(
-        `Could not read ${tramIncidentsURL}: ${exception.message}`,
       );
       return [];
     }

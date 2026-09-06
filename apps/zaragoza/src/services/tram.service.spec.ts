@@ -13,15 +13,16 @@ import {
 } from '../schemas/tram.schema';
 import { TramService } from './tram.service';
 import { AlertDetails, AlertReader } from '../alert-reader';
-import { tramIncidentsURL } from '../tram-alerts';
+import { tramFrontPageURL } from '../tram-alerts';
 import { TramStationResponse } from '../models/tram.interface';
 
 /** The stop, as the service answers when it has one to answer with. */
 const stop = (resp: unknown) => resp as TramStationResponse;
 
 const site = 'https://www.tranviasdezaragoza.es';
-const categoriesUrl = `${site}/wp-json/wp/v2/categories`;
-const postsUrl = `${site}/wp-json/wp/v2/posts`;
+// The site serves the REST API under `/api/`, not `/wp-json/`.
+const categoriesUrl = `${site}/api/wp/v2/categories`;
+const postsUrl = `${site}/api/wp/v2/posts`;
 
 /** Five stops of the corridor, north to south, two platforms apiece. */
 const corridor: [string, string, number, number][] = [
@@ -158,8 +159,8 @@ const build = (
     categories?: { id: number; slug: string }[];
     /** The posts filed under them. */
     posts?: ReturnType<typeof wpPost>[];
-    /** The incidents page, for a site whose REST API is shut. */
-    incidentsPage?: string;
+    /** The block at the top of the front page, when one is in force. */
+    frontPage?: string;
     /** Any other URL a source serves, already decoded as axios would. */
     pages?: Record<string, unknown>;
     /** URLs the site answers with a server error. */
@@ -190,8 +191,10 @@ const build = (
       if (url.startsWith(postsUrl)) {
         return of({ data: options.posts ?? [] });
       }
-      if (url === tramIncidentsURL && options.incidentsPage) {
-        return of({ data: options.incidentsPage });
+      if (url === tramFrontPageURL) {
+        return options.frontPage
+          ? of({ data: options.frontPage })
+          : throwError(() => httpError(404));
       }
       if (options.pages && url in options.pages) {
         return of({ data: options.pages[url] });
@@ -416,7 +419,7 @@ describe('the alterations the operator publishes', () => {
   it('stores what the site is showing', async () => {
     const { service } = build({
       stations: storedStations(),
-      categories: [{ id: 4, slug: 'incidencias' }],
+      categories: [{ id: 10, slug: 'home' }],
       posts: [wpPost('corte-en-plaza-espana', 'Corte en Plaza España')],
     });
 
@@ -434,23 +437,45 @@ describe('the alterations the operator publishes', () => {
     ]);
   });
 
-  it('reads the incidents page when the REST API is shut', async () => {
+  it('reads the block at the top when the service is altered right now', async () => {
     const { service } = build({
       stations: storedStations(),
-      // No categories: the API answers 404.
-      incidentsPage: `<article class="post">
-          <h2 class="entry-title">
-            <a href="${site}/obras-en-la-via/">Obras en la vía</a>
-          </h2>
-          <time datetime="2026-09-05T08:00:00+02:00">5 septiembre</time>
-        </article>`,
+      // No categories: nothing announced. The block still answers.
+      frontPage: `<div class="tranvias_dosnet_avisos tranvias_dosnet_avisos_1">
+          <div class="tranvias_dosnet_avisos_title"><h2><span>Avisos</span></h2></div>
+          <div class="tranvias_dosnet_avisos_list">
+            <div class="tranvias_dosnet_avisos_aviso">Servicio interrumpido</div>
+          </div>
+        </div>`,
     });
 
     await service.getLinesUpdate();
 
     expect((await service.getAlerts())[0]).toEqual(
-      expect.objectContaining({ id: 'obras-en-la-via', date: '2026-09-05' }),
+      expect.objectContaining({
+        title: 'Servicio interrumpido',
+        lines: ['L1'],
+      }),
     );
+  });
+
+  it('counts an alteration once when it is both in force and announced', async () => {
+    const { service } = build({
+      stations: storedStations(),
+      // The block links to the post that announced it, so they are one.
+      frontPage: `<div class="tranvias_dosnet_avisos_aviso">
+          <a href="${site}/corte/">Corte en Plaza España</a>
+        </div>`,
+      categories: [{ id: 10, slug: 'home' }],
+      posts: [wpPost('corte', 'Corte en Plaza España')],
+    });
+
+    await service.getLinesUpdate();
+    const alerts = await service.getAlerts();
+
+    expect(alerts.map((alert) => alert.id)).toEqual(['corte']);
+    // The post's date survives the merge; the block carries none.
+    expect(alerts[0].date).toBe('2026-09-04');
   });
 
   it('leaves the stored alerts alone when neither road answers', async () => {
@@ -494,7 +519,7 @@ describe('the alterations the operator publishes', () => {
           firstSeen: '2026-08-01T00:00:00.000Z',
         },
       ],
-      categories: [{ id: 4, slug: 'incidencias' }],
+      categories: [{ id: 10, slug: 'home' }],
       posts: [wpPost('corte', 'Corte')],
     });
 
@@ -506,7 +531,7 @@ describe('the alterations the operator publishes', () => {
   it('reads the notice the listing handed over, without fetching it again', async () => {
     const { service, reader, httpService } = build({
       stations: storedStations(),
-      categories: [{ id: 4, slug: 'incidencias' }],
+      categories: [{ id: 10, slug: 'home' }],
       posts: [wpPost('corte', 'Corte en Margarita Xirgu')],
       articles: {
         corte: {
@@ -553,7 +578,7 @@ describe('the alterations the operator publishes', () => {
   it('offers both platforms of a stop to the reader', async () => {
     const { service, reader } = build({
       stations: storedStations(),
-      categories: [{ id: 4, slug: 'incidencias' }],
+      categories: [{ id: 10, slug: 'home' }],
       posts: [wpPost('corte', 'Corte')],
       articles: {},
     });

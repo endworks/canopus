@@ -35,7 +35,11 @@ import {
   notFoundById,
 } from '../utils';
 import { ErrorResponse } from '@canopus/shared';
-import { fetchWithTimeout, upstreamFailure } from '@canopus/nest';
+import {
+  fetchWithTimeout,
+  postWithTimeout,
+  upstreamFailure,
+} from '@canopus/nest';
 import { AlertReader, LineRoute } from '../alert-reader';
 import { articleText, ScrapedAlert } from '../alerts';
 import {
@@ -48,12 +52,12 @@ import {
 } from '../schemas/tram.schema';
 import {
   BuiltTramLine,
-  buildTramLine,
+  BuiltTramNetwork,
+  OperatorLine,
+  parseOperatorLine,
   TRAM_LINE_ID,
   tramLineId,
 } from '../tram-line';
-import { parseGeoJsonPaths, parseKmlPath } from '../geo';
-import { mapDataLinks, parseMapPath, tramMapPages } from '../tram-map';
 import {
   alertCategoryIds,
   alertId,
@@ -68,20 +72,14 @@ import {
   WordPressPost,
 } from '../tram-alerts';
 
+/** Where the operator's own site fetches its line, stops and shape from. */
+const tramAjaxURL = `${tramSiteURL}/wp-admin/admin-ajax.php`;
+
 const tramStationURL =
   'https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/transporte-urbano/parada-tranvia/';
 
 /** How long an arrival time is worth showing. */
 const STATION_TTL = 10000;
-
-/**
- * How many of a page's map files are worth fetching.
- *
- * A WordPress site references `.json` everywhere — a block's settings, a
- * theme's manifest, a plugin's translations — and the route, if it is in a
- * file at all, is one of the first the page names.
- */
-const maxMapFiles = 5;
 
 const upsertById = <T extends { id: string }>(
   id: string,
@@ -268,67 +266,62 @@ export class TramService {
   /**
    * Rebuilds the line, and the stops' membership of it, from the stops stored.
    *
-   * Unlike the bus, there is no route file to read: the operator publishes no
-   * geometry and the city's stop dataset says which stops exist, not which line
-   * they are on or in what order. So the line is worked out from the stops
-   * themselves — see `tram-line.ts` — and written down, rather than recomputed
-   * on every read.
+   * Everything about it is the operator's own. Their site fetches the line in
+   * order to draw it, and that answer carries the stops of each direction in
+   * route order, the code each stop is known by, and the track itself. All of
+   * it used to be worked out here from the stops we happened to hold, which
+   * got the order roughly right and the pairing wrong.
    *
-   * A run that cannot build the line leaves the stored one exactly as it was
+   * A run that cannot read the line leaves the stored one exactly as it was
    * and goes on to the alerts, which are worth having on their own.
    */
   public async getLinesUpdate(): Promise<TramLinesResponse> {
-    const [storedLines, stations] = await Promise.all([
+    const [storedLines, storedStations] = await Promise.all([
       this.getAllLines(),
       this.getAllStations(),
     ]);
     const linesBackup = new Map(storedLines.map((line) => [line.id, line]));
 
-    const path = await this.fetchDrawnRoute();
-    const built = buildTramLine(this.stationsOfLine(stations, TRAM_LINE_ID), {
-      path,
-    });
-    if (!built) {
+    const network = await this.fetchOperatorLine();
+    if (!network) {
       this.logger.warn(
-        'Not enough stored tram stops to build the line; leaving it as it is',
+        'The tram operator published no line to read; leaving the stored one as it is',
       );
     } else {
-      const lineOps = this.lineUpdates(built, linesBackup);
+      const lineOps = this.lineUpdates(network.line, linesBackup);
       if (lineOps.length) {
         await this.tramLineModel.bulkWrite(lineOps, { ordered: false });
       }
 
-      // Anything stored that this run did not build is not a line this
-      // network runs. Deleted rather than hidden, which is what the bus does
-      // with a line its source stopped offering: a withdrawn bus line may
-      // come back and wants its stops kept, whereas everything here is
-      // derived from the stops on every run, so a stored line the run did not
-      // produce is not a line at all — it is the same line under a name we
-      // have stopped using, and leaving it would put it in every listing
-      // beside the one that replaced it. Only ever reached with a line built,
-      // so a run that could read nothing deletes nothing.
-      const stale = [...linesBackup.keys()].filter((id) => id !== built.id);
+      // Anything stored that this run did not read is not a line this network
+      // runs. Deleted rather than hidden, which is what the bus does with a
+      // line its source withdrew: a withdrawn bus line may come back and wants
+      // its stops kept, whereas the tram's line is read whole on every run, so
+      // a stored line the run did not produce is the same line under a name we
+      // have stopped using. Only ever reached with a line read, so a run that
+      // read nothing deletes nothing.
+      const stale = [...linesBackup.keys()].filter(
+        (id) => id !== network.line.id,
+      );
       if (stale.length) {
         await this.tramLineModel.deleteMany({ id: { $in: stale } });
         this.logger.log(
           `Dropped the tram line${stale.length > 1 ? 's' : ''} ${stale.join(', ')}: not a line this network runs`,
         );
       }
-      // A stop is on the line the moment the line is built from it. Stored
-      // here so a stop knows its own line without the line being read back,
-      // which is what puts a line-wide alteration on a stop's board.
-      const stationOps = this.stationUpdates(built, stations);
+
+      const stationOps = this.stationUpdates(network, storedStations);
       if (stationOps.length) {
         await this.tramStationModel.bulkWrite(stationOps, { ordered: false });
       }
       this.logger.log(
-        `Updated the tram line with ${built.stations.length} stops and ${stationOps.length} stop records`,
+        `Read the tram line as ${network.line.stations.length} stops and ${network.line.path.length} points, and wrote ${stationOps.length} stop records`,
       );
     }
 
-    const line = built ?? this.asBuilt(linesBackup.get(TRAM_LINE_ID));
+    const line = network?.line ?? this.asBuilt(linesBackup.get(TRAM_LINE_ID));
     await this.alerts.sync(this.alertSource(), (lineIds) =>
-      this.routesOf(lineIds, line, stations),
+      this.routesOf(lineIds, line, network?.stations ?? storedStations),
     );
 
     await this.cacheManager.clear();
@@ -336,108 +329,50 @@ export class TramService {
   }
 
   /**
-   * The route the operator's own map draws, or nothing.
+   * The line as the operator publishes it, or nothing.
    *
-   * The site puts a Google Maps widget on its line page, and a widget like
-   * that builds its map in the browser: whatever it draws has to be in the
-   * document by the time it loads, either written into the page's scripts or
-   * in a file the page points at. Both are read — the scripts first, because a
-   * page that carries its shape needs no second request — and the longest
-   * shape any of them yields is the route.
-   *
-   * It is the whole difference between a route drawn kerb by kerb and one
-   * drawn as its stops joined up, and between stops put in order by the line
-   * and stops put in order by walking between them. Failing at it costs
-   * exactly that: a run that reads no route builds the line from its stops,
-   * which is what every run did before this.
+   * Their site draws its map in the browser and fetches what to draw, so the
+   * shape is in no page: it is one call, behind a nonce the same endpoint
+   * hands out for the asking, and it answers with the stops of each direction
+   * in route order and the track as a couple of hundred points. The referer is
+   * not decoration — the endpoint answers 403 without one.
    */
-  private async fetchDrawnRoute(): Promise<number[][]> {
-    const found: number[][][] = [];
+  private async fetchOperatorLine(): Promise<BuiltTramNetwork | null> {
+    try {
+      const nonce = await this.fetchLineNonce();
+      if (!nonce) return null;
 
-    for (const page of tramMapPages(tramSiteURL)) {
-      const html = await this.fetchPage(page);
-      if (!html) continue;
-
-      const drawn = parseMapPath(html);
-      if (drawn.length) found.push(drawn);
-
-      // A widget that fetches its shape rather than carrying it. These are the
-      // operator's own files, and a KML is the same thing the bus routes are.
-      // A handful of them: a WordPress site is full of `.json` that is a
-      // plugin's settings, and the route is not the twentieth one of those.
-      for (const link of mapDataLinks(html, page).slice(0, maxMapFiles)) {
-        found.push(...(await this.fetchMapFile(link)));
-      }
-    }
-
-    const best = found.sort((a, b) => b.length - a.length)[0] ?? [];
-    if (best.length) {
-      this.logger.log(`Read the tram route as ${best.length} points`);
-    } else {
-      this.logger.warn(
-        'No tram route could be read from the operator; drawing the line through its stops',
+      const feed = await postWithTimeout<OperatorLine>(
+        this.httpService,
+        tramAjaxURL,
+        { action: 'dosnet_tranvias_lineas', _ajax_nonce: nonce },
+        { headers: { Referer: `${tramSiteURL}/` } },
       );
-    }
-    return best;
-  }
-
-  /**
-   * One map file, however it turns out to be written.
-   *
-   * What it is decides how it is read rather than what it is called: these are
-   * served under every extension there is, and axios has already turned a JSON
-   * body into an object by the time it arrives here.
-   */
-  private async fetchMapFile(url: string): Promise<number[][][]> {
-    const body = await this.fetch<unknown>(url);
-    if (!body) return [];
-    if (typeof body !== 'string') return parseGeoJsonPaths(body);
-
-    const kml = parseKmlPath(body);
-    if (kml.length) return [kml];
-    try {
-      return parseGeoJsonPaths(JSON.parse(body));
-    } catch {
-      return [];
-    }
-  }
-
-  private async fetchPage(url: string): Promise<string | undefined> {
-    const body = await this.fetch<unknown>(url);
-    return typeof body === 'string' ? body : undefined;
-  }
-
-  /** A read that costs the run nothing when it fails: the route is an extra. */
-  private async fetch<T>(url: string): Promise<T | undefined> {
-    try {
-      return await fetchWithTimeout<T>(this.httpService, url);
+      const network = parseOperatorLine(feed);
+      if (!network) {
+        this.logger.warn('The tram line feed carried no line to read');
+      }
+      return network;
     } catch (exception) {
-      this.logger.warn(`Could not read ${url}: ${exception.message}`);
-      return undefined;
+      this.logger.warn(
+        `Could not read the tram line from the operator: ${exception.message}`,
+      );
+      return null;
     }
   }
 
-  /**
-   * The stops that make up a line.
-   *
-   * A stop that belongs to another line is left out; everything else is
-   * offered, and what is actually on the route is settled by the route. On a
-   * network whose stops have never been told anything, that is every tram
-   * stop there is — which is what a first run reads, since the link between a
-   * stop and its line is written by this update.
-   */
-  private stationsOfLine(stations: TramStation[], lineId: string) {
-    // A stop is a candidate for this line if it says it is on it, or if it
-    // says nothing at all: a stop with no lines is one no run has placed yet,
-    // or one a run left off, and either way the way back onto the line is to
-    // be offered to it again. Only a stop that belongs to some other line is
-    // left out, which is the one thing this filter can say with certainty —
-    // "is already on this line" would be circular, and would strand for good
-    // any stop a single bad run dropped.
-    const candidates = stations.filter(
-      (station) => !station.lines?.length || station.lines.includes(lineId),
+  /** Minted for the asking, and the line endpoint will not answer without it. */
+  private async fetchLineNonce(): Promise<string | undefined> {
+    const answer = await postWithTimeout<{ data?: string }>(
+      this.httpService,
+      tramAjaxURL,
+      { action: 'dosnet_tranvias_get_nonce' },
+      { headers: { Referer: `${tramSiteURL}/` } },
     );
-    return candidates.length ? candidates : stations;
+    if (!answer?.data) {
+      this.logger.warn('The tram operator issued no nonce for its line feed');
+    }
+    return answer?.data;
   }
 
   private lineUpdates(
@@ -459,30 +394,69 @@ export class TramService {
       upsertById<TramLine>(built.id, {
         ...built,
         lastUpdated: new Date().toISOString(),
-        // Nothing withdraws the line: it is not read from a listing that
-        // could stop offering it, it is built from the stops we hold.
+        // Nothing withdraws the line: the operator publishes one line and
+        // this is it, so there is no listing that could stop offering it.
         withdrawn: false,
       }),
     ];
   }
 
   /**
-   * Which lines call at each stop, as this run worked them out.
+   * Each stop, as the operator names and places it.
    *
-   * What the run built, rather than what the run built added to whatever was
-   * stored. Every tram line here is derived from the stops themselves on every
-   * run, so there is no line at a stop this update does not know about, and a
-   * union with history could only ever accumulate: a stop that was told it was
-   * on `1` kept it and gained `L1`, and would have carried both for good.
+   * Where it stands and what it is called come from the same read as the line,
+   * so a stop cannot be drawn in one place and listed in another. Its name is
+   * the combined one — both places where the two directions call at different
+   * ones — which is the whole reason a stop is written here rather than left
+   * as the city seeded it.
+   *
+   * The lines at a stop are what this run read, not what it read added to what
+   * was stored. The operator publishes the tram network whole on every run, so
+   * there is no line at a stop this update does not know about, and a union
+   * with history could only ever accumulate: a stop told it was on `1` kept it
+   * and gained `L1`, and would have carried both for good.
    */
-  private stationUpdates(built: BuiltTramLine, stations: TramStation[]) {
-    const onTheLine = new Set([...built.stations, ...built.stationsReturn]);
-    return stations.flatMap((station) => {
-      const lines = onTheLine.has(station.id) ? [built.id] : [];
-      return sameList(station.lines ?? [], lines)
+  private stationUpdates(
+    network: BuiltTramNetwork,
+    stored: Map<string, TramStation> | TramStation[],
+  ) {
+    const storedById = new Map(
+      (Array.isArray(stored) ? stored : [...stored.values()]).map((station) => [
+        station.id,
+        station,
+      ]),
+    );
+    const onTheLine = new Set(network.stations.map((station) => station.id));
+
+    const updates = network.stations.flatMap((station) => {
+      const backup = storedById.get(station.id);
+      const unchanged =
+        backup &&
+        backup.street === station.street &&
+        sameList(backup.coordinates ?? [], station.coordinates) &&
+        sameList(backup.lines ?? [], [network.line.id]);
+      return unchanged
         ? []
-        : [upsertById<TramStation>(station.id, { lines })];
+        : [
+            upsertById<TramStation>(station.id, {
+              id: station.id,
+              street: station.street,
+              coordinates: station.coordinates,
+              lines: [network.line.id],
+              type: 'tram',
+            }),
+          ];
     });
+
+    // A stop the operator no longer runs to keeps its record — it may still be
+    // asked for by id — but stops claiming a line that does not call there.
+    const retired = [...storedById.values()].flatMap((station) =>
+      !onTheLine.has(station.id) && station.lines?.includes(network.line.id)
+        ? [upsertById<TramStation>(station.id, { lines: [] })]
+        : [],
+    );
+
+    return [...updates, ...retired];
   }
 
   /** A stored line, in the shape a freshly built one has. */
@@ -512,7 +486,7 @@ export class TramService {
   private routesOf(
     lineIds: string[],
     line: BuiltTramLine | null,
-    stations: TramStation[],
+    stations: { id: string; street: string }[],
   ): LineRoute[] {
     if (!line) return [];
     const streets = new Map(
@@ -566,8 +540,8 @@ export class TramService {
 
   /** What is wrong with the service right now, from the operator's own block. */
   private async fetchLiveAlerts(): Promise<ScrapedAlert[]> {
-    const html = await this.fetchPage(tramFrontPageURL);
-    if (!html) return [];
+    const html = await this.fetch<unknown>(tramFrontPageURL);
+    if (typeof html !== 'string') return [];
     const live = parseLiveAlerts(html);
     if (live.length) {
       this.logger.log(
@@ -612,6 +586,16 @@ export class TramService {
         `Could not read the tram alterations from the site's API: ${exception.message}`,
       );
       return [];
+    }
+  }
+
+  /** A read that costs the run nothing when it fails: an extra, not the line. */
+  private async fetch<T>(url: string): Promise<T | undefined> {
+    try {
+      return await fetchWithTimeout<T>(this.httpService, url);
+    } catch (exception) {
+      this.logger.warn(`Could not read ${url}: ${exception.message}`);
+      return undefined;
     }
   }
 

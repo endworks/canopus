@@ -6,6 +6,7 @@ import { of, throwError } from 'rxjs';
 import { BiziService } from './bizi.service';
 import { BiziStationResponse } from '../models/bizi.interface';
 import { BiziStation } from '../schemas/bizi.schema';
+import { GbfsClient } from '../gbfs';
 
 /** What the city answers for one station. */
 const station = (extra: Record<string, unknown> = {}) => ({
@@ -42,17 +43,33 @@ const answered = (status: number) => {
 describe('BiziService', () => {
   let service: BiziService;
   let get: jest.Mock;
-  let cache: { get: jest.Mock; set: jest.Mock };
+  let cache: { get: jest.Mock; set: jest.Mock; wrap: jest.Mock };
   let findOne: jest.Mock;
   let findOneAndUpdate: jest.Mock;
+  let gbfs: {
+    enabled: boolean;
+    stationStatus: jest.Mock;
+    stationInformation: jest.Mock;
+  };
 
   beforeEach(async () => {
     get = jest.fn();
-    cache = { get: jest.fn().mockResolvedValue(undefined), set: jest.fn() };
+    cache = {
+      get: jest.fn().mockResolvedValue(undefined),
+      set: jest.fn(),
+      wrap: jest.fn((_key, read) => read()),
+    };
     findOne = jest.fn().mockReturnValue({ lean: () => Promise.resolve(null) });
     findOneAndUpdate = jest
       .fn()
       .mockReturnValue({ lean: () => Promise.resolve(null) });
+    // Unconfigured by default, which is what every deployment looks like until
+    // somebody points it at a feed.
+    gbfs = {
+      enabled: false,
+      stationStatus: jest.fn(),
+      stationInformation: jest.fn(),
+    };
 
     const model = {
       find: () => ({
@@ -68,6 +85,7 @@ describe('BiziService', () => {
         { provide: HttpService, useValue: { get } },
         { provide: CACHE_MANAGER, useValue: cache },
         { provide: getModelToken(BiziStation.name), useValue: model },
+        { provide: GbfsClient, useValue: gbfs },
       ],
     }).compile();
 
@@ -76,6 +94,12 @@ describe('BiziService', () => {
 
   const holds = (backup: BiziStation | null) =>
     findOne.mockReturnValue({ lean: () => Promise.resolve(backup) });
+
+  /** A deployment that has been given an operator feed, answering with these. */
+  const operatorHas = (...statuses: Record<string, unknown>[]) => {
+    gbfs.enabled = true;
+    gbfs.stationStatus.mockResolvedValue(statuses);
+  };
 
   describe('getStation', () => {
     it('asks the city in WGS84, or the point is UTM metres', async () => {
@@ -98,7 +122,7 @@ describe('BiziService', () => {
 
       expect(resp.bikes).toBe(7);
       expect(resp.openDocks).toBe(12);
-      expect(resp.state).toBe('ABIERTA');
+      expect(resp.state).toBe('IN_SERVICE');
       expect(resp.street).toBe('Paseo Echegaray y Caballero');
       expect(resp.source).toBe('api');
     });
@@ -170,6 +194,144 @@ describe('BiziService', () => {
       await service.getStation('001');
       expect(get).not.toHaveBeenCalled();
     });
+
+    it('says the same word about a state whichever road answered', async () => {
+      get.mockReturnValueOnce(of({ data: station({ estado: 'ABIERTA' }) }));
+      const fromCity = (await service.getStation('001')) as BiziStationResponse;
+
+      operatorHas({
+        station_id: '001',
+        is_installed: true,
+        is_renting: true,
+        is_returning: true,
+      });
+      const fromOperator = (await service.getStation(
+        '001',
+      )) as BiziStationResponse;
+
+      expect(fromCity.state).toBe('IN_SERVICE');
+      expect(fromOperator.state).toBe('IN_SERVICE');
+    });
+  });
+
+  // The operator runs the bikes and counts them itself, so it is asked first —
+  // but only where a deployment has been given a feed to ask.
+  describe('getStation, with an operator feed', () => {
+    it('does not go near the city when the operator answers', async () => {
+      holds(stored);
+      operatorHas({
+        station_id: '001',
+        num_bikes_available: 7,
+        num_docks_available: 12,
+      });
+
+      const resp = (await service.getStation('001')) as BiziStationResponse;
+
+      expect(get).not.toHaveBeenCalled();
+      expect(resp.source).toBe('operator');
+      expect(resp.bikes).toBe(7);
+      expect(resp.openDocks).toBe(12);
+      expect(resp.street).toBe('Paseo Echegaray y Caballero');
+    });
+
+    // The whole reason for asking the operator: `bikes` alone cannot say that
+    // six of the seven need pedalling.
+    it('says how many of the bikes are electric', async () => {
+      holds(stored);
+      operatorHas({
+        station_id: '001',
+        num_bikes_available: 7,
+        vehicle_types_available: [
+          { vehicle_type_id: 'electric_bike', count: 4 },
+          { vehicle_type_id: 'bike', count: 3 },
+        ],
+      });
+
+      const resp = (await service.getStation('001')) as BiziStationResponse;
+      expect(resp.electricBikes).toBe(4);
+    });
+
+    // The city's set does not break the count down, and a nought here would
+    // read as a rack with no electric bike on it.
+    it('says nothing about electric bikes on the city road', async () => {
+      get.mockReturnValueOnce(of({ data: station() }));
+      const resp = (await service.getStation('001')) as BiziStationResponse;
+      expect(resp).not.toHaveProperty('electricBikes');
+    });
+
+    it('asks the operator by its own number for the rack', async () => {
+      holds({ ...stored, gbfsId: 'zgz-42' } as BiziStation);
+      operatorHas({ station_id: 'zgz-42', num_bikes_available: 3 });
+
+      const resp = (await service.getStation('001')) as BiziStationResponse;
+
+      expect(resp.source).toBe('operator');
+      expect(resp.bikes).toBe(3);
+      // The id the caller asked with is the id they get back.
+      expect(resp.id).toBe('001');
+    });
+
+    it('falls through to the city for a rack the operator has not got', async () => {
+      holds(stored);
+      operatorHas({ station_id: 'somewhere-else' });
+      get.mockReturnValueOnce(of({ data: station() }));
+
+      const resp = (await service.getStation('001')) as BiziStationResponse;
+
+      expect(resp.source).toBe('api');
+      expect(resp.bikes).toBe(7);
+    });
+
+    it('falls through to the city when the feed will not answer', async () => {
+      holds(stored);
+      gbfs.enabled = true;
+      gbfs.stationStatus.mockRejectedValue(new Error('feed is down'));
+      get.mockReturnValueOnce(of({ data: station() }));
+
+      const resp = (await service.getStation('001')) as BiziStationResponse;
+
+      expect(resp.source).toBe('api');
+    });
+
+    it('still serves the stored station when both roads are down', async () => {
+      holds(stored);
+      gbfs.enabled = true;
+      gbfs.stationStatus.mockRejectedValue(new Error('feed is down'));
+      get.mockReturnValueOnce(throwError(() => answered(500)));
+
+      const resp = (await service.getStation('001')) as BiziStationResponse;
+
+      expect(resp.source).toBe('backup');
+      expect(resp.bikes).toBeNull();
+    });
+
+    // One document for the whole system, so it is read once for all readers
+    // rather than once per rack — which is the per-id request the 400 came out
+    // of in the first place.
+    it('reads the whole system once rather than once a station', async () => {
+      holds(stored);
+      operatorHas({ station_id: '001', num_bikes_available: 7 });
+
+      await service.getStation('001');
+
+      expect(cache.wrap).toHaveBeenCalledWith(
+        'bizi/gbfs/status',
+        expect.any(Function),
+        expect.any(Number),
+      );
+    });
+
+    it('keeps the operator id out of the answer', async () => {
+      holds({ ...stored, gbfsId: 'zgz-42' } as BiziStation);
+      gbfs.enabled = true;
+      gbfs.stationStatus.mockRejectedValue(new Error('feed is down'));
+      get.mockReturnValueOnce(throwError(() => answered(500)));
+
+      const resp = (await service.getStation('001')) as BiziStationResponse;
+
+      expect(resp.source).toBe('backup');
+      expect(resp).not.toHaveProperty('gbfsId');
+    });
   });
 
   describe('getStationsUpdate', () => {
@@ -210,6 +372,38 @@ describe('BiziService', () => {
       await expect(service.getStationsUpdate()).rejects.toMatchObject({
         status: 502,
       });
+    });
+
+    it('stores the operator id of each rack it can pair', async () => {
+      page(1, [station()]);
+      gbfs.enabled = true;
+      gbfs.stationInformation.mockResolvedValue([
+        { station_id: 'zgz-42', lon: -0.87731, lat: 41.65611 },
+      ]);
+
+      await service.getStationsUpdate();
+
+      expect(findOneAndUpdate).toHaveBeenCalledWith(
+        { id: '001' },
+        { $set: expect.objectContaining({ gbfsId: 'zgz-42' }) },
+        expect.anything(),
+      );
+    });
+
+    // Failing an update of the whole set because one of two sources is down
+    // would lose the stations as well as the pairing.
+    it('stores the stations anyway when the operator feed is down', async () => {
+      page(1, [station()]);
+      gbfs.enabled = true;
+      gbfs.stationInformation.mockRejectedValue(new Error('feed is down'));
+
+      await service.getStationsUpdate();
+
+      expect(findOneAndUpdate).toHaveBeenCalledWith(
+        { id: '001' },
+        { $set: expect.objectContaining({ id: '001', gbfsId: undefined }) },
+        expect.anything(),
+      );
     });
   });
 });

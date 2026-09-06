@@ -34,9 +34,23 @@ export interface GbfsStationInfo {
   capacity?: number;
 }
 
+/** One of the kinds of vehicle a system runs, as `vehicle_types` declares it. */
+export interface GbfsVehicleType {
+  vehicle_type_id: string;
+  form_factor?: string;
+  propulsion_type?: string;
+}
+
 /** What `station_status` carries, of what this service reads. */
 export interface GbfsStationStatus {
   station_id: string;
+  /**
+   * How many vehicles are on the rack. GBFS 3 renamed this from
+   * `num_bikes_available`, and both names are read: the registered feed is a
+   * v3 one, and reading only the old name is a count that comes back null on
+   * every station while the feed is answering perfectly.
+   */
+  num_vehicles_available?: number;
   num_bikes_available?: number;
   num_docks_available?: number;
   is_installed?: boolean | number;
@@ -120,31 +134,60 @@ export const cityState = (raw?: string | null): string | null => {
   return raw;
 };
 
+/** How many vehicles are on a rack, under either version's name for it. */
+export const vehiclesAvailable = (status: GbfsStationStatus): number | null =>
+  status.num_vehicles_available ?? status.num_bikes_available ?? null;
+
 /**
- * The bikes on a rack that are electric.
+ * Which of a system's vehicle types run on a motor.
  *
- * The whole point of asking the operator rather than the city: `bikes` is one
- * number and cannot say that six of the seven need pedalling. Which type id
- * means electric is the feed's to declare, so this counts the types that
- * declare themselves electric and returns nothing at all where the feed does
- * not break the count down — nothing is what we know, and nought is a claim.
+ * Asked of the feed rather than guessed at. A type's id is an opaque string —
+ * PBSC numbers them, so "1" and "2" are a pushbike and an e-bike and no amount
+ * of reading the id says which — and `propulsion_type` is the field that
+ * actually declares it. `electric_assist` is the pedelec every European system
+ * runs; `electric` is the throttle kind.
  */
-const electricTypes = /electric|ebike|e-bike|pedelec/i;
+const electricPropulsion = /^(electric|electric_assist)$/i;
+
+export const electricTypeIds = (types: GbfsVehicleType[]): Set<string> =>
+  new Set(
+    types
+      .filter((type) => electricPropulsion.test(type.propulsion_type ?? ''))
+      .map((type) => type.vehicle_type_id),
+  );
+
+/**
+ * The vehicles on a rack that are electric.
+ *
+ * The whole point of asking the operator rather than the city: the count is one
+ * number and cannot say that six of the seven need pedalling.
+ *
+ * `electric` is the set the system declared. Without it — a feed that publishes
+ * no `vehicle_types`, which is allowed of a system that runs one kind — the id
+ * is all there is to go on, and a descriptive one is worth reading. Nothing at
+ * all comes back where neither can answer: nothing is what we know, and nought
+ * is a claim.
+ */
+const electricNames = /electric|ebike|e-bike|pedelec/i;
 
 export const electricBikes = (
   status: GbfsStationStatus,
+  electric?: Set<string>,
 ): number | undefined => {
+  const isElectric = (id: string) =>
+    electric?.size ? electric.has(id) : electricNames.test(id);
+
   if (status.vehicle_types_available?.length) {
-    const electric = status.vehicle_types_available.filter((type) =>
-      electricTypes.test(type.vehicle_type_id),
+    const found = status.vehicle_types_available.filter((type) =>
+      isElectric(type.vehicle_type_id),
     );
-    if (!electric.length) return undefined;
-    return electric.reduce((total, type) => total + (type.count ?? 0), 0);
+    if (!found.length) return undefined;
+    return found.reduce((total, type) => total + (type.count ?? 0), 0);
   }
 
   const byType = status.num_bikes_available_types;
   if (byType) {
-    const ids = Object.keys(byType).filter((id) => electricTypes.test(id));
+    const ids = Object.keys(byType).filter(isElectric);
     if (!ids.length) return undefined;
     return ids.reduce((total, id) => total + (byType[id] ?? 0), 0);
   }
@@ -262,21 +305,36 @@ export class GbfsClient {
   }
 
   async stationInformation(): Promise<GbfsStationInfo[]> {
-    return this.stations<GbfsStationInfo>('station_information');
+    return this.read<GbfsStationInfo>('station_information', 'stations');
   }
 
   async stationStatus(): Promise<GbfsStationStatus[]> {
-    return this.stations<GbfsStationStatus>('station_status');
+    return this.read<GbfsStationStatus>('station_status', 'stations');
   }
 
-  private async stations<T>(feed: string): Promise<T[]> {
+  /**
+   * Empty rather than a failure where the system publishes none: this file is
+   * only required of a system that runs more than one kind of vehicle, and one
+   * that runs only pushbikes has nothing to declare.
+   */
+  async vehicleTypes(): Promise<GbfsVehicleType[]> {
+    return this.read<GbfsVehicleType>('vehicle_types', 'vehicle_types', false);
+  }
+
+  private async read<T>(
+    feed: string,
+    key: string,
+    required = true,
+  ): Promise<T[]> {
     const url = (await this.feedUrls()).get(feed);
-    if (!url) throw new Error(`The operator's feed publishes no ${feed}`);
-    const document = await fetchWithTimeout<{ data?: { stations?: T[] } }>(
-      this.http,
-      url,
-    );
-    return document?.data?.stations ?? [];
+    if (!url) {
+      if (!required) return [];
+      throw new Error(`The operator's feed publishes no ${feed}`);
+    }
+    const document = await fetchWithTimeout<{
+      data?: Record<string, unknown>;
+    }>(this.http, url);
+    return (document?.data?.[key] as T[]) ?? [];
   }
 
   /**

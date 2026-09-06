@@ -64,6 +64,7 @@ describe('BiziService', () => {
     enabled: boolean;
     stationStatus: jest.Mock;
     stationInformation: jest.Mock;
+    vehicleTypes: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -83,6 +84,7 @@ describe('BiziService', () => {
       enabled: false,
       stationStatus: jest.fn(),
       stationInformation: jest.fn(),
+      vehicleTypes: jest.fn().mockResolvedValue([]),
     };
 
     const model = {
@@ -504,6 +506,62 @@ describe('BiziService', () => {
       await service.getStation('175');
 
       expect(gbfs.stationInformation).not.toHaveBeenCalled();
+    });
+
+    // The registered feed is a v3 one, which renamed the count. Reading only
+    // the old name is null on every station while the feed answers perfectly.
+    it('reads a v3 feed, which counts vehicles rather than bikes', async () => {
+      holds({ ...stored, gbfsId: 'zgz-42' } as BiziStation);
+      operatorHas({
+        station_id: 'zgz-42',
+        num_vehicles_available: 9,
+        num_docks_available: 4,
+        is_installed: true,
+        is_renting: true,
+        is_returning: true,
+      });
+
+      const resp = (await service.getStation('175')) as BiziStationResponse;
+
+      expect(resp.bikes).toBe(9);
+      expect(resp.openDocks).toBe(4);
+      expect(resp.state).toBe('IN_SERVICE');
+    });
+
+    // PBSC numbers its vehicle types, so nothing about "2" says it is the
+    // e-bike: the system's own declaration is the only thing that does.
+    it('counts the electric bikes by what the system declares', async () => {
+      holds({ ...stored, gbfsId: 'zgz-42' } as BiziStation);
+      operatorHas({
+        station_id: 'zgz-42',
+        num_vehicles_available: 7,
+        vehicle_types_available: [
+          { vehicle_type_id: '1', count: 3 },
+          { vehicle_type_id: '2', count: 4 },
+        ],
+      });
+      gbfs.vehicleTypes.mockResolvedValue([
+        { vehicle_type_id: '1', propulsion_type: 'human' },
+        { vehicle_type_id: '2', propulsion_type: 'electric_assist' },
+      ]);
+
+      const resp = (await service.getStation('175')) as BiziStationResponse;
+
+      expect(resp.bikes).toBe(7);
+      expect(resp.electricBikes).toBe(4);
+    });
+
+    // A system that runs one kind of vehicle publishes no `vehicle_types`, and
+    // that is not a reason to fail the road.
+    it('still serves counts when the feed declares no vehicle types', async () => {
+      holds({ ...stored, gbfsId: 'zgz-42' } as BiziStation);
+      operatorHas({ station_id: 'zgz-42', num_vehicles_available: 7 });
+      gbfs.vehicleTypes.mockResolvedValue([]);
+
+      const resp = (await service.getStation('175')) as BiziStationResponse;
+
+      expect(resp.bikes).toBe(7);
+      expect(resp).not.toHaveProperty('electricBikes');
     });
 
     it('keeps the operator id out of the answer', async () => {

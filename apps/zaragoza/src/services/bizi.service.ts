@@ -30,10 +30,12 @@ import {
 import {
   cityState,
   electricBikes,
+  electricTypeIds,
   gbfsState,
   GbfsClient,
   GbfsStationStatus,
   pairByPosition,
+  vehiclesAvailable,
 } from '../gbfs';
 
 /**
@@ -235,12 +237,12 @@ export class BiziService {
     const status = statuses.find((station) => station.station_id === wanted);
     if (!status) return null;
 
-    const electric = electricBikes(status);
+    const electric = electricBikes(status, await this.electricTypes());
     return {
       id,
       street: backup?.street ?? capitalizeEachWord(fixWords(id)),
       state: gbfsState(status),
-      bikes: status.num_bikes_available ?? null,
+      bikes: vehiclesAvailable(status),
       ...(electric === undefined ? {} : { electricBikes: electric }),
       openDocks: status.num_docks_available ?? null,
       coordinates: backup?.coordinates ?? [],
@@ -249,6 +251,29 @@ export class BiziService {
       lastUpdated: new Date().toISOString(),
       type: 'bizi',
     };
+  }
+
+  /**
+   * Which of the system's vehicle types are electric, as the system says.
+   *
+   * Which kinds a system runs is furniture too, so it is read on the same slow
+   * clock as the stations. An empty set means the feed declared nothing, and
+   * `electricBikes` falls back to reading the type's id — which is all anybody
+   * could do before, and is right only for a feed that names its types.
+   */
+  private async electricTypes(): Promise<Set<string>> {
+    try {
+      return await this.cacheManager.wrap(
+        'bizi/gbfs/vehicle-types',
+        async () => electricTypeIds(await this.gbfs.vehicleTypes()),
+        OPERATOR_INFO_TTL,
+      );
+    } catch (exception) {
+      this.logger.warn(
+        `Could not read the operator's vehicle types: ${exception.message}`,
+      );
+      return new Set();
+    }
   }
 
   /**

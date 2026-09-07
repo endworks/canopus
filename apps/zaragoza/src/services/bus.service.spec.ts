@@ -93,7 +93,7 @@ const today = () => {
 
 // The two roads to one stop: the city's API, and the board pasobus draws.
 const busApiUrl = (id: string) =>
-  `https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/transporte-urbano/poste-autobus/tuzsa-${id}.json?srsname=wgs84`;
+  `https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/transporte-urbano/poste-autobus/tuzsa-${id}?srsname=wgs84`;
 
 // What pasobus serves for one stop: the arrivals table is the second one.
 const pasobusUrl = (id: string) =>
@@ -596,6 +596,49 @@ describe('getStation', () => {
         { line: '21', destination: 'Barrio Jesús', time: '3 min.' },
         { line: 'N6', destination: 'La Cartuja', time: '7 min.' },
       ],
+    });
+  });
+
+  it('asks the city for JSON, which the path no longer does for it', async () => {
+    const { service, httpService } = build({});
+    (httpService.get as jest.Mock).mockImplementation((url: string) =>
+      url === busApiUrl('14')
+        ? of({
+            data: {
+              id: 'tuzsa-14',
+              title: '(14) Antonio Leyva N.\u00ba 33 L\u00edneas: N3, 53, 21',
+              lastUpdated: '2026-09-07T20:54:34',
+              geometry: { type: 'Point', coordinates: [-0.92, 41.65] },
+              destinos: [
+                {
+                  linea: '53',
+                  destino: 'PLAZA EMPERADOR CARLOS QUINTO.',
+                  primero: '1 minutos.',
+                  segundo: '10 minutos.',
+                },
+              ],
+            },
+          })
+        : throwError(() => httpError(404)),
+    );
+
+    const resp = await service.getStation('14', 'api');
+
+    expect(resp).toMatchObject({
+      source: 'api',
+      times: [
+        {
+          line: '53',
+          destination: 'Plaza Emperador Carlos V',
+          time: '1 min.',
+        },
+        { line: '53', time: '10 min.' },
+      ],
+    });
+    // The endpoint reads the path for what to serve no longer: a request that
+    // does not say it wants JSON is answered 400, not with the stop.
+    expect((httpService.get as jest.Mock).mock.calls[0][1]).toMatchObject({
+      headers: { accept: 'application/json' },
     });
   });
 

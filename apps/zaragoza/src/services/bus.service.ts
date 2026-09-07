@@ -445,16 +445,21 @@ export class BusService {
     const isWebSource = source === 'web';
     const url = isWebSource
       ? busWebURL + id
-      : `${busApiURL + id}.json?srsname=wgs84`;
+      : `${busApiURL + id}?srsname=wgs84`;
 
     let data: any;
     try {
       // pasobus serves iso-8859-1; axios would decode it as utf-8 and turn
-      // every accented character into U+FFFD.
+      // every accented character into U+FFFD. The city's endpoint picks what
+      // it serves from `accept` alone now that the path carries no `.json`,
+      // and answers a bare request with 400 "Could not find acceptable
+      // representation" rather than a stop.
       data = await fetchWithTimeout<any>(
         this.httpService,
         url,
-        isWebSource ? { responseEncoding: 'latin1' } : undefined,
+        isWebSource
+          ? { responseEncoding: 'latin1' }
+          : { headers: { accept: 'application/json' } },
       );
     } catch (exception) {
       throw upstreamFailure(

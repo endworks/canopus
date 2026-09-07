@@ -58,6 +58,17 @@ export interface AlertSource {
   mode: TransportMode;
   /** The alterations the operator is showing right now. */
   list(): Promise<ScrapedAlert[]>;
+  /**
+   * Whether a listing with nothing in it is an answer.
+   *
+   * For a source that can only fail by throwing it is: the tram's one notice
+   * is a block the operator shows while something is wrong and takes away when
+   * it is over, so no block means the line is running normally and what was
+   * stored is over. For a source that returns nothing both when it published
+   * nothing and when it could not be read, it is not, and an empty listing is
+   * left alone rather than taken as the all-clear.
+   */
+  clearsWhenEmpty?: boolean;
   /** The words of one alert's notice, or '' when they cannot be read. */
   article(alert: ScrapedAlert): Promise<string>;
 }
@@ -192,7 +203,7 @@ export class AlertStore {
   ): Promise<void> {
     try {
       const scraped = await source.list();
-      if (!scraped.length) {
+      if (!scraped.length && !source.clearsWhenEmpty) {
         this.logger.warn(`No ${source.mode} service alerts were published`);
         return;
       }
@@ -208,27 +219,30 @@ export class AlertStore {
       );
       const now = new Date().toISOString();
 
-      await this.model.bulkWrite(
-        scraped.map((alert) => {
-          const previous = stored.get(alert.id);
-          return {
-            updateOne: {
-              filter: { id: alert.id },
-              update: {
-                $set: {
-                  ...alert,
-                  // This run's reading where it made one, and otherwise the
-                  // one the alert already carried.
-                  ...(readings.get(alert.id) ?? readingOf(previous)),
-                  firstSeen: previous?.firstSeen ?? now,
+      // Guarded because an empty listing now reaches here: it is the all-clear
+      // from a source that says so, and Mongo refuses an empty batch.
+      if (scraped.length)
+        await this.model.bulkWrite(
+          scraped.map((alert) => {
+            const previous = stored.get(alert.id);
+            return {
+              updateOne: {
+                filter: { id: alert.id },
+                update: {
+                  $set: {
+                    ...alert,
+                    // This run's reading where it made one, and otherwise the
+                    // one the alert already carried.
+                    ...(readings.get(alert.id) ?? readingOf(previous)),
+                    firstSeen: previous?.firstSeen ?? now,
+                  },
                 },
+                upsert: true,
               },
-              upsert: true,
-            },
-          };
-        }),
-        { ordered: false },
-      );
+            };
+          }),
+          { ordered: false },
+        );
 
       // What the site has stopped showing is over, and nothing else says so:
       // these notices carry no end date and the ones that do are the minority.

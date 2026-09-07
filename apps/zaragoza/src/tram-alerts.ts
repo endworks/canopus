@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 
 import * as cheerio from 'cheerio';
 
-import { articleText, ScrapedAlert } from './alerts';
+import { ScrapedAlert } from './alerts';
 import { TRAM_LINE_ID } from './tram-line';
 
 /**
@@ -21,74 +21,6 @@ export const tramSiteURL = 'https://www.tranviasdezaragoza.es';
  * Any query at all goes past it to the page a reader sees.
  */
 export const tramFrontPageURL = `${tramSiteURL}/?canopus=1`;
-
-/**
- * The WordPress REST API, under `/api/`.
- *
- * Not `/wp-json/`, which this site answers 404: the prefix is configurable and
- * theirs is changed. It is the site's own pages that give it away — they link
- * their oembed endpoint under `/api/`, so that is what is asked.
- */
-const restBase = `${tramSiteURL}/api/wp/v2`;
-
-/**
- * The categories a service alteration is filed under.
- *
- * `home` is the one that exists, and it is the operator's own featured set:
- * every alteration they publish is in it — the extended hours for a festival,
- * the reinforcement for a match, the special services for the fiestas — while
- * the general press releases stay in `noticias` alone. It is not named for
- * what it holds, so the others are asked for too, against the day somebody
- * files these where their name says.
- */
-const alertCategorySlugs = ['home', 'incidencias', 'avisos', 'alteraciones'];
-
-/**
- * How many notices back a listing is read.
- *
- * These are what the operator is still showing below the fold, and an
- * alteration that is over drops off the list on its own end date; a page of
- * fifty is well past the point where the rest is history rather than news.
- */
-export const maxTramAlerts = 50;
-
-/** One post, as the WordPress REST API returns it. */
-export interface WordPressPost {
-  id?: number;
-  slug?: string;
-  link?: string;
-  date?: string;
-  date_gmt?: string;
-  title?: { rendered?: string };
-  content?: { rendered?: string };
-}
-
-export interface WordPressCategory {
-  id?: number;
-  slug?: string;
-}
-
-/** The ids of the categories an alteration is filed under. */
-export const alertCategoryIds = (
-  categories: WordPressCategory[] | undefined,
-): number[] =>
-  (categories ?? [])
-    .filter(
-      (category) =>
-        typeof category.id === 'number' &&
-        alertCategorySlugs.includes(category.slug ?? ''),
-    )
-    .map((category) => category.id);
-
-export const categoriesQuery = () =>
-  `${restBase}/categories?per_page=100&_fields=id,slug`;
-
-export const postsQuery = (categoryIds: number[]) =>
-  `${restBase}/posts?categories=${categoryIds.join(',')}&per_page=${maxTramAlerts}&_fields=slug,link,date,title,content`;
-
-/** WordPress renders `&amp;` and friends into the titles it hands back. */
-const decodeEntities = (text: string): string =>
-  cheerio.load(`<span>${text}</span>`)('span').text();
 
 const clean = (text: string): string => text.replace(/\s+/g, ' ').trim();
 
@@ -133,48 +65,6 @@ const ownLink = (href: string | undefined, base?: string): URL | undefined => {
   url.hash = '';
   return url;
 };
-
-/**
- * The alterations the REST API lists, in this service's shape.
- *
- * Every one of them is about the one line the network runs — the site does not
- * say so on each notice because there is nothing else it could be about — so
- * they are all filed against it. That is what puts an alteration on the stops
- * of L1 rather than nowhere.
- *
- * A post is dropped rather than half-read: without a link there is nothing to
- * send a reader to, and without a headline there is nothing to show them.
- */
-export const parseWordPressAlerts = (
-  posts: WordPressPost[] | undefined,
-): ScrapedAlert[] => {
-  const alerts = new Map<string, ScrapedAlert>();
-
-  (posts ?? []).forEach((post) => {
-    const url = ownLink(post.link?.trim());
-    if (!url) return;
-
-    const id = alertId(url.href, post.slug);
-    const title = clean(decodeEntities(post.title?.rendered ?? ''));
-    if (!id || !title) return;
-
-    alerts.set(id, {
-      id,
-      title,
-      url: url.href,
-      // WordPress dates its own posts, in the site's timezone and to the
-      // second. The day is all an alteration is announced on.
-      date: post.date?.slice(0, 10) ?? post.date_gmt?.slice(0, 10),
-      lines: [TRAM_LINE_ID],
-    });
-  });
-
-  return [...alerts.values()];
-};
-
-/** The words of one notice, where the API handed them over with the listing. */
-export const postArticle = (post: WordPressPost | undefined): string =>
-  post?.content?.rendered ? articleText(post.content.rendered) : '';
 
 /**
  * An alteration in force, as the block at the top of the front page shows it.

@@ -13,7 +13,6 @@ import {
 } from '../schemas/tram.schema';
 import { TramService } from './tram.service';
 import { stopCode } from '../tram-line';
-import { dayFrom } from '../alert-store';
 import { AlertDetails, AlertReader } from '../alert-reader';
 import { tramFrontPageURL } from '../tram-alerts';
 import { TramStationResponse } from '../models/tram.interface';
@@ -22,9 +21,6 @@ import { TramStationResponse } from '../models/tram.interface';
 const stop = (resp: unknown) => resp as TramStationResponse;
 
 const site = 'https://www.tranviasdezaragoza.es';
-// The site serves the REST API under `/api/`, not `/wp-json/`.
-const categoriesUrl = `${site}/api/wp/v2/categories`;
-const postsUrl = `${site}/api/wp/v2/posts`;
 
 const ajaxUrl = `${site}/wp-admin/admin-ajax.php`;
 
@@ -123,14 +119,6 @@ const platformRecords = (rows = corridor): Partial<TramStation>[] =>
     },
   ]);
 
-const wpPost = (slug: string, title: string, date = '2026-09-04T10:12:31') => ({
-  slug,
-  link: `${site}/${slug}/`,
-  date,
-  title: { rendered: title },
-  content: { rendered: `<p>${title}. Del 4 al 6 de septiembre.</p>` },
-});
-
 const httpError = (status: number) => {
   const error: Error & { response?: { status: number } } = new Error(
     `Request failed with status code ${status}`,
@@ -200,11 +188,7 @@ const build = (
     stations?: Partial<TramStation>[];
     lines?: Partial<TramLine>[];
     alerts?: Partial<TramAlert>[];
-    /** The categories the site's REST API answers with. */
-    categories?: { id: number; slug: string }[];
-    /** The posts filed under them. */
-    posts?: ReturnType<typeof wpPost>[];
-    /** The block at the top of the front page, when one is in force. */
+    /** The operator's front page, which is where an alteration is shown. */
     frontPage?: string;
     /** The line the operator publishes; absent means it published none. */
     line?: ReturnType<typeof operatorLine> | null;
@@ -248,14 +232,6 @@ const build = (
     get: jest.fn((url: string) => {
       if (options.unreachable?.some((blocked) => url.startsWith(blocked))) {
         return throwError(() => httpError(500));
-      }
-      if (url.startsWith(categoriesUrl)) {
-        return options.categories
-          ? of({ data: options.categories })
-          : throwError(() => httpError(404));
-      }
-      if (url.startsWith(postsUrl)) {
-        return of({ data: options.posts ?? [] });
       }
       if (url === tramFrontPageURL) {
         return options.frontPage
@@ -447,77 +423,93 @@ describe('getLinesUpdate', () => {
   });
 });
 
+/**
+ * The block the operator shows at the top of their front page while something
+ * is wrong with the line, in the markup their own plugin renders.
+ */
+const avisos = (...notices: string[]) => `<html><body>
+  <div class="tranvias_dosnet_avisos tranvias_dosnet_avisos_${notices.length}">
+    <div class="tranvias_dosnet_avisos_title"><h2><span>Avisos</span></h2></div>
+    <div class="tranvias_dosnet_avisos_list">
+      ${notices.map((text) => `<div class="tranvias_dosnet_avisos_aviso">${text}</div>`).join('')}
+    </div>
+  </div>
+</body></html>`;
+
+/** A front page with no block on it: the line is running normally. */
+const noAvisos = '<html><body><div id="main"></div></body></html>';
+
+/** What the operator was showing when this was written. */
+const interrupted =
+  '7/9/2026 14:30:28. La afección en la línea ha sido modificada. Servicio ' +
+  'interrumpido entre Campus Río Ebro y Martínez Soria / María Montessori. ' +
+  'Bus alternativo activado. El resto de la línea funciona con normalidad.';
+
 describe('the alterations the operator publishes', () => {
-  it('stores what the site is showing', async () => {
+  it('is the block at the top of the front page, and only that', async () => {
     const { service } = build({
       stations: storedStations(),
-      categories: [{ id: 10, slug: 'home' }],
-      posts: [wpPost('corte-en-plaza-espana', 'Corte en Plaza España')],
+      frontPage: avisos(interrupted),
     });
 
     await service.getLinesUpdate();
 
     expect(await service.getAlerts()).toEqual([
       expect.objectContaining({
-        id: 'corte-en-plaza-espana',
-        title: 'Corte en Plaza España',
-        url: `${site}/corte-en-plaza-espana/`,
-        date: '2026-09-04',
+        title: interrupted,
+        url: `${site}/`,
         lines: ['L1'],
-        scope: 'line',
       }),
     ]);
   });
 
-  it('reads the block at the top when the service is altered right now', async () => {
+  it('is nothing at all when the block is not there', async () => {
+    // Which is most days. The posts below the fold are announcements — a
+    // festival timetable, works starting next month — and were being served
+    // as though the line were altered now.
     const { service } = build({
       stations: storedStations(),
-      // No categories: nothing announced. The block still answers.
-      frontPage: `<div class="tranvias_dosnet_avisos tranvias_dosnet_avisos_1">
-          <div class="tranvias_dosnet_avisos_title"><h2><span>Avisos</span></h2></div>
-          <div class="tranvias_dosnet_avisos_list">
-            <div class="tranvias_dosnet_avisos_aviso">Servicio interrumpido</div>
-          </div>
-        </div>`,
+      frontPage: noAvisos,
     });
 
     await service.getLinesUpdate();
 
-    expect((await service.getAlerts())[0]).toEqual(
-      expect.objectContaining({
-        title: 'Servicio interrumpido',
-        lines: ['L1'],
-      }),
-    );
+    expect(await service.getAlerts()).toEqual([]);
   });
 
-  it('counts an alteration once when it is both in force and announced', async () => {
-    const { service } = build({
+  it('drops what it was showing once the block is gone', async () => {
+    const { service, alertModel } = build({
       stations: storedStations(),
-      // The block links to the post that announced it, so they are one.
-      frontPage: `<div class="tranvias_dosnet_avisos_aviso">
-          <a href="${site}/corte/">Corte en Plaza España</a>
-        </div>`,
-      categories: [{ id: 10, slug: 'home' }],
-      posts: [wpPost('corte', 'Corte en Plaza España')],
+      alerts: [
+        {
+          id: 'ya-terminado',
+          title: 'Ya terminado',
+          url: `${site}/`,
+          lines: ['L1'],
+          stations: [],
+          addedStations: [],
+          scope: 'line',
+          firstSeen: '2026-08-01T00:00:00.000Z',
+        },
+      ],
+      frontPage: noAvisos,
     });
 
     await service.getLinesUpdate();
-    const alerts = await service.getAlerts();
 
-    expect(alerts.map((alert) => alert.id)).toEqual(['corte']);
-    // The post's date survives the merge; the block carries none.
-    expect(alerts[0].date).toBe('2026-09-04');
+    // An empty block is the all-clear, and nothing else says so: these
+    // notices carry no end date.
+    expect(alertModel.docs).toEqual([]);
   });
 
-  it('leaves the stored alerts alone when neither road answers', async () => {
+  it('leaves the stored alteration alone when the page cannot be read', async () => {
     const { service } = build({
       stations: storedStations(),
       alerts: [
         {
           id: 'corte',
           title: 'Corte',
-          url: `${site}/corte/`,
+          url: `${site}/`,
           date: '2026-09-01',
           lines: ['L1'],
           stations: [],
@@ -531,92 +523,52 @@ describe('the alterations the operator publishes', () => {
 
     await service.getLinesUpdate();
 
+    // A page that did not load says nothing about the service. Only a page
+    // that loaded and showed no block is the all-clear.
     expect((await service.getAlerts()).map((alert) => alert.id)).toEqual([
       'corte',
     ]);
   });
 
-  it('drops an alteration the site has stopped showing', async () => {
-    const { service, alertModel } = build({
+  it('keeps each notice apart where the block is showing two', async () => {
+    const { service } = build({
       stations: storedStations(),
-      alerts: [
-        {
-          id: 'ya-terminado',
-          title: 'Ya terminado',
-          url: `${site}/ya-terminado/`,
-          lines: ['L1'],
-          stations: [],
-          addedStations: [],
-          scope: 'line',
-          firstSeen: '2026-08-01T00:00:00.000Z',
-        },
-      ],
-      categories: [{ id: 10, slug: 'home' }],
-      posts: [wpPost('corte', 'Corte')],
+      frontPage: avisos(interrupted, 'Ascensor fuera de servicio en Gran Vía'),
     });
 
     await service.getLinesUpdate();
 
-    expect(alertModel.docs.map((doc) => doc.id)).toEqual(['corte']);
+    expect(
+      (await service.getAlerts()).map((alert) => alert.title).sort(),
+    ).toEqual([interrupted, 'Ascensor fuera de servicio en Gran Vía'].sort());
   });
 
-  it('reads the notice the listing handed over, without fetching it again', async () => {
+  it('reads the notice out of its own words, fetching nothing', async () => {
     const { service, reader, httpService } = build({
       stations: storedStations(),
-      categories: [{ id: 10, slug: 'home' }],
-      posts: [wpPost('corte', 'Corte en Casablanca')],
-      articles: {
-        corte: {
-          // Counted from today rather than written down. `getAlerts` serves
-          // what is in force, so an alteration dated into a particular week
-          // stops being served the morning after that week — and a test that
-          // asks for it back fails on a day nobody changed anything. This one
-          // did, on the 7th of September.
-          startDate: dayFrom(-2),
-          endDate: dayFrom(1),
-          stations: ['1900'],
-          addedStations: [],
-          scope: 'stations',
-        },
-      },
+      frontPage: avisos(interrupted),
+      articles: {},
     });
 
     await service.getLinesUpdate();
 
-    // The stops of the line, in route order and named by their street: what
-    // "entre Margarita Xirgu y Legaz Lacambra" has to be resolved against.
-    expect(reader.read).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'corte' }),
-      expect.stringContaining('Del 4 al 6 de septiembre'),
-      [
-        expect.objectContaining({
-          line: 'L1',
-          stations: expect.arrayContaining([
-            { id: '1900', street: 'Casablanca' },
-          ]),
-        }),
-      ],
-      'tram',
-    );
-    // The words came with the listing, so the notice itself is never fetched.
+    // The block is the notice. There is no article behind it, so the words
+    // handed to the reader are the ones it is showing.
+    const [alert, words] = reader.read.mock.calls[0];
+    expect(alert.title).toBe(interrupted);
+    expect(words).toBe(interrupted);
+    // And nothing was fetched but the front page itself.
     expect(
-      (httpService.get as jest.Mock).mock.calls.map(([url]) => url),
-    ).not.toContain(`${site}/corte/`);
-
-    expect((await service.getAlerts())[0]).toEqual(
-      expect.objectContaining({
-        endDate: dayFrom(1),
-        stations: ['1900'],
-        scope: 'stations',
-      }),
-    );
+      (httpService.get as jest.Mock).mock.calls
+        .map(([url]) => url)
+        .filter((url: string) => url.startsWith(site)),
+    ).toEqual([tramFrontPageURL]);
   });
 
   it('offers the reader each place once, and a split place as its two', async () => {
     const { service, reader } = build({
       stations: storedStations(),
-      categories: [{ id: 10, slug: 'home' }],
-      posts: [wpPost('corte', 'Corte')],
+      frontPage: avisos(interrupted),
       articles: {},
     });
 

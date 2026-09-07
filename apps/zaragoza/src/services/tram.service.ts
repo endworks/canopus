@@ -59,19 +59,7 @@ import {
   TRAM_LINE_ID,
   tramLineId,
 } from '../tram-line';
-import {
-  alertCategoryIds,
-  alertId,
-  categoriesQuery,
-  parseLiveAlerts,
-  parseWordPressAlerts,
-  postArticle,
-  postsQuery,
-  tramFrontPageURL,
-  tramSiteURL,
-  WordPressCategory,
-  WordPressPost,
-} from '../tram-alerts';
+import { parseLiveAlerts, tramFrontPageURL, tramSiteURL } from '../tram-alerts';
 
 /** Where the operator's own site fetches its line, stops and shape from. */
 const tramAjaxURL = `${tramSiteURL}/wp-admin/admin-ajax.php`;
@@ -557,80 +545,61 @@ export class TramService {
    * Where the block links to its own post the two are one alert, because they
    * are keyed on the same slug.
    */
+  /**
+   * Where the tram's alterations come from: the block the operator puts at the
+   * top of their own front page, and nothing else.
+   *
+   * That block is what is happening — their plugin renders it while something
+   * is wrong with the service and takes it away when it is over, and it says
+   * so in a sentence: "Servicio interrumpido entre Campus Río Ebro y Martínez
+   * Soria / María Montessori. Bus alternativo activado." The posts below the
+   * fold used to be read alongside it and are not any more. They are
+   * announcements — a festival timetable, a match, works starting next month —
+   * and a reader who wants to know whether their tram is running now was being
+   * handed a page of them with today's one notice somewhere inside.
+   *
+   * The words of the block are the notice. There is no article behind it to
+   * fetch: where it links anywhere it links to a post, and where it does not
+   * there is nothing but what it says.
+   */
   private alertSource(): AlertSource {
-    const articles = new Map<string, string>();
     return {
       mode: 'tram',
-      list: async () => {
-        articles.clear();
-        const [live, published] = await Promise.all([
-          this.fetchLiveAlerts(),
-          this.fetchPublishedAlerts(articles),
-        ]);
-        // The live block first, so that where the same alteration is in both
-        // it is the post's date and words that are kept — the block carries
-        // neither — and the reading is done against the fuller of the two.
-        const alerts = new Map(live.map((alert) => [alert.id, alert]));
-        published.forEach((alert) => alerts.set(alert.id, alert));
-        return [...alerts.values()];
-      },
-      article: async (alert) =>
-        articles.get(alert.id) ?? this.fetchArticle(alert.url),
+      // Nothing showing is an answer, not a silence: the block is absent
+      // whenever the line is running normally, which is most days.
+      clearsWhenEmpty: true,
+      list: () => this.fetchLiveAlerts(),
+      article: async (alert) => alert.title,
     };
   }
 
-  /** What is wrong with the service right now, from the operator's own block. */
+  /**
+   * The alterations in force, or a failure.
+   *
+   * Thrown rather than swallowed, and that is the whole point of it: an empty
+   * list means the page loaded and showed no block, which is the line running
+   * normally and is what clears what was stored. A page that did not load says
+   * nothing about the service, and coming back from it with an empty list
+   * would wipe a live alteration off every stop.
+   */
   private async fetchLiveAlerts(): Promise<ScrapedAlert[]> {
-    const html = await this.fetch<unknown>(tramFrontPageURL);
-    if (typeof html !== 'string') return [];
-    const live = parseLiveAlerts(html);
-    if (live.length) {
-      this.logger.log(
-        `The tram is showing ${live.length} alterations in force`,
-      );
+    const html = await fetchWithTimeout<unknown>(
+      this.httpService,
+      tramFrontPageURL,
+    );
+    if (typeof html !== 'string') {
+      throw new Error(`${tramFrontPageURL} answered with no page to read`);
     }
+    const live = parseLiveAlerts(html);
+    this.logger.log(
+      live.length
+        ? `The tram is showing ${live.length} alteration(s) in force`
+        : 'The tram is showing no alterations; the line is running normally',
+    );
     return live;
   }
 
   /** What the operator has announced, from the posts it files them under. */
-  private async fetchPublishedAlerts(
-    articles: Map<string, string>,
-  ): Promise<ScrapedAlert[]> {
-    try {
-      const categories = await fetchWithTimeout<WordPressCategory[]>(
-        this.httpService,
-        categoriesQuery(),
-      );
-      const ids = alertCategoryIds(categories);
-      if (!ids.length) {
-        // Every post on the site would be an alteration if this fell through
-        // to an unfiltered listing, so it does not: no category, nothing from
-        // here, and the block at the top still answers for what is in force.
-        this.logger.warn(
-          'The tram site lists no category an alteration is filed under',
-        );
-        return [];
-      }
-
-      const posts = await fetchWithTimeout<WordPressPost[]>(
-        this.httpService,
-        postsQuery(ids),
-      );
-      (posts ?? []).forEach((post) => {
-        const id = alertId(post.link ?? '', post.slug);
-        const words = postArticle(post);
-        if (id && words) articles.set(id, words);
-      });
-      return parseWordPressAlerts(posts);
-    } catch (exception) {
-      this.logger.warn(
-        `Could not read the tram alterations from the site's API: ${exception.message}`,
-      );
-      return [];
-    }
-  }
-
-  /** A read that costs the run nothing when it fails: an extra, not the line. */
   private async fetch<T>(url: string): Promise<T | undefined> {
     try {
       return await fetchWithTimeout<T>(this.httpService, url);

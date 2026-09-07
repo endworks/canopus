@@ -20,7 +20,7 @@ export interface BusStationResponse {
   sourceUrl?: string;
   lastUpdated?: string;
   type?: string;
-  /** The alterations in force on the lines that serve this stop. */
+  /** The alterations in force that name this stop. */
   alerts?: BusAlertResponse[];
 }
 

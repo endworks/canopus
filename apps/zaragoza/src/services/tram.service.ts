@@ -151,7 +151,7 @@ export class TramService {
     if (cache) return cache;
 
     const resp = await this.readStation(id);
-    resp.alerts = alertsForStation(await this.getAlerts(), id, resp.lines);
+    resp.alerts = alertsForStation(await this.getAlerts(), id);
 
     await this.cacheManager.set(`tram/stations/${id}`, resp, STATION_TTL);
     return resp;

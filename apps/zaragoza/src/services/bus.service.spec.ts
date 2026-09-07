@@ -928,7 +928,52 @@ describe('alerts', () => {
     }
   });
 
-  it('shows a station only the alerts of the lines that serve it', async () => {
+  it('shows a station only the alerts that name it', async () => {
+    const { service } = build({
+      storedAlerts: [
+        {
+          id: 'fiestas-en-miralbueno',
+          title: 'Fiestas en Miralbueno',
+          url: 'https://zaragoza.avanzagrupo.com/fiestas-en-miralbueno/',
+          date: today(),
+          lines: ['21'],
+          stations: ['1'],
+          firstSeen: new Date().toISOString(),
+        },
+        // Same line, another stop: the alteration is up the road.
+        {
+          id: 'vive-latino',
+          title: 'Vive Latino',
+          url: 'https://zaragoza.avanzagrupo.com/vive-latino/',
+          date: today(),
+          lines: ['21'],
+          stations: ['7'],
+          firstSeen: new Date().toISOString(),
+        },
+      ],
+      pages: {
+        [pasobusUrl('1')]: pasobus([['21', 'BARRIO JESUS', '3 minutos']]),
+      },
+      lines: [['21', 'BARRIO JESUS - OLIVER MIRALBUENO']],
+      kmls: { [kmlUrl('21', 1)]: [['1', 'Av. de Navarra nº 71']] },
+    });
+
+    const resp = await service.getStation('1', 'web');
+
+    expect(resp).toMatchObject({
+      lines: ['21'],
+      alerts: [
+        expect.objectContaining({
+          id: 'fiestas-en-miralbueno',
+          url: 'https://zaragoza.avanzagrupo.com/fiestas-en-miralbueno/',
+        }),
+      ],
+    });
+    // Bookkeeping stays off the wire.
+    expect(JSON.stringify(resp)).not.toContain('firstSeen');
+  });
+
+  it('leaves a stop out of an alteration that names no stop', async () => {
     const { service } = build({
       alertPages: [listing],
       pages: {
@@ -941,18 +986,13 @@ describe('alerts', () => {
 
     const resp = await service.getStation('1', 'web');
 
-    // Line 21 is altered; the alert for 23/34/ES7 is somebody else's stop.
-    expect(resp).toMatchObject({
-      lines: ['21'],
-      alerts: [
-        expect.objectContaining({
-          id: 'fiestas-en-miralbueno',
-          url: 'https://zaragoza.avanzagrupo.com/fiestas-en-miralbueno/',
-        }),
-      ],
-    });
-    // Bookkeeping stays off the wire.
-    expect(JSON.stringify(resp)).not.toContain('firstSeen');
+    // Line 21 is altered and nothing was read to say where: the notice is the
+    // line's, and it is on the line rather than on every pole along it.
+    expect(resp).toMatchObject({ lines: ['21'], alerts: [] });
+    expect((await service.getAlerts()).map((alert) => alert.id)).toEqual([
+      'fiestas-en-miralbueno',
+      'vive-latino',
+    ]);
   });
 
   it('leaves a station with no altered line without alerts', async () => {
@@ -1166,7 +1206,9 @@ describe('alert articles', () => {
     const suppressed = await service.getStation('1', 'web');
     const untouched = await service.getStation('2', 'web');
 
-    expect(suppressed).toMatchObject({ alerts: [{ direct: true }] });
+    expect(suppressed).toMatchObject({
+      alerts: [{ id: 'fiestas-en-miralbueno' }],
+    });
     // Nothing happens at stop 2, so nothing is said there.
     expect(untouched).toMatchObject({ alerts: [] });
     // It is still one of the city's alterations.
@@ -1280,7 +1322,7 @@ describe('alert articles', () => {
     ]);
   });
 
-  it('marks the stops the article names, without hiding the rest', async () => {
+  it('shows a notice at the stops it names and nowhere else on the line', async () => {
     const { service } = withArticle({
       pages: {
         [articleUrl]: article('Del 24 al 26 de agosto, postes 1 y 2.'),
@@ -1293,10 +1335,39 @@ describe('alert articles', () => {
     const named = await service.getStation('1', 'web');
     const alongTheLine = await service.getStation('9', 'web');
 
-    // Stop 1 is in the notice; stop 9 only has the line in common with it,
-    // and still gets told.
-    expect(named).toMatchObject({ alerts: [{ direct: true }] });
-    expect(alongTheLine).toMatchObject({ alerts: [{ direct: false }] });
+    // Stop 1 is in the notice. Stop 9 only has the line in common with it —
+    // the alteration is line-wide, but a stop's board is about that stop, and
+    // the line's news is read on the line.
+    expect(named).toMatchObject({ alerts: [{ id: 'fiestas-en-miralbueno' }] });
+    expect(alongTheLine).toMatchObject({ alerts: [] });
+    // Still one of the line's alterations, whoever it is shown to.
+    expect(await service.getAlerts()).toMatchObject([
+      { id: 'fiestas-en-miralbueno', scope: 'line', lines: ['21'] },
+    ]);
+  });
+
+  it('keeps a notice that names no stop off every stop of its lines', async () => {
+    const { service } = withArticle({
+      articles: {
+        'fiestas-en-miralbueno': {
+          startDate: undefined,
+          endDate: undefined,
+          // A diversion nobody could resolve to stops: the whole line is
+          // altered, and no stop is named.
+          stations: [],
+          addedStations: [],
+          scope: 'line' as const,
+        },
+      },
+      pages: {
+        [articleUrl]: article('Desvío por Constitución.'),
+        [pasobusUrl('1')]: pasobus([['21', 'BARRIO JESUS', '3 minutos']]),
+      },
+    });
+    await service.getLinesUpdate();
+
+    expect(await service.getStation('1', 'web')).toMatchObject({ alerts: [] });
+    expect(await service.getAlerts()).toHaveLength(1);
   });
 
   it('shows a named stop the alert even when none of its lines are listed', async () => {
@@ -1320,7 +1391,7 @@ describe('alert articles', () => {
 
     const resp = await service.getStation('3', 'web');
 
-    expect(resp).toMatchObject({ alerts: [{ id: 'obras', direct: true }] });
+    expect(resp).toMatchObject({ alerts: [{ id: 'obras' }] });
   });
 });
 

@@ -25,10 +25,9 @@ export interface AlertDetails {
   addedStations: string[];
   /**
    * Whether the alteration is confined to the stops in `stations`, or reaches
-   * the whole of every line it names. Only `'stations'` narrows a notice to
-   * some of a line's stops, and only when stops were actually identified —
-   * everything else stays a line-wide notice, because a stop that is affected
-   * and shows nothing is somebody who misses their bus or their tram.
+   * the whole of every line it names. It describes how much of a line is
+   * altered, which is what a line's notice has to say; where the alert is
+   * shown at a stop is `stations`, and only `stations`.
    */
   scope: 'stations' | 'line';
 }
@@ -263,10 +262,9 @@ export class AlertReader {
       ),
     ].slice(0, maxAddedStations);
 
-    // Narrowing a notice to no stops at all would silence it everywhere, so a
-    // scope of "stations" only holds while there are stations to scope it to.
-    // Narrowing needs the stops to narrow to and every route they could have
-    // come from; without either, the notice is the whole line's.
+    // A scope of "stations" says the rest of each route runs as usual, and it
+    // can only say that with the stops it excepts and every route they could
+    // have come from in hand. Without either, the notice is the whole line's.
     const scope =
       parsed.scope === 'stations' && stations.length && everyRoute
         ? 'stations'

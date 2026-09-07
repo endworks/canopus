@@ -104,43 +104,80 @@ const pathOf = (points: (string | number)[][] | undefined): number[][] =>
   });
 
 /**
- * What to call the place a stop stands at, given the stop the other direction
- * calls at instead.
+ * The id a stop is known by here, from the code the operator writes.
  *
- * Usually one name: the two are the platforms either side of the same track
- * and the operator names them the same. But on seven of this line's twenty-five
- * stops they are not the same place at all — the track runs a one-way pair
- * through Parque Goya and again through Valdespartera, so northbound calls at
- * Margarita Xirgu and southbound at García Abril, a street apart and named for
- * different people.
- *
- * Where that happens the stop is called both, because both are true and either
- * one alone is wrong for half the travellers reading it. Ordered by stop code
- * so the name a place is given does not depend on which direction was read
- * first.
+ * The operator pads its codes to four digits — `0101` — and the city's board
+ * does not: the board for that stop answers at `101`. Same stop, two
+ * spellings, and this is the one everything here uses, so a stored stop's id
+ * is the id its board is asked for by and nothing has to translate between
+ * them at read time.
  */
-export const combinedTitle = (stops: OperatorStop[]): string => {
-  const names = [
-    ...new Set(
-      [...stops]
-        .sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true }))
-        .map((stop) => clean(stop.displayName))
-        .filter(Boolean),
-    ),
-  ];
-  return names.join(' / ');
+export const stopCode = (code: string): string => {
+  const said = clean(code);
+  return said.replace(/^0+/, '') || said;
+};
+
+/**
+ * The place a stop's code names, without the digit that says which way the
+ * tram is going through it.
+ *
+ * All fifty of this line's codes are four digits ending in a 1 or a 2, and the
+ * operator uses that last digit for nothing else, so a nought in its place is
+ * a code no stop has and every place can be stored under.
+ */
+const placeCode = (code: string): string => clean(code).slice(0, -1);
+
+/**
+ * The boards a stop is read from.
+ *
+ * A place both directions call at is stored once, under its pair's shared code
+ * with a nought where the direction digit goes, and it is read from both of
+ * them: one board holds what is due one way and the other what is due back,
+ * and somebody standing between the two platforms wants both.
+ *
+ * A place only one direction calls at is stored under its own code and read
+ * from its own board alone. Asking for the other would be asking the city for
+ * a stop that does not exist — which is what every one-way stop here used to
+ * do, and why half of them never showed a time.
+ */
+export const boardsOf = (id: string): string[] => {
+  const said = clean(id);
+  return said.endsWith('0')
+    ? ['1', '2'].map((way) => stopCode(placeCode(said) + way))
+    : [said];
+};
+
+/** The point between the points there are, which for one of them is it. */
+const between = (points: Point[]): Point | null => {
+  const found = points.filter(Boolean);
+  if (!found.length) return null;
+  const mean = (index: 0 | 1) =>
+    round5(found.reduce((sum, at) => sum + at[index], 0) / found.length);
+  return [mean(0), mean(1)];
 };
 
 /**
  * The line and its stops, from the operator's own feed.
  *
- * Everything here used to be worked out: the stops were paired by chopping the
- * last digit off their ids, put in order by walking from one end to the
- * nearest one not yet visited, and drawn by joining them up. All three are
- * published, so all three are read instead — and the first of them was wrong,
- * because chopping a digit pairs `2301` with nothing and leaves Los Pájaros
- * and La Ventana Indiscreta as two stops of one line rather than the two ways
- * round one place.
+ * The operator publishes its stops one per direction — fifty of them for a
+ * line of twenty-five places — and pairs the two by `sibling_id`. Eighteen of
+ * those pairs are the two platforms of one place: the operator gives both the
+ * same name because they are the same name, a few metres apart across the
+ * track, and a traveller standing at one can catch either. Those are stored
+ * once, at the point between the two platforms, and read from both boards.
+ *
+ * The other seven are not one place at all. The track runs a one-way pair
+ * through Parque Goya and again through Valdespartera, so the two directions
+ * call at different stops on different streets — northbound at Margarita
+ * Xirgu and southbound at García Abril, at Clara Campoamor and Pablo Neruda,
+ * at Los Pájaros and La Ventana Indiscreta. Those stay two, each under its own
+ * code, each named its own name and drawn where it actually is: a traveller at
+ * one of them cannot catch what calls at the other, and a single pin between
+ * the two would be a pin on neither.
+ *
+ * The name is what decides, because the name is what the operator uses to say
+ * so. The codes cannot: five of the seven split pairs share a place code and
+ * are still two streets apart.
  *
  * Nothing is believed without being checked: a point has to land in Zaragoza,
  * a stop has to have a code, and a feed that yields fewer than two stops a
@@ -165,35 +202,69 @@ export const parseOperatorLine = (
     [...out, ...back].map((stop) => [stop.id, stop] as const),
   );
 
-  const stations = [...out, ...back].flatMap((stop) => {
-    const where = point(stop.lat, stop.lng);
-    if (!where) return [];
+  /**
+   * The place a stop stands at: the pair, where the two directions call at the
+   * same one, and the stop alone where they do not.
+   *
+   * Which it is turns on the name and the place code together. The name is the
+   * operator saying whether these are one place; the code agreeing is what
+   * makes a shared id for it exist at all, and a pair that somehow disagreed
+   * would be two stops rather than one under an id neither board answers for.
+   */
+  const placeOf = (stop: OperatorStop) => {
     const sibling = byId.get(stop.sibling_id);
-    return [
-      {
-        id: clean(stop.name),
-        street: combinedTitle(sibling ? [stop, sibling] : [stop]),
-        coordinates: where.map((part) => `${part}`),
-      },
-    ];
-  });
+    const together =
+      !!sibling &&
+      clean(sibling.displayName) === clean(stop.displayName) &&
+      placeCode(sibling.name) === placeCode(stop.name);
 
-  const titles = new Map(
-    stations.map((station) => [station.id, station.street]),
-  );
-  const terminus = (stop: OperatorStop) =>
-    titles.get(clean(stop.name)) ?? clean(stop.displayName);
+    const here = point(stop.lat, stop.lng);
+    const facing = sibling ? point(sibling.lat, sibling.lng) : null;
+    return {
+      id: together ? stopCode(placeCode(stop.name) + '0') : stopCode(stop.name),
+      street: clean(stop.displayName),
+      // A pair stands between its platforms; a stop on its own stands where
+      // it is. Either can come to nothing, and a place with no point is still
+      // a place the tram calls at — see below.
+      at: together ? between([here, facing]) : here,
+    };
+  };
+
+  const titles = new Map<string, string>();
+  const places = new Map<string, BuiltTramStation>();
+  const idsOf = (stops: OperatorStop[]) =>
+    stops.map((stop) => {
+      const place = placeOf(stop);
+      if (!titles.has(place.id)) titles.set(place.id, place.street);
+      // The first direction read writes the place; the second finds it there.
+      // A stop whose point cannot be read is left out of the stops without
+      // being left off the route: it is still one the tram calls at, and
+      // dropping it from the line would be the worse lie of the two.
+      if (place.at && !places.has(place.id)) {
+        places.set(place.id, {
+          id: place.id,
+          street: place.street,
+          coordinates: place.at.map((part) => `${part}`),
+        });
+      }
+      return place.id;
+    });
+
+  const stations = idsOf(out);
+  const stationsReturn = idsOf(back);
+
+  const terminus = (id: string) => titles.get(id) ?? id;
 
   return {
     line: {
       id: lineId,
       // The two places it runs between, as the outbound leg reaches them.
-      name: `${terminus(out[0])} - ${terminus(out[out.length - 1])}`,
-      stations: out.map((stop) => clean(stop.name)),
-      stationsReturn: back.map((stop) => clean(stop.name)),
+      name: `${terminus(stations[0])} - ${terminus(stations[stations.length - 1])}`,
+      stations,
+      stationsReturn,
       path: pathOf(feed?.points_0),
       pathReturn: pathOf(feed?.points_1),
     },
-    stations,
+    stations: [...places.values()],
   };
 };

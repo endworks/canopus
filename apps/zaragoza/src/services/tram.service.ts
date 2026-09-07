@@ -51,6 +51,7 @@ import {
   TramStationDocument,
 } from '../schemas/tram.schema';
 import {
+  boardsOf,
   BuiltTramLine,
   BuiltTramNetwork,
   OperatorLine,
@@ -200,12 +201,13 @@ export class TramService {
         }
       }
 
+      // Both platforms of a place the tram calls at each way, and the one
+      // board there is where it calls at only one — see `boardsOf`. Asking a
+      // one-way stop for its non-existent other platform is what used to
+      // leave half of them without a time.
       const stations = await Promise.all(
-        ['1', '2'].map((platform) =>
-          fetchWithTimeout<any>(
-            this.httpService,
-            tramStationURL + `${id.slice(0, id.length - 1) + platform}`,
-          ),
+        boardsOf(id).map((board) =>
+          fetchWithTimeout<any>(this.httpService, tramStationURL + board),
         ),
       );
 
@@ -314,6 +316,15 @@ export class TramService {
       if (stationOps.length) {
         await this.tramStationModel.bulkWrite(stationOps, { ordered: false });
       }
+
+      const goneStations = this.retiredStations(network, storedStations);
+      if (goneStations.length) {
+        await this.tramStationModel.deleteMany({ id: { $in: goneStations } });
+        this.logger.log(
+          `Dropped ${goneStations.length} tram stop record(s) this line does not have: ${goneStations.join(', ')}`,
+        );
+      }
+
       this.logger.log(
         `Read the tram line as ${network.line.stations.length} stops and ${network.line.path.length} points, and wrote ${stationOps.length} stop records`,
       );
@@ -426,8 +437,6 @@ export class TramService {
         station,
       ]),
     );
-    const onTheLine = new Set(network.stations.map((station) => station.id));
-
     const updates = network.stations.flatMap((station) => {
       const backup = storedById.get(station.id);
       const unchanged =
@@ -448,15 +457,27 @@ export class TramService {
           ];
     });
 
-    // A stop the operator no longer runs to keeps its record — it may still be
-    // asked for by id — but stops claiming a line that does not call there.
-    const retired = [...storedById.values()].flatMap((station) =>
-      !onTheLine.has(station.id) && station.lines?.includes(network.line.id)
-        ? [upsertById<TramStation>(station.id, { lines: [] })]
-        : [],
-    );
+    return updates;
+  }
 
-    return [...updates, ...retired];
+  /**
+   * The stop records this network does not have.
+   *
+   * Dropped rather than emptied. These are not stops that closed: they are the
+   * ids a previous pairing invented — a place stored under a code shared by
+   * two stops a street apart, which named one of them and pinned the pair
+   * between them, and which no board answers for. A reader that had one of
+   * those in its cache would go on asking for it forever.
+   *
+   * Only ever reached with a line read, and the line is read whole, so a run
+   * that saw nothing removes nothing.
+   */
+  private retiredStations(
+    network: BuiltTramNetwork,
+    stored: TramStation[],
+  ): string[] {
+    const known = new Set(network.stations.map((station) => station.id));
+    return stored.map((station) => station.id).filter((id) => !known.has(id));
   }
 
   /** A stored line, in the shape a freshly built one has. */

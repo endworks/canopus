@@ -12,6 +12,7 @@ import {
   TramStationDocument,
 } from '../schemas/tram.schema';
 import { TramService } from './tram.service';
+import { stopCode } from '../tram-line';
 import { dayFrom } from '../alert-store';
 import { AlertDetails, AlertReader } from '../alert-reader';
 import { tramFrontPageURL } from '../tram-alerts';
@@ -79,8 +80,39 @@ const operatorLine = (rows = corridor) => ({
     .map(([, , , , lat, lon]) => [`${lat}`, `${lon}`]),
 });
 
-/** The stop records an earlier run left behind. */
+/**
+ * The stop records a run leaves: one for a place both directions call at,
+ * under its pair's code with a nought for the direction, and one apiece where
+ * the two directions call at different places.
+ */
 const storedStations = (rows = corridor): Partial<TramStation>[] =>
+  rows.flatMap(([out, name, back, backName, lat, lon]) => {
+    const at = [`${lon}`, `${lat}`];
+    return name === backName
+      ? [
+          {
+            id: stopCode(`${out.slice(0, -1)}0`),
+            street: name,
+            lines: ['L1'],
+            coordinates: at,
+          },
+        ]
+      : [
+          { id: stopCode(out), street: name, lines: ['L1'], coordinates: at },
+          {
+            id: stopCode(back),
+            street: backName,
+            lines: ['L1'],
+            coordinates: at,
+          },
+        ];
+  });
+
+/**
+ * What an earlier pairing left behind: a record per platform, including ids
+ * for places that were never places.
+ */
+const platformRecords = (rows = corridor): Partial<TramStation>[] =>
   rows.flatMap(([out, name, back, , lat, lon]) => [
     { id: out, street: name, lines: ['L1'], coordinates: [`${lon}`, `${lat}`] },
     {
@@ -258,7 +290,7 @@ describe('getLinesUpdate', () => {
 
     expect(Object.keys(resp)).toEqual(['L1']);
     expect(resp['L1'].name).toBe('Mago de Oz - Avenida de la Academia');
-    expect(resp['L1'].stations).toEqual(['2502', '2402', '1902', '0102']);
+    expect(resp['L1'].stations).toEqual(['2500', '2402', '1900', '100']);
     expect(resp['L1'].hidden).toBe(false);
   });
 
@@ -268,9 +300,9 @@ describe('getLinesUpdate', () => {
     await service.getLinesUpdate();
     const line = await service.getLine('L1');
 
-    // Not the outbound list reversed: at the far end the two directions call
-    // at different places altogether.
-    expect(line.stationsReturn).toEqual(['0101', '1901', '2401', '2501']);
+    // Not the outbound list reversed: the two directions share the places
+    // they both call at, and part where they do not.
+    expect(line.stationsReturn).toEqual(['100', '1900', '2401', '2500']);
     expect(line.path).toHaveLength(4);
     expect(line.pathReturn).toEqual([...line.path].reverse());
   });
@@ -284,21 +316,33 @@ describe('getLinesUpdate', () => {
     expect(resp['L1'].pathReturn).toBeUndefined();
   });
 
-  it('calls a stop by both names where the two directions differ', async () => {
+  it('keeps one record for a place and two where they are two', async () => {
+    const { service, stationModel } = build({ stations: [] });
+    const byId = new Map(stationModel.docs.map((doc) => [doc.id, doc]));
+
+    await service.getLinesUpdate();
+
+    expect(stationModel.docs.map((doc) => doc.id).sort()).toEqual([
+      '100',
+      '1900',
+      '2401',
+      '2402',
+      '2500',
+    ]);
+    expect(byId).toBeDefined();
+  });
+
+  it('calls each stop of a split place its own name, not both', async () => {
     const { service, stationModel } = build({ stations: [] });
 
     await service.getLinesUpdate();
     const byId = new Map(stationModel.docs.map((doc) => [doc.id, doc]));
 
-    // Both stops of the split place carry both names, so a traveller reading
-    // either is told where they are whichever way they are going.
-    expect(byId.get('2402').street).toBe(
-      'Cantando bajo la Lluvia / Un Americano en París',
-    );
-    expect(byId.get('2401').street).toBe(
-      'Cantando bajo la Lluvia / Un Americano en París',
-    );
-    expect(byId.get('1902').street).toBe('Casablanca');
+    // Two stops on two streets: a traveller at one cannot catch what calls at
+    // the other, so neither wears the other's name.
+    expect(byId.get('2402').street).toBe('Un Americano en París');
+    expect(byId.get('2401').street).toBe('Cantando bajo la Lluvia');
+    expect(byId.get('1900').street).toBe('Casablanca');
   });
 
   it('tells each stop which line calls at it', async () => {
@@ -306,26 +350,31 @@ describe('getLinesUpdate', () => {
 
     await service.getLinesUpdate();
 
-    expect(stationModel.docs).toHaveLength(8);
+    expect(stationModel.docs).toHaveLength(5);
     expect(stationModel.docs.every((doc) => doc.lines.includes('L1'))).toBe(
       true,
     );
   });
 
-  it('takes the line off a stop the operator no longer runs to', async () => {
+  it('drops the stop records this line does not have', async () => {
     const { service, stationModel } = build({
       stations: [
-        ...storedStations(),
+        ...platformRecords(),
         { id: '9999', street: 'Cocheras', lines: ['L1'], coordinates: [] },
       ],
     });
 
     await service.getLinesUpdate();
 
-    const cocheras = stationModel.docs.find((doc) => doc.id === '9999');
-    // Its record stays — it may still be asked for by id — but it stops
-    // claiming a line that does not call there.
-    expect(cocheras.lines).toEqual([]);
+    // Not emptied and kept: no board answers for any of them, so a reader
+    // holding one in its cache would ask for it forever.
+    expect(stationModel.docs.map((doc) => doc.id).sort()).toEqual([
+      '100',
+      '1900',
+      '2401',
+      '2402',
+      '2500',
+    ]);
   });
 
   it('drops a stored line this network no longer runs', async () => {
@@ -525,7 +574,7 @@ describe('the alterations the operator publishes', () => {
           // did, on the 7th of September.
           startDate: dayFrom(-2),
           endDate: dayFrom(1),
-          stations: ['1902'],
+          stations: ['1900'],
           addedStations: [],
           scope: 'stations',
         },
@@ -543,7 +592,7 @@ describe('the alterations the operator publishes', () => {
         expect.objectContaining({
           line: 'L1',
           stations: expect.arrayContaining([
-            { id: '1902', street: 'Casablanca' },
+            { id: '1900', street: 'Casablanca' },
           ]),
         }),
       ],
@@ -557,13 +606,13 @@ describe('the alterations the operator publishes', () => {
     expect((await service.getAlerts())[0]).toEqual(
       expect.objectContaining({
         endDate: dayFrom(1),
-        stations: ['1902'],
+        stations: ['1900'],
         scope: 'stations',
       }),
     );
   });
 
-  it('offers both platforms of a stop to the reader', async () => {
+  it('offers the reader each place once, and a split place as its two', async () => {
     const { service, reader } = build({
       stations: storedStations(),
       categories: [{ id: 10, slug: 'home' }],
@@ -574,11 +623,14 @@ describe('the alterations the operator publishes', () => {
     await service.getLinesUpdate();
 
     const [, , routes] = reader.read.mock.calls[0];
-    // A notice names a place; which of its two platforms it means is not
-    // something the words settle, so both are on offer — each of them once.
     const ids = routes[0].stations.map((station) => station.id);
+    // A notice names a place, and a place is one id now however many
+    // platforms it has — so the reader is offered it once.
     expect(ids).toHaveLength(new Set(ids).size);
-    expect(ids).toEqual(expect.arrayContaining(['1902', '1901']));
+    expect(ids).toContain('1900');
+    // Except where the two directions are two places, which the reader has to
+    // be able to tell apart because a notice can name one and not the other.
+    expect(ids).toEqual(expect.arrayContaining(['2402', '2401']));
   });
 });
 
@@ -586,12 +638,15 @@ describe('a stop and what is altered on it', () => {
   const boardUrl = (id: string) =>
     `https://www.zaragoza.es/sede/servicio/urbanismo-infraestructuras/transporte-urbano/parada-tranvia/${id}`;
 
-  // The city's board for every platform code on the corridor, so that asking
-  // about a stop is about the alterations on it rather than the arrivals.
+  // The city's board for every platform code on the corridor, under the id the
+  // city answers for — its own, without the padding the operator writes. So
+  // asking about a stop is about the alterations on it rather than the
+  // arrivals, and a stop that asks for a board that does not exist is a stop
+  // that gets nothing, which is the thing worth catching.
   const boards = Object.fromEntries(
     corridor.flatMap(([out, name, back]) =>
       [out, back].map((code) => [
-        boardUrl(code),
+        boardUrl(stopCode(code)),
         {
           destinos: [{ linea: '1', destino: name.toUpperCase(), minutos: 4 }],
         },
@@ -621,37 +676,49 @@ describe('a stop and what is altered on it', () => {
   it('shows the alterations in force on the line it is on', async () => {
     const { service } = onTheLine([alert({ id: 'corte' })]);
 
-    expect(stop(await service.getStation('1902')).alerts).toEqual([
+    expect(stop(await service.getStation('1900')).alerts).toEqual([
       expect.objectContaining({ id: 'corte', direct: false }),
     ]);
   });
 
   it('marks the stop a notice names as one it names', async () => {
     const { service } = onTheLine([
-      alert({ id: 'suprimida', stations: ['1902'], scope: 'stations' }),
+      alert({ id: 'suprimida', stations: ['1900'], scope: 'stations' }),
     ]);
 
-    expect(stop(await service.getStation('1902')).alerts).toEqual([
+    expect(stop(await service.getStation('1900')).alerts).toEqual([
       expect.objectContaining({ id: 'suprimida', direct: true }),
     ]);
-    // Narrowed to that stop, so the one down the line shows nothing.
-    expect(stop(await service.getStation('1901')).alerts).toEqual([]);
+    // Narrowed to that place, so the one down the line shows nothing.
+    expect(stop(await service.getStation('2402')).alerts).toEqual([]);
   });
 
   it('calls the line what the network calls it, not what the feed does', async () => {
     const { service } = onTheLine([]);
 
-    const answered = stop(await service.getStation('1902'));
+    const answered = stop(await service.getStation('1900'));
 
     // The city's board says `1`; the line list says `L1`. A client matching
     // an arrival to a line has to be given the same id by both.
     expect(answered.times.map((time) => time.line)).toEqual(['L1', 'L1']);
   });
 
+  it('reads both boards of a place and only its own of a one-way stop', async () => {
+    const { service } = onTheLine([]);
+
+    // Both platforms of a place the tram calls at each way.
+    expect(stop(await service.getStation('1900')).times).toHaveLength(2);
+    // And for a stop only one direction calls at, its own board alone. The
+    // other platform of that code is a stop the city does not have, and
+    // asking for it is what used to leave these without a time at all.
+    expect(stop(await service.getStation('2402')).times).toHaveLength(1);
+    expect(stop(await service.getStation('2401')).times).toHaveLength(1);
+  });
+
   it('still answers with the stop when it has no alterations at all', async () => {
     const { service } = onTheLine([]);
 
-    const answered = stop(await service.getStation('1902'));
+    const answered = stop(await service.getStation('1900'));
     expect(answered.alerts).toEqual([]);
     expect(answered.times).toHaveLength(2);
   });

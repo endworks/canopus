@@ -1,8 +1,9 @@
 import {
-  combinedTitle,
+  boardsOf,
   OperatorLine,
   OperatorStop,
   parseOperatorLine,
+  stopCode,
   TRAM_LINE_ID,
   tramLineId,
 } from './tram-line';
@@ -79,38 +80,24 @@ describe('tramLineId', () => {
   });
 });
 
-describe('combinedTitle', () => {
-  it('is the one name where both directions call at the same place', () => {
-    expect(
-      combinedTitle([
-        stop(1, '1902', 'Casablanca', 1, 2, [41.64, -0.92]),
-        stop(2, '1901', 'Casablanca', 1, 1, [41.64, -0.92]),
-      ]),
-    ).toBe('Casablanca');
+describe('stopCode', () => {
+  it('is the operator code without the padding the city does not use', () => {
+    expect(stopCode('0101')).toBe('101');
+    expect(stopCode('2502')).toBe('2502');
+  });
+});
+
+describe('boardsOf', () => {
+  it('reads both platforms of a place the tram calls at each way', () => {
+    expect(boardsOf('2500')).toEqual(['2501', '2502']);
+    // The padding goes here too, so a board is asked for by the id it answers
+    // to rather than by the one the operator writes.
+    expect(boardsOf('100')).toEqual(['101', '102']);
   });
 
-  it('is both names where they call at different ones', () => {
-    // Northbound calls at Margarita Xirgu and southbound at García Abril, a
-    // street apart. Either name alone is wrong for half the travellers.
-    expect(
-      combinedTitle([
-        stop(2, '0502', 'García Abril', 1, 1, [41.67, -0.89]),
-        stop(1, '0501', 'Margarita Xirgu', 1, 2, [41.67, -0.89]),
-      ]),
-    ).toBe('Margarita Xirgu / García Abril');
-  });
-
-  it('names them in the same order whichever way round it is asked', () => {
-    const a = stop(1, '0501', 'Margarita Xirgu', 1, 2, [41.67, -0.89]);
-    const b = stop(2, '0502', 'García Abril', 1, 1, [41.67, -0.89]);
-
-    expect(combinedTitle([a, b])).toBe(combinedTitle([b, a]));
-  });
-
-  it('is the stop itself where the feed pairs it with nothing', () => {
-    expect(
-      combinedTitle([stop(1, '2502', 'Mago de Oz', 1, 99, [41.62, -0.93])]),
-    ).toBe('Mago de Oz');
+  it('reads only its own where the tram calls one way', () => {
+    expect(boardsOf('2401')).toEqual(['2401']);
+    expect(boardsOf('2422')).toEqual(['2422']);
   });
 });
 
@@ -119,10 +106,25 @@ describe('parseOperatorLine', () => {
     const { line } = parseOperatorLine(feed());
 
     expect(line.id).toBe('L1');
-    expect(line.stations).toEqual(['2502', '2402', '1902', '0102']);
-    // Not the outbound list reversed: the return leg calls at its own stops,
-    // and at the far end of the line at different places altogether.
-    expect(line.stationsReturn).toEqual(['0101', '1901', '2401', '2501']);
+    // A place both directions call at is named once, under the code its two
+    // platforms share with a nought for the direction; a place only one of
+    // them calls at keeps its own code.
+    expect(line.stations).toEqual(['2500', '2402', '1900', '100']);
+    // Not the outbound list reversed: the return leg calls at the same places
+    // where there is one, and at a different stop where there is not.
+    expect(line.stationsReturn).toEqual(['100', '1900', '2401', '2500']);
+  });
+
+  it('has one record for a place and two for a pair that is not one', () => {
+    const { stations } = parseOperatorLine(feed());
+
+    expect(stations.map((station) => station.id).sort()).toEqual([
+      '100',
+      '1900',
+      '2401',
+      '2402',
+      '2500',
+    ]);
   });
 
   it('takes the track the operator draws, each way its own', () => {
@@ -141,46 +143,65 @@ describe('parseOperatorLine', () => {
     );
   });
 
-  it('gives every stop the combined name of the place it stands at', () => {
+  it('calls each stop of a split place its own name, not both', () => {
     const { stations } = parseOperatorLine(feed());
     const byId = new Map(stations.map((station) => [station.id, station]));
 
-    // Both stops of the split place carry both names, so a traveller reading
-    // either one is told where they are whichever way they are going.
-    expect(byId.get('2402').street).toBe(
-      'Cantando bajo la Lluvia / Un Americano en París',
-    );
-    expect(byId.get('2401').street).toBe(
-      'Cantando bajo la Lluvia / Un Americano en París',
-    );
-    expect(byId.get('1902').street).toBe('Casablanca');
+    // Two stops on two streets, and a traveller at one cannot catch what
+    // calls at the other, so neither is told the other's name.
+    expect(byId.get('2402').street).toBe('Un Americano en París');
+    expect(byId.get('2401').street).toBe('Cantando bajo la Lluvia');
+    expect(byId.get('1900').street).toBe('Casablanca');
   });
 
-  it('gives the line the combined name at a terminus too', () => {
-    const split = feed();
-    split.stops_1[0].displayName = 'Academia General Militar';
-
-    expect(parseOperatorLine(split).line.name).toBe(
-      'Mago de Oz - Academia General Militar / Avenida de la Academia',
-    );
-  });
-
-  it('stores each stop where the operator puts it', () => {
+  it('is the name that decides, not the code the two stops share', () => {
+    // `2402` and `2401` share a place code and are still two streets apart,
+    // as five of this line's seven split places really are.
     const { stations } = parseOperatorLine(feed());
-    const mago = stations.find((station) => station.id === '2502');
 
-    expect(mago.coordinates).toEqual(['-0.93694', '41.62435']);
+    expect(stations.map((station) => station.id)).toContain('2402');
+    expect(stations.map((station) => station.id)).toContain('2401');
+    expect(stations.map((station) => station.id)).not.toContain('2400');
+  });
+
+  it('puts a place the tram calls at each way between its platforms', () => {
+    const { stations } = parseOperatorLine(feed());
+    const mago = stations.find((station) => station.id === '2500');
+
+    // Between (41.62435, -0.93694) and (41.62436, -0.93695), longitude first
+    // and to the five decimal places a point is kept to.
+    expect(mago.coordinates).toEqual(['-0.93694', '41.62436']);
+  });
+
+  it('leaves a one-way stop exactly where the operator puts it', () => {
+    const { stations } = parseOperatorLine(feed());
+    const paris = stations.find((station) => station.id === '2402');
+
+    expect(paris.coordinates).toEqual(['-0.93', '41.63']);
+  });
+
+  it('places a pair by the platform it can read when the other is unreadable', () => {
+    const half = feed();
+    half.stops_0[2].lat = '';
+
+    const { stations } = parseOperatorLine(half);
+    const casablanca = stations.find((station) => station.id === '1900');
+
+    // One platform of a pair is enough to know where the place is, and half a
+    // pin is better than none.
+    expect(casablanca.coordinates).toEqual(['-0.92001', '41.64001']);
   });
 
   it('leaves out a stop whose point is not a place in Zaragoza', () => {
     const wrong = feed();
     wrong.stops_0[1].lat = '';
     wrong.stops_0[2].lat = '0';
+    wrong.stops_1[1].lat = '0';
 
     const { stations, line } = parseOperatorLine(wrong);
 
     expect(stations.map((station) => station.id)).not.toContain('2402');
-    expect(stations.map((station) => station.id)).not.toContain('1902');
+    expect(stations.map((station) => station.id)).not.toContain('1900');
     // The route still runs through them: a stop we cannot place is still a
     // stop the tram calls at, and dropping it from the line would be a worse
     // lie than not knowing where it is.

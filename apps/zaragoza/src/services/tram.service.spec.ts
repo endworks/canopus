@@ -12,6 +12,7 @@ import {
   TramStationDocument,
 } from '../schemas/tram.schema';
 import { TramService } from './tram.service';
+import { dayFrom } from '../alert-store';
 import { AlertDetails, AlertReader } from '../alert-reader';
 import { tramFrontPageURL } from '../tram-alerts';
 import { TramStationResponse } from '../models/tram.interface';
@@ -517,8 +518,13 @@ describe('the alterations the operator publishes', () => {
       posts: [wpPost('corte', 'Corte en Casablanca')],
       articles: {
         corte: {
-          startDate: '2026-09-04',
-          endDate: '2026-09-06',
+          // Counted from today rather than written down. `getAlerts` serves
+          // what is in force, so an alteration dated into a particular week
+          // stops being served the morning after that week — and a test that
+          // asks for it back fails on a day nobody changed anything. This one
+          // did, on the 7th of September.
+          startDate: dayFrom(-2),
+          endDate: dayFrom(1),
           stations: ['1902'],
           addedStations: [],
           scope: 'stations',
@@ -550,7 +556,7 @@ describe('the alterations the operator publishes', () => {
 
     expect((await service.getAlerts())[0]).toEqual(
       expect.objectContaining({
-        endDate: '2026-09-06',
+        endDate: dayFrom(1),
         stations: ['1902'],
         scope: 'stations',
       }),

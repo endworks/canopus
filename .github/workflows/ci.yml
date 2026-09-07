@@ -7,6 +7,9 @@ on:
     branches:
       - main
       - "feature/**"
+      # Branches an agent works on, which reach main through a merge as often
+      # as through a pull request and were getting no check either way.
+      - "claude/**"
   pull_request:
     branches:
       - main
@@ -29,3 +32,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm turbo build
       - run: pnpm lint
+      # Every workspace's tests. They existed before this line did and nobody
+      # ran them, which is how two suites came to be scaffold left over from
+      # `nest new` — calling a method its controller does not have — without
+      # anything going red.
+      - run: pnpm turbo test

@@ -205,11 +205,31 @@ export class TramService {
       // board there is where it calls at only one — see `boardsOf`. Asking a
       // one-way stop for its non-existent other platform is what used to
       // leave half of them without a time.
-      const stations = await Promise.all(
-        boardsOf(id).map((board) =>
+      const boards = boardsOf(id);
+      const answers = await Promise.allSettled(
+        boards.map((board) =>
           fetchWithTimeout<any>(this.httpService, tramStationURL + board),
         ),
       );
+
+      // What answered, and never mind what did not. A place has two boards and
+      // they fail one at a time, so one that does is a reason to show the
+      // other's arrivals rather than none: `Promise.all` here meant a single
+      // flaky board left a stop with no times at all, at the terminus where
+      // one of the two is always empty anyway.
+      const stations = answers.flatMap((answer, index) => {
+        if (answer.status === 'fulfilled') return [answer.value];
+        this.logger.warn(
+          `The city's board ${boards[index]} did not answer for tram stop ${id}: ${answer.reason?.message}`,
+        );
+        return [];
+      });
+      // Unless none of them did, which is the source failing rather than a
+      // stop with nothing due.
+      if (!stations.length) {
+        const [failed] = answers;
+        throw failed?.status === 'rejected' ? failed.reason : notFoundById(id);
+      }
 
       stations.forEach((station) => {
         resp.times.push(

@@ -703,6 +703,31 @@ describe('a stop and what is altered on it', () => {
     expect(answered.times.map((time) => time.line)).toEqual(['L1', 'L1']);
   });
 
+  it('shows what one board says when the other does not answer', async () => {
+    // A place has two boards and they fail one at a time. At the terminus one
+    // of the two is empty even when both answer, so a stop that needs both to
+    // work is a stop with no times whenever either blinks.
+    const { service } = build({
+      stations: storedStations(),
+      pages: boards,
+      unreachable: [boardUrl('1901')],
+    });
+
+    const answered = stop(await service.getStation('1900'));
+
+    expect(answered.times).toHaveLength(1);
+  });
+
+  it('fails only when no board of the stop answers', async () => {
+    const { service } = build({
+      stations: storedStations(),
+      pages: boards,
+      unreachable: [boardUrl('1901'), boardUrl('1902')],
+    });
+
+    await expect(service.getStation('1900')).rejects.toBeDefined();
+  });
+
   it('reads both boards of a place and only its own of a one-way stop', async () => {
     const { service } = onTheLine([]);
 

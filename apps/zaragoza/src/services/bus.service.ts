@@ -428,7 +428,7 @@ export class BusService {
       ...station,
       times: [],
       source: 'backup',
-      alerts: alertsForStation(await this.getAlerts(), id, backup.lines),
+      alerts: alertsForStation(await this.getAlerts(), id),
     };
   }
 
@@ -480,7 +480,7 @@ export class BusService {
       );
     }
 
-    resp.alerts = alertsForStation(await this.getAlerts(), id, resp.lines);
+    resp.alerts = alertsForStation(await this.getAlerts(), id);
     return resp;
   }
 

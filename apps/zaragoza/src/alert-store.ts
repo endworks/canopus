@@ -38,11 +38,6 @@ export interface ServiceAlertResponse {
    * runs as usual; `'line'` when every stop of every line named is.
    */
   scope: 'stations' | 'line';
-  /**
-   * Only in a station's own alerts: the notice names this stop, rather than
-   * just a line that serves it. Absent from the alert list.
-   */
-  direct?: boolean;
 }
 
 /**
@@ -339,27 +334,17 @@ export class AlertStore {
 }
 
 /**
- * The alerts a stop should show.
+ * The alerts a stop should show: the ones that name it, and no others.
  *
- * A notice is narrowed to particular stops only where reading it established
- * that the alteration stops there — some stops suppressed or moved, the rest
- * of the route running as usual. Everything else stays a line-wide notice on
- * every stop of every line it names, which is where an unread notice, a
- * diversion and a doubt all land: over-showing beats leaving somebody at a cut
- * stop with nothing on screen.
- *
- * `direct` marks the stops the notice itself names, so a client can lead with
- * those and fold the rest away.
+ * A stop's board answers one question — what is altered here — and a notice
+ * that names lines without naming stops does not answer it. Those are the
+ * line's, and they are read on the line, where a traveller is choosing a
+ * route rather than standing at a pole. So a notice reaches a stop only where
+ * reading it resolved the stop out of the notice's own words; a notice that
+ * named none reaches no stop at all.
  */
 export const alertsForStation = (
   alerts: ServiceAlertResponse[],
   id: string,
-  lines: string[] = [],
 ): ServiceAlertResponse[] =>
-  alerts.flatMap((alert) => {
-    const direct = alert.stations.includes(id);
-    const onTheLine =
-      alert.scope !== 'stations' &&
-      alert.lines.some((line) => lines.includes(line));
-    return direct || onTheLine ? [{ ...alert, direct }] : [];
-  });
+  alerts.filter((alert) => alert.stations.includes(id));

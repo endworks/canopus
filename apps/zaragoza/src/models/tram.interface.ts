@@ -18,7 +18,7 @@ export interface TramStationResponse {
   sourceUrl?: string;
   lastUpdated?: string;
   type?: string;
-  /** The alterations in force on the lines that call at this stop. */
+  /** The alterations in force that name this stop. */
   alerts?: TramAlertResponse[];
 }
 

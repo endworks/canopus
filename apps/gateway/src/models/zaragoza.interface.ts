@@ -71,7 +71,9 @@ export class ServiceAlert {
 
   /**
    * The stops the alert affects, resolved from the notice against the routes
-   * of the lines it names. Empty where none could be established.
+   * of the lines it names. Empty where none could be established, and then the
+   * alert belongs to its lines alone: a stop's own `alerts` carry only the
+   * notices that name it.
    * @example ['1234', '1235']
    */
   stations: string[];
@@ -85,20 +87,15 @@ export class ServiceAlert {
   addedStations: string[];
 
   /**
-   * `'stations'` when only those stops are affected and the rest of each
-   * route runs as usual — the alert is then shown at those stops alone.
-   * `'line'` when every stop of every line named is affected, which is also
-   * where an unread notice and a doubtful one land.
+   * How far along each line named the alteration reaches: `'stations'` when
+   * only the stops in `stations` are affected and the rest of each route runs
+   * as usual, `'line'` when every stop of every line named is, which is also
+   * where an unread notice and a doubtful one land. It says how wide to write
+   * the alteration up on a line, not where the alert is shown — that is
+   * `stations` for a stop, and `lines` for a line.
    * @example 'line'
    */
   scope: 'stations' | 'line';
-
-  /**
-   * Only in a station's own `alerts`: the notice names this stop, rather than
-   * just a line that serves it. Lead with these; the rest are the line's.
-   * @example true
-   */
-  direct?: boolean;
 }
 
 /** A bus or tram station (both services return the same shape). */
@@ -156,9 +153,10 @@ export class Station {
   type?: string;
 
   /**
-   * Alterations in force on the lines that serve this stop. Matching is by
-   * line, so an alert reaches every stop of a named line unless reading the
-   * notice narrowed it to particular stops.
+   * Alterations in force that name this stop. Matching is by stop, not by
+   * line: a notice reaches a stop only where reading it resolved that stop out
+   * of the notice's own words, so one that names no stop is on none of them.
+   * The alterations of the lines that serve this stop are on those lines.
    */
   alerts?: ServiceAlert[];
 }

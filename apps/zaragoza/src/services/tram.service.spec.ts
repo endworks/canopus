@@ -625,23 +625,26 @@ describe('a stop and what is altered on it', () => {
     ...extra,
   });
 
-  it('shows the alterations in force on the line it is on', async () => {
+  it('leaves a notice that names no stop to the line', async () => {
     const { service } = onTheLine([alert({ id: 'corte' })]);
 
-    expect(stop(await service.getStation('1900')).alerts).toEqual([
-      expect.objectContaining({ id: 'corte', direct: false }),
+    // Line-wide, and it names no stop: it is the line's news, not this
+    // platform's, and it is still in the line's own alerts.
+    expect(stop(await service.getStation('1900')).alerts).toEqual([]);
+    expect(await service.getAlerts()).toMatchObject([
+      { id: 'corte', lines: ['L1'] },
     ]);
   });
 
-  it('marks the stop a notice names as one it names', async () => {
+  it('shows a stop the notices that name it', async () => {
     const { service } = onTheLine([
       alert({ id: 'suprimida', stations: ['1900'], scope: 'stations' }),
     ]);
 
     expect(stop(await service.getStation('1900')).alerts).toEqual([
-      expect.objectContaining({ id: 'suprimida', direct: true }),
+      expect.objectContaining({ id: 'suprimida' }),
     ]);
-    // Narrowed to that place, so the one down the line shows nothing.
+    // Named that place and no other, so the one down the line shows nothing.
     expect(stop(await service.getStation('2402')).alerts).toEqual([]);
   });
 

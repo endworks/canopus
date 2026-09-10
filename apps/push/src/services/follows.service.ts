@@ -41,17 +41,44 @@ export class FollowsService {
    * Take on a departure.
    *
    * The board is read once here rather than trusted from the caller: the app
-   * sends which line it is following, and this end decides what that means —
-   * which bus, when, and what is behind it. From this moment the phone is told
-   * things rather than asking for them.
+   * sends which departure it is following, and this end decides what that
+   * means — which bus, when, and what is behind it. From this moment the phone
+   * is told things rather than asking for them.
+   *
+   * Which departure, though, is the caller's to say. The operator publishes
+   * two of each line, and a reader standing at the pole watching the first one
+   * pull out is waiting for the second; nothing in a board read here can tell
+   * which of the two they tapped. So the app sends the instant its row was due
+   * and this finds that bus on its own reading — the same rule the poller uses
+   * from then on. A caller that sends no anchor is followed on the soonest
+   * row, which is what every build before this one did.
    */
   async create(payload: FollowPayload): Promise<FollowResponse | null> {
     const board = await this.board(payload.kind, payload.stopId);
     const matches = matching(board, payload.line, payload.destination);
-    const soonest = matches[0];
-    if (!soonest) return null;
+    if (!matches.length) return null;
 
     const now = new Date();
+    const picked = payload.anchor
+      ? identify(
+          board,
+          {
+            line: payload.line,
+            destination: payload.destination,
+            anchor: new Date(payload.anchor * 1000),
+            taken: now,
+          },
+          now,
+        )
+      : null;
+    // An anchor that matches nothing is a bus that has already gone in the
+    // seconds since the app read the board. Refused rather than quietly
+    // followed on the soonest row: this end would then be pushing a countdown
+    // for a bus nobody asked about, and the app keeps its own — which is what
+    // a refusal here means, not an error anybody sees.
+    if (payload.anchor && !picked) return null;
+    const words = picked?.words ?? matches[0].time;
+    const anchor = picked?.arrival ?? instant(matches[0].time, now);
     // One at a time per device, like the Lock Screen it draws on: a second
     // follow from the same phone replaces the first rather than joining it.
     await this.follows.deleteMany({ token: payload.token });
@@ -67,8 +94,8 @@ export class FollowsService {
       line: payload.line,
       destination: payload.destination,
       locale: payload.locale,
-      anchor: instant(soonest.time, now),
-      words: soonest.time,
+      anchor,
+      words,
       taken: now,
       expiresAt: new Date(now.getTime() + LIFETIME),
     });

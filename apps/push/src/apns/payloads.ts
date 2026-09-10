@@ -24,12 +24,21 @@ export interface ContentState {
   next?: number;
   nextWords?: string;
   gone: boolean;
+  /**
+   * The bus is at the stop.
+   *
+   * Told apart from `gone` because they are different sentences to somebody
+   * looking at a Lock Screen: one is "here it is", the other is "you missed
+   * it". Both end the follow.
+   */
+  arrived: boolean;
 }
 
 export const contentState = (
   reading: Reading,
   taken: Date,
   gone = false,
+  arrived = false,
 ): ContentState => ({
   arrival: epoch(reading.arrival),
   words: reading.words,
@@ -37,6 +46,7 @@ export const contentState = (
   next: reading.next ? epoch(reading.next) : undefined,
   nextWords: reading.nextWords,
   gone,
+  arrived,
 });
 
 /**
@@ -66,12 +76,16 @@ export const updatePayload = (
  * the bus deserves a couple of minutes of the Lock Screen saying why the
  * countdown stopped, and then it should take itself away.
  */
-export const endPayload = (state: ContentState) => ({
+export const endPayload = (
+  state: ContentState,
+  alert?: { title: string; body: string },
+) => ({
   aps: {
     timestamp: epoch(new Date()),
     event: 'end',
     'content-state': state,
     'dismissal-date': epoch(new Date()) + 120,
+    ...(alert ? { alert } : {}),
   },
 });
 

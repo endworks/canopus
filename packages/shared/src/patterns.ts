@@ -160,6 +160,18 @@ export interface FollowPayload {
   stopName: string;
   line: string;
   destination: string;
+  /**
+   * The row the reader actually picked, as the instant it is due — Unix epoch
+   * SECONDS — and the operator's own words for it.
+   *
+   * The operator publishes two of each line and a reader may be waiting for
+   * the second, so which one was tapped is a fact only the app holds. Without
+   * it this end anchors on the soonest row and follows the bus in front of
+   * theirs. Optional because a client that does not send it is still followed,
+   * on the soonest row, which is what every build before this one did.
+   */
+  anchor?: number;
+  words?: string;
   locale?: string;
 }
 

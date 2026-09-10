@@ -1,6 +1,7 @@
 import {
   agrees,
   Departure,
+  hasArrived,
   identify,
   minutesUntilDeparture,
   shownMinutes,
@@ -94,6 +95,65 @@ describe('identify', () => {
     ).toBeNull();
   });
 
+  it('follows the second of two, and not the one in front of it', () => {
+    // The reader was at the pole as the first 21 pulled out, so theirs is the
+    // one due at :12. A minute later the board still has both.
+    const second = { ...follow, anchor: at(now, 12), taken: now };
+    const reading = identify(
+      board(['21', 'Rosales', '3 min.'], ['21', 'Rosales', '11 min.']),
+      second,
+      at(now, 1),
+    );
+    expect(reading?.words).toBe('11 min.');
+    // And what is behind theirs is nothing, rather than their own bus.
+    expect(reading?.nextWords).toBeUndefined();
+  });
+
+  it('keeps the second one once it becomes the first', () => {
+    // The bus in front has gone and the board lists one 21. It is still due
+    // when theirs was due, so it is still theirs.
+    const second = { ...follow, anchor: at(now, 12), taken: now };
+    const reading = identify(
+      board(['21', 'Rosales', '8 min.']),
+      second,
+      at(now, 4),
+    );
+    expect(reading?.words).toBe('8 min.');
+  });
+
+  it('calls the second one gone when it leaves in its turn', () => {
+    // Due at :12 and left; what the board lists now is the one after it.
+    const second = { ...follow, anchor: at(now, 12), taken: at(now, 12) };
+    expect(
+      identify(board(['21', 'Rosales', '20 min.']), second, at(now, 13)),
+    ).toBeNull();
+  });
+
+  it('names the bus behind the followed one, not the second on the board', () => {
+    const second = { ...follow, anchor: at(now, 12), taken: now };
+    const reading = identify(
+      board(
+        ['21', 'Rosales', '3 min.'],
+        ['21', 'Rosales', '11 min.'],
+        ['21', 'Rosales', '25 min.'],
+      ),
+      second,
+      at(now, 1),
+    );
+    expect(reading?.words).toBe('11 min.');
+    expect(reading?.nextWords).toBe('25 min.');
+  });
+
+  it('refuses a bus that is suddenly far sooner than the one followed', () => {
+    // Theirs was due at :12 and the board now offers one four minutes out.
+    // A bus does not arrive eight minutes early: that is a different one, and
+    // taking it would move the reader's countdown onto a bus in front of them.
+    const second = { ...follow, anchor: at(now, 12), taken: now };
+    expect(
+      identify(board(['21', 'Rosales', '3 min.']), second, at(now, 1)),
+    ).toBeNull();
+  });
+
   it('calls it gone after a silence it cannot have survived', () => {
     // Due at :04, read again at :10 with the soonest three minutes out. Ours
     // came and went while the phone was in a pocket; the countdown must not
@@ -102,6 +162,24 @@ describe('identify', () => {
     expect(
       identify(board(['21', 'Rosales', '3 min.']), quiet, at(now, 10)),
     ).toBeNull();
+  });
+});
+
+describe('hasArrived', () => {
+  it('is the words with no number in them', () => {
+    // A bus standing at the pole is the thing the reader was waiting for, and
+    // the end of the follow rather than a stage of it.
+    expect(hasArrived('En parada')).toBe(true);
+    expect(hasArrived('Sin estimación')).toBe(true);
+  });
+
+  it('is a countdown that has reached nought', () => {
+    expect(hasArrived('0 min.')).toBe(true);
+  });
+
+  it('is not a bus that is still coming', () => {
+    expect(hasArrived('1 min.')).toBe(false);
+    expect(hasArrived('12 min.')).toBe(false);
   });
 });
 

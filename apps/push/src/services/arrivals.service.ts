@@ -12,7 +12,13 @@ import {
 import { FcmService } from '../fcm/fcm.service';
 import { DevicesService } from './devices.service';
 import { FollowsService } from './follows.service';
-import { agrees, Departure, Reading, shownMinutes } from './tracking';
+import {
+  agrees,
+  Departure,
+  hasArrived,
+  Reading,
+  shownMinutes,
+} from './tracking';
 
 /**
  * How often a followed stop is read.
@@ -38,12 +44,14 @@ const ACTIVITY_TOPIC = '.push-type.liveactivity';
  * matter how many people that is — and tells each phone only what has changed
  * for it.
  *
- * Three things can come out of a reading, and only one of them is a push:
+ * Four things can come out of a reading, and one of them is not a push:
  *
  * - the board says what the phone is already showing, which is most readings
  *   and costs nothing;
  * - the wait has moved, which is an update;
- * - the bus is gone, which is an end, said out loud rather than left as a
+ * - the bus is at the stop, which is what the reader asked to be told and the
+ *   end of the follow: they are getting on it;
+ * - the bus is gone, which is an end too, said out loud rather than left as a
  *   countdown that quietly ran out.
  *
  * A read that fails says nothing at all. A gateway having a bad minute must
@@ -116,6 +124,13 @@ export class ArrivalsService {
       await this.end(follow, now);
       return;
     }
+    // Here. The last thing worth saying about this bus, and then the follow
+    // goes: what is read after this is a bus the reader is sitting on, and
+    // nothing about it belongs on their Lock Screen.
+    if (hasArrived(reading.words)) {
+      await this.arrive(follow, reading, now);
+      return;
+    }
     // The minute-before nudge, before the agreement check: a wait that has not
     // changed still crosses the one-minute mark, and that is the moment this
     // whole feature was asked for.
@@ -125,6 +140,36 @@ export class ArrivalsService {
     }
     if (agrees(follow, reading, now)) return;
     await this.update(follow, reading, now);
+  }
+
+  /**
+   * The bus is at the stop.
+   *
+   * An end rather than an update, and a different end from a departure: the
+   * banner says the bus is here rather than that it has been and gone, and
+   * then takes itself away. It rings where the reader never got the
+   * minute-before nudge — a bus that went from three minutes to standing at
+   * the pole between two readings is exactly the one they wanted telling
+   * about.
+   */
+  private async arrive(
+    follow: FollowDocument,
+    reading: Reading,
+    now: Date,
+  ): Promise<void> {
+    const state = contentState(reading, now, false, true);
+    const alert =
+      !follow.alerted && (await this.devices.accepts(follow.token, 'arrivals'))
+        ? { title: follow.stopName, body: this.words(follow, 0) }
+        : undefined;
+    if (follow.platform === 'android') {
+      await this.pushData(follow, state, alert ? { alert } : {});
+    } else if (follow.activityToken) {
+      await this.pushActivity(follow, endPayload(state, alert));
+    } else if (alert) {
+      await this.notifyDevice(follow, alertPayload(alert.title, alert.body));
+    }
+    await this.follows.remove({ id: follow.id as string });
   }
 
   private async update(
@@ -207,6 +252,7 @@ export class ArrivalsService {
       now,
       true,
     );
+
     if (follow.platform === 'android') {
       await this.pushData(follow, state);
     } else {
@@ -285,6 +331,7 @@ export class ArrivalsService {
       words: state.words,
       taken: String(state.taken),
       gone: String(state.gone),
+      arrived: String(state.arrived),
     };
     if (state.next !== undefined) data.next = String(state.next);
     if (state.nextWords) data.nextWords = state.nextWords;

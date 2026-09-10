@@ -22,14 +22,22 @@ export class ApnsService implements OnModuleDestroy {
   private token?: { value: string; minted: number };
   private readonly key?: KeyObject;
 
-  constructor(
-    private readonly teamId = process.env.APNS_TEAM_ID ?? '',
-    private readonly keyId = process.env.APNS_KEY_ID ?? '',
-    private readonly bundleId = process.env.APNS_BUNDLE_ID ?? '',
-    private readonly host = process.env.APNS_ENVIRONMENT === 'sandbox'
+  // Fields and not constructor parameters, the way FcmService and ClientKeys
+  // read theirs. A defaulted parameter property is still a parameter: tsc
+  // writes `design:paramtypes` for it, an inferred type lands there as
+  // `Object`, and the injector goes looking for a provider registered under
+  // `Object` rather than seeing a default it should leave alone. Nest 11 let
+  // that pass and Nest 12 does not — it refuses to construct the service, and
+  // since nothing catches that, the whole process exits at boot.
+  private readonly teamId = process.env.APNS_TEAM_ID ?? '';
+  private readonly keyId = process.env.APNS_KEY_ID ?? '';
+  private readonly bundleId = process.env.APNS_BUNDLE_ID ?? '';
+  private readonly host =
+    process.env.APNS_ENVIRONMENT === 'sandbox'
       ? 'https://api.sandbox.push.apple.com'
-      : 'https://api.push.apple.com',
-  ) {
+      : 'https://api.push.apple.com';
+
+  constructor() {
     const raw = process.env.APNS_PRIVATE_KEY;
     if (!raw || !this.teamId || !this.keyId || !this.bundleId) {
       this.logger.warn(

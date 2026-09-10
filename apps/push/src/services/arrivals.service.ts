@@ -9,6 +9,7 @@ import {
   endPayload,
   updatePayload,
 } from '../apns/payloads';
+import { FcmService } from '../fcm/fcm.service';
 import { DevicesService } from './devices.service';
 import { FollowsService } from './follows.service';
 import { agrees, Departure, Reading, shownMinutes } from './tracking';
@@ -57,6 +58,7 @@ export class ArrivalsService {
     private readonly follows: FollowsService,
     private readonly devices: DevicesService,
     private readonly apns: ApnsService,
+    private readonly fcm: FcmService,
   ) {}
 
   @Interval(CADENCE)
@@ -131,7 +133,10 @@ export class ArrivalsService {
     now: Date,
   ): Promise<void> {
     const state = contentState(reading, now);
-    const sent = await this.pushActivity(follow, updatePayload(state));
+    const sent =
+      follow.platform === 'android'
+        ? await this.pushData(follow, state)
+        : await this.pushActivity(follow, updatePayload(state));
     if (!sent) return;
     follow.anchor = reading.arrival;
     follow.words = reading.words;
@@ -162,13 +167,25 @@ export class ArrivalsService {
     // line is worth stating: moving a countdown the reader started is not a
     // notification and needs no permission. Making the phone ring is, and a
     // reader who turned arrivals off has said not to.
-    const sent = follow.activityToken
-      ? await this.pushActivity(follow, updatePayload(state, alert))
-      : (await this.devices.accepts(follow.token, 'arrivals')) &&
+    const allowed = await this.devices.accepts(follow.token, 'arrivals');
+    let sent: boolean;
+    if (follow.platform === 'android') {
+      // Android draws its own notification out of the data, so whether it
+      // rings is a flag in the payload rather than a second message.
+      sent = await this.pushData(follow, state, allowed ? { alert } : {});
+    } else if (follow.activityToken) {
+      sent = await this.pushActivity(
+        follow,
+        updatePayload(state, allowed ? alert : undefined),
+      );
+    } else {
+      sent =
+        allowed &&
         (await this.notifyDevice(
           follow,
           alertPayload(alert.title, alert.body),
         ));
+    }
     if (!sent) return;
     follow.alerted = true;
     follow.anchor = reading.arrival;
@@ -190,7 +207,11 @@ export class ArrivalsService {
       now,
       true,
     );
-    await this.pushActivity(follow, endPayload(state));
+    if (follow.platform === 'android') {
+      await this.pushData(follow, state);
+    } else {
+      await this.pushActivity(follow, endPayload(state));
+    }
     await this.follows.remove({ id: follow.id as string });
   }
 
@@ -235,6 +256,52 @@ export class ArrivalsService {
       expiration: Math.round(Date.now() / 1000) + 120,
       collapseId: follow.id as string,
     });
+  }
+
+  /**
+   * The same reading, as data, for a phone that draws its own.
+   *
+   * Every value is a string because that is all FCM data carries. The app
+   * reads them back into the ongoing notification it is already showing — see
+   * `DepartureNotification` — so what arrives is an edit of what is on screen
+   * rather than another banner under it.
+   *
+   * The collapse key is the follow, so a phone that was out of signal for two
+   * minutes wakes to the newest reading and not to eight stale ones.
+   */
+  private async pushData(
+    follow: FollowDocument,
+    state: ReturnType<typeof contentState>,
+    extras: { alert?: { title: string; body: string } } = {},
+  ): Promise<boolean> {
+    const data: Record<string, string> = {
+      followId: follow.id as string,
+      stopKey: follow.stopKey,
+      stopName: follow.stopName,
+      line: follow.line,
+      destination: follow.destination,
+      kind: follow.kind,
+      arrival: String(state.arrival),
+      words: state.words,
+      taken: String(state.taken),
+      gone: String(state.gone),
+    };
+    if (state.next !== undefined) data.next = String(state.next);
+    if (state.nextWords) data.nextWords = state.nextWords;
+    if (extras.alert) {
+      data.alertTitle = extras.alert.title;
+      data.alertBody = extras.alert.body;
+    }
+    const result = await this.fcm.send(follow.token, data, {
+      collapseKey: follow.id as string,
+    });
+    if (result === 'gone') {
+      this.logger.log('A device is gone; dropping it and what it followed.');
+      await this.devices.retire(follow.token);
+      await this.follows.remove({ id: follow.id as string });
+      return false;
+    }
+    return result === 'sent';
   }
 
   /** An ordinary notification, at the phone rather than at a banner. */

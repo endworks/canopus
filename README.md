@@ -102,7 +102,11 @@ server-to-server only.
 iOS is spoken to over APNs directly rather than through Firebase, and not by
 preference: a Live Activity is updated by a push whose `apns-push-type` is
 `liveactivity`, and FCM will not send that header. Since that connection has to
-exist anyway it carries the ordinary notifications too.
+exist anyway it carries the ordinary notifications too. Android goes over FCM,
+which is its only road, and always as a **data** message: a notification
+message would be drawn by Google's own SDK, and what that phone has to do with
+an arrival is edit the ongoing notification it is already showing rather than
+stack a new one every fifteen seconds.
 
 The gateway's `/push/*` routes are absent from the published API document —
 `@ApiExcludeController` — because that document describes a public transit API

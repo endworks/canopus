@@ -7,6 +7,7 @@ import { LoggingModule } from '@canopus/nest';
 import { requireEnv, SERVICE_TOKENS, TCP_PORT } from '@canopus/shared';
 import { PushController } from './push.controller';
 import { ApnsService } from './apns/apns.service';
+import { FcmService } from './fcm/fcm.service';
 import { ClientKeys } from './services/client-keys';
 import { DevicesService } from './services/devices.service';
 import { FollowsService } from './services/follows.service';
@@ -55,6 +56,7 @@ import { Follow, FollowSchema } from './schemas/follow.schema';
   providers: [
     ClientKeys,
     ApnsService,
+    FcmService,
     DevicesService,
     FollowsService,
     ArrivalsService,

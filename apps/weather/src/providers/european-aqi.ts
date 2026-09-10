@@ -15,9 +15,6 @@
  * https://airindex.eea.europa.eu/AQI/index.html
  */
 
-/** The six bands, low to high. What a client draws, and what a word names. */
-export const EAQI_BANDS = 6;
-
 /**
  * Where each pollutant's bands end, in µg/m³.
  *

@@ -2,8 +2,6 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 import { Session, SessionSchema } from './movie.schema';
 
-export type CinemaDocument = Cinema & Document;
-
 @Schema({ collection: 'cinemas' })
 export class Cinema extends Document {
   @Prop({ required: true, unique: true })

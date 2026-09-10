@@ -56,15 +56,6 @@ export const capitalizeEachWord = (text: string) => {
 // that never expires is one the writer has to remember to invalidate by hand.
 export const cacheTTL = 1000 * 60 * 60 * 6;
 
-export const isInt = (number: number | string) => {
-  if (typeof number == 'number') {
-    return true;
-  } else if (typeof number != 'string') {
-    return false;
-  }
-  return !isNaN(parseFloat(number));
-};
-
 // Characters cp1252 uses in 0x80-0x9F, where latin-1 has controls. Needed to
 // turn double-encoded text ("VelÃ³dromo") back into the bytes it came from.
 const cp1252Extra: Record<string, number> = {

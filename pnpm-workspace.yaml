@@ -3,7 +3,7 @@ packages:
   - 'packages/*'
 # Force patched versions of vulnerable transitive deps shipped in production.
 overrides:
-  multer: '>=2.2.0'
+  multer: '>=2.3.0'
   '@nestjs/swagger>js-yaml': '>=4.1.2'
   # express 5 and body-parser both allow it; they just have not asked yet.
   qs: '>=6.16.0'

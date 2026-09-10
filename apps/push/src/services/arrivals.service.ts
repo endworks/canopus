@@ -16,6 +16,8 @@ import {
   agrees,
   Departure,
   hasArrived,
+  instant,
+  matching,
   Reading,
   shownMinutes,
 } from './tracking';
@@ -121,7 +123,7 @@ export class ArrivalsService {
   ): Promise<void> {
     const reading = this.follows.reading(follow, board, now);
     if (!reading) {
-      await this.end(follow, now);
+      await this.end(follow, board, now);
       return;
     }
     // Here. The last thing worth saying about this bus, and then the follow
@@ -246,9 +248,22 @@ export class ArrivalsService {
    * must not be read for again, and a phone that missed the end will let the
    * activity go stale on the date it already holds.
    */
-  private async end(follow: FollowDocument, now: Date): Promise<void> {
+  private async end(
+    follow: FollowDocument,
+    board: Departure[],
+    now: Date,
+  ): Promise<void> {
+    // What is left of this line, which is the question somebody who has just
+    // watched their bus pull out is asking. The soonest row, because theirs is
+    // no longer on the board at all.
+    const behind = matching(board, follow.line, follow.destination)[0];
     const state = contentState(
-      { arrival: follow.anchor, words: follow.words },
+      {
+        arrival: follow.anchor,
+        words: follow.words,
+        next: behind ? instant(behind.time, now) : undefined,
+        nextWords: behind?.time,
+      },
       now,
       true,
     );

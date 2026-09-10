@@ -2,11 +2,20 @@ packages:
   - 'apps/*'
   - 'packages/*'
 # Force patched versions of vulnerable transitive deps shipped in production.
+# Every one of these is a caret and not a `>=`: an open range here resolves to
+# the newest version that satisfies it, which is the next major the moment one
+# is published, and an override outranks what a package asked for. `js-yaml@3:
+# '>=3.15.2'` handed js-yaml 5 to a reader that wanted 3.
 overrides:
-  multer: '>=2.3.0'
-  '@nestjs/swagger>js-yaml': '>=4.1.2'
+  multer: '^2.3.0'
   # express 5 and body-parser both allow it; they just have not asked yet.
-  qs: '>=6.16.0'
+  qs: '^6.16.0'
+  # Two majors of js-yaml are in the tree and one advisory is written against
+  # both, so each line is patched where it stands. Both arrive through build
+  # tooling — jest's coverage reader and the CLI's type checker — and the
+  # runtime image is built `--prod`, so neither ships.
+  'js-yaml@3': '^3.15.2'
+  'js-yaml@4': '^4.3.2'
 allowBuilds:
   '@scarf/scarf': false
   unrs-resolver: true

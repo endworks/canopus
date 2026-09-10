@@ -15,7 +15,7 @@ const alert: ScrapedAlert = {
 
 // The SDK call, answering with whatever the model is said to have returned.
 const reader = (parsed: unknown) => {
-  const parse = jest.fn(async (params: { messages: { content: string }[] }) => {
+  const parse = vi.fn(async (params: { messages: { content: string }[] }) => {
     sent = params.messages[0].content;
     return { parsed_output: parsed };
   });
@@ -195,7 +195,7 @@ describe('AlertReader.read', () => {
   });
 
   it('gives up on an alert it cannot read rather than failing the run', async () => {
-    const parse = jest.fn(async () => {
+    const parse = vi.fn(async () => {
       throw new Error('overloaded');
     });
     const subject = new AlertReader({

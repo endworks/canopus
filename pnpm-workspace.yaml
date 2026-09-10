@@ -10,18 +10,15 @@ overrides:
   multer: '^2.3.0'
   # express 5 and body-parser both allow it; they just have not asked yet.
   qs: '^6.16.0'
-  # Two majors of js-yaml are in the tree and one advisory is written against
-  # both, so each line is patched where it stands. Both arrive through build
-  # tooling — jest's coverage reader and the CLI's type checker — and the
-  # runtime image is built `--prod`, so neither ships.
-  'js-yaml@3': '^3.15.2'
+  # GHSA-2883-xcg3-v3hh. The 3.x line left with jest; what still asks for a
+  # vulnerable js-yaml is the CLI's type checker, through cosmiconfig, and the
+  # runtime image is built `--prod`, so it does not ship. swagger's js-yaml 5
+  # is unaffected.
   'js-yaml@4': '^4.3.2'
 allowBuilds:
-  # jest 30.5 brought this in for watch mode. Building it would want a
-  # compiler in every install — the Docker installer stage on alpine
-  # included — to speed up a watcher that runs on a developer's machine
-  # and nowhere else. jest falls back to its own.
-  '@parcel/watcher': false
+  # swc ships a prebuilt native binding per platform, musl included, so
+  # this resolves a download and not a compile.
+  '@swc/core': true
   '@scarf/scarf': false
   unrs-resolver: true
 minimumReleaseAgeExclude:

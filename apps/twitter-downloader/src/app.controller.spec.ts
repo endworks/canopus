@@ -20,7 +20,7 @@ describe('AppController', () => {
   };
 
   const build = async () => {
-    const getMediaUrls = jest.fn(async () => found);
+    const getMediaUrls = vi.fn(async () => found);
     const app: TestingModule = await Test.createTestingModule({
       controllers: [AppController],
       providers: [{ provide: AppService, useValue: { getMediaUrls } }],

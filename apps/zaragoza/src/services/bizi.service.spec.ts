@@ -7,6 +7,7 @@ import { BiziService } from './bizi.service';
 import { BiziStationResponse } from '../models/bizi.interface';
 import { BiziStation } from '../schemas/bizi.schema';
 import { GbfsClient } from '../gbfs';
+import type { Mock } from 'vitest';
 
 /**
  * One station, in the fields the city's published schema for
@@ -56,37 +57,37 @@ const answered = (status: number) => {
 
 describe('BiziService', () => {
   let service: BiziService;
-  let get: jest.Mock;
-  let cache: { get: jest.Mock; set: jest.Mock; wrap: jest.Mock };
-  let findOne: jest.Mock;
-  let findOneAndUpdate: jest.Mock;
+  let get: Mock;
+  let cache: { get: Mock; set: Mock; wrap: Mock };
+  let findOne: Mock;
+  let findOneAndUpdate: Mock;
   /** What the collection holds, for the pairing to be worked out over. */
   let all: BiziStation[];
   let gbfs: {
     enabled: boolean;
-    stationStatus: jest.Mock;
-    stationInformation: jest.Mock;
-    vehicleTypes: jest.Mock;
+    stationStatus: Mock;
+    stationInformation: Mock;
+    vehicleTypes: Mock;
   };
 
   beforeEach(async () => {
-    get = jest.fn();
+    get = vi.fn();
     cache = {
-      get: jest.fn().mockResolvedValue(undefined),
-      set: jest.fn(),
-      wrap: jest.fn((_key, read) => read()),
+      get: vi.fn().mockResolvedValue(undefined),
+      set: vi.fn(),
+      wrap: vi.fn((_key, read) => read()),
     };
-    findOne = jest.fn().mockReturnValue({ lean: () => Promise.resolve(null) });
-    findOneAndUpdate = jest
+    findOne = vi.fn().mockReturnValue({ lean: () => Promise.resolve(null) });
+    findOneAndUpdate = vi
       .fn()
       .mockReturnValue({ lean: () => Promise.resolve(null) });
     // Unconfigured by default, which is what every deployment looks like until
     // somebody points it at a feed.
     gbfs = {
       enabled: false,
-      stationStatus: jest.fn(),
-      stationInformation: jest.fn(),
-      vehicleTypes: jest.fn().mockResolvedValue([]),
+      stationStatus: vi.fn(),
+      stationInformation: vi.fn(),
+      vehicleTypes: vi.fn().mockResolvedValue([]),
     };
 
     all = [];

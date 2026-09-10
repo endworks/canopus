@@ -24,7 +24,7 @@ describe('AppController', () => {
   };
 
   const build = async () => {
-    const search = jest.fn(async () => found);
+    const search = vi.fn(async () => found);
     const app: TestingModule = await Test.createTestingModule({
       controllers: [AppController],
       providers: [{ provide: AppService, useValue: { search } }],

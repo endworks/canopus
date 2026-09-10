@@ -16,6 +16,7 @@ import { stopCode } from '../tram-line';
 import { AlertDetails, AlertReader } from '../alert-reader';
 import { tramFrontPageURL } from '../tram-alerts';
 import { TramStationResponse } from '../models/tram.interface';
+import type { Mock } from 'vitest';
 
 /** The stop, as the service answers when it has one to answer with. */
 const stop = (resp: unknown) => resp as TramStationResponse;
@@ -180,8 +181,8 @@ class FakeModel<T extends { id: string }> {
 const fakeReader = (details?: Record<string, AlertDetails>) =>
   ({
     enabled: !!details,
-    read: jest.fn(async (alert) => details?.[alert.id]),
-  }) as unknown as AlertReader & { read: jest.Mock };
+    read: vi.fn(async (alert) => details?.[alert.id]),
+  }) as unknown as AlertReader & { read: Mock };
 
 const build = (
   options: {
@@ -212,7 +213,7 @@ const build = (
   const line = options.line === undefined ? operatorLine() : options.line;
 
   const httpService = {
-    post: jest.fn((url: string, body: string) => {
+    post: vi.fn((url: string, body: string) => {
       if (url !== ajaxUrl) return throwError(() => httpError(404));
       if (options.unreachable?.some((blocked) => url.startsWith(blocked))) {
         return throwError(() => httpError(500));
@@ -229,7 +230,7 @@ const build = (
         ? of({ data: line })
         : of({ data: { stops_0: [], stops_1: [] } });
     }),
-    get: jest.fn((url: string) => {
+    get: vi.fn((url: string) => {
       if (options.unreachable?.some((blocked) => url.startsWith(blocked))) {
         return throwError(() => httpError(500));
       }
@@ -410,7 +411,7 @@ describe('getLinesUpdate', () => {
 
     await service.getLinesUpdate();
 
-    const asked = (httpService.post as jest.Mock).mock.calls.map(([, body]) =>
+    const asked = (httpService.post as Mock).mock.calls.map(([, body]) =>
       new URLSearchParams(body).get('action'),
     );
     expect(asked).toEqual([
@@ -418,7 +419,7 @@ describe('getLinesUpdate', () => {
       'dosnet_tranvias_lineas',
     ]);
     // And a referer, without which the endpoint answers 403.
-    const [, , config] = (httpService.post as jest.Mock).mock.calls[1];
+    const [, , config] = (httpService.post as Mock).mock.calls[1];
     expect(config.headers.Referer).toBe(`${site}/`);
   });
 });
@@ -559,7 +560,7 @@ describe('the alterations the operator publishes', () => {
     expect(words).toBe(interrupted);
     // And nothing was fetched but the front page itself.
     expect(
-      (httpService.get as jest.Mock).mock.calls
+      (httpService.get as Mock).mock.calls
         .map(([url]) => url)
         .filter((url: string) => url.startsWith(site)),
     ).toEqual([tramFrontPageURL]);

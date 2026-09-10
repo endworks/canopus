@@ -10,8 +10,9 @@ import {
   pairByPosition,
   vehiclesAvailable,
 } from './gbfs';
+import type { Mock } from 'vitest';
 
-const http = (get: jest.Mock) => ({ get }) as unknown as HttpService;
+const http = (get: Mock) => ({ get }) as unknown as HttpService;
 
 describe('gbfsState', () => {
   it('reads a rack that is working as in service', () => {
@@ -260,7 +261,7 @@ describe('pairByPosition', () => {
 describe('biziGbfs', () => {
   /** The URL the client actually asks for its feed listing. */
   const discoveryUrl = async (env: NodeJS.ProcessEnv) => {
-    const get = jest.fn().mockReturnValue(of({ data: { data: {} } }));
+    const get = vi.fn().mockReturnValue(of({ data: { data: {} } }));
     await biziGbfs(http(get), env)
       .stationStatus()
       .catch(() => undefined);
@@ -270,7 +271,7 @@ describe('biziGbfs', () => {
   // The URL is a fact about Bizi, not about a deployment: it is the one the
   // system registers in the GBFS catalogue, published and unauthenticated.
   it('reads the registered feed without being configured', async () => {
-    expect(biziGbfs(http(jest.fn()), {}).enabled).toBe(true);
+    expect(biziGbfs(http(vi.fn()), {}).enabled).toBe(true);
     await expect(discoveryUrl({})).resolves.toBe(
       'https://zaragoza.publicbikesystem.net/customer/gbfs/v3.0/gbfs.json',
     );
@@ -285,16 +286,14 @@ describe('biziGbfs', () => {
   // A repository variable rather than a revert, on the day the feed misbehaves.
   it('can be switched off without a deploy', () => {
     for (const off of ['off', 'none', 'FALSE', '0']) {
-      expect(biziGbfs(http(jest.fn()), { BIZI_GBFS_URL: off }).enabled).toBe(
+      expect(biziGbfs(http(vi.fn()), { BIZI_GBFS_URL: off }).enabled).toBe(
         false,
       );
     }
   });
 
   it('takes an empty variable to mean the default, not off', () => {
-    expect(biziGbfs(http(jest.fn()), { BIZI_GBFS_URL: '  ' }).enabled).toBe(
-      true,
-    );
+    expect(biziGbfs(http(vi.fn()), { BIZI_GBFS_URL: '  ' }).enabled).toBe(true);
   });
 });
 
@@ -311,7 +310,7 @@ describe('GbfsClient', () => {
   };
 
   it('is not there at all without a URL for it', async () => {
-    const get = jest.fn();
+    const get = vi.fn();
     const client = new GbfsClient(http(get), undefined);
 
     expect(client.enabled).toBe(false);
@@ -320,7 +319,7 @@ describe('GbfsClient', () => {
   });
 
   it('finds its feeds through the discovery document', async () => {
-    const get = jest
+    const get = vi
       .fn()
       .mockReturnValueOnce(of({ data: discovery }))
       .mockReturnValueOnce(
@@ -336,7 +335,7 @@ describe('GbfsClient', () => {
 
   // GBFS 3 dropped the language key; the versions before it all had one.
   it('reads a listing that is not keyed by language', async () => {
-    const get = jest
+    const get = vi
       .fn()
       .mockReturnValueOnce(
         of({
@@ -357,7 +356,7 @@ describe('GbfsClient', () => {
 
   // These URLs are a property of the deployment, not of the request.
   it('reads the discovery document once, not once a station', async () => {
-    const get = jest
+    const get = vi
       .fn()
       .mockReturnValueOnce(of({ data: discovery }))
       .mockReturnValue(of({ data: { data: { stations: [] } } }));
@@ -371,7 +370,7 @@ describe('GbfsClient', () => {
 
   // A process that failed to read it once must not stay broken for good.
   it('tries the discovery document again after it fails', async () => {
-    const get = jest
+    const get = vi
       .fn()
       .mockReturnValueOnce(throwError(() => new Error('down')))
       .mockReturnValueOnce(of({ data: discovery }))
@@ -383,7 +382,7 @@ describe('GbfsClient', () => {
   });
 
   it('refuses a feed the operator does not publish', async () => {
-    const get = jest.fn().mockReturnValueOnce(
+    const get = vi.fn().mockReturnValueOnce(
       of({
         data: {
           data: { es: { feeds: [{ name: 'system_information', url: 'x' }] } },

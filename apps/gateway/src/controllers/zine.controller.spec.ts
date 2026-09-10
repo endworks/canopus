@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ZineController } from './zine.controller';
 import { ZineService } from '../services/zine.service';
+import type { Mocked } from 'vitest';
 
 /**
  * What the gateway's controllers are, and therefore what is worth testing.
@@ -19,18 +20,18 @@ import { ZineService } from '../services/zine.service';
  */
 describe('ZineController', () => {
   let controller: ZineController;
-  let service: jest.Mocked<ZineService>;
+  let service: Mocked<ZineService>;
 
   beforeEach(async () => {
-    const zineService: Partial<jest.Mocked<ZineService>> = {
-      getLocations: jest.fn().mockResolvedValue([{ id: 'zaragoza' }]),
-      getCinemas: jest.fn().mockResolvedValue([{ id: '1' }]),
-      getCinema: jest.fn().mockResolvedValue({ id: '1' }),
-      getCinemaBasic: jest.fn().mockResolvedValue({ id: '1' }),
-      getMovies: jest.fn().mockResolvedValue([{ id: 'm1' }]),
-      cached: jest.fn().mockResolvedValue({}),
-      prune: jest.fn().mockResolvedValue({}),
-      updateAll: jest.fn().mockResolvedValue({}),
+    const zineService: Partial<Mocked<ZineService>> = {
+      getLocations: vi.fn().mockResolvedValue([{ id: 'zaragoza' }]),
+      getCinemas: vi.fn().mockResolvedValue([{ id: '1' }]),
+      getCinema: vi.fn().mockResolvedValue({ id: '1' }),
+      getCinemaBasic: vi.fn().mockResolvedValue({ id: '1' }),
+      getMovies: vi.fn().mockResolvedValue([{ id: 'm1' }]),
+      cached: vi.fn().mockResolvedValue({}),
+      prune: vi.fn().mockResolvedValue({}),
+      updateAll: vi.fn().mockResolvedValue({}),
     };
 
     const module: TestingModule = await Test.createTestingModule({

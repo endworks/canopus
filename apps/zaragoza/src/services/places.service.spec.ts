@@ -5,6 +5,7 @@ import { NotFoundException } from '@nestjs/common';
 import { of, throwError } from 'rxjs';
 import { PlacesService } from './places.service';
 import { PlacesResponse } from '../models/place.interface';
+import type { Mock } from 'vitest';
 
 /** One row in the city's envelope, with only what the mapping reads. */
 const row = (id: number, extra: Record<string, unknown> = {}) => ({
@@ -16,16 +17,16 @@ const row = (id: number, extra: Record<string, unknown> = {}) => ({
 
 describe('PlacesService', () => {
   let service: PlacesService;
-  let get: jest.Mock;
-  let cache: { get: jest.Mock; set: jest.Mock };
+  let get: Mock;
+  let cache: { get: Mock; set: Mock };
 
   const respond = (...pages: { totalCount: number; result: unknown[] }[]) => {
     pages.forEach((page) => get.mockReturnValueOnce(of({ data: page })));
   };
 
   beforeEach(async () => {
-    get = jest.fn();
-    cache = { get: jest.fn().mockResolvedValue(undefined), set: jest.fn() };
+    get = vi.fn();
+    cache = { get: vi.fn().mockResolvedValue(undefined), set: vi.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [

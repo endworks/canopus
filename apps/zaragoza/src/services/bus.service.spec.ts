@@ -14,6 +14,7 @@ import {
 import { BusService } from './bus.service';
 import { AlertDetails, AlertReader } from '../alert-reader';
 import { extraLineIds, KmlForLine } from '../utils';
+import type { Mock } from 'vitest';
 
 const dropdown = (lines: [string, string][], links: string[] = []) =>
   `${links.map((url) => `<a href="${url}">kml</a>`).join('')}
@@ -195,8 +196,8 @@ class FakeModel<T extends { id: string }> {
 const fakeReader = (details?: Record<string, AlertDetails>) =>
   ({
     enabled: !!details,
-    read: jest.fn(async (alert) => details?.[alert.id]),
-  }) as unknown as AlertReader & { read: jest.Mock };
+    read: vi.fn(async (alert) => details?.[alert.id]),
+  }) as unknown as AlertReader & { read: Mock };
 
 const build = (options: {
   lines?: [string, string][];
@@ -242,14 +243,14 @@ const build = (options: {
   const alertPages = options.alertPages ?? [];
 
   const httpService = {
-    get: jest.fn((url: string) => {
+    get: vi.fn((url: string) => {
       if (bodies.has(url)) return of({ data: bodies.get(url) });
       if (options.unreachable?.includes(url)) {
         return throwError(() => httpError(500));
       }
       return throwError(() => httpError(404));
     }),
-    post: jest.fn((url: string, body: string) => {
+    post: vi.fn((url: string, body: string) => {
       if (options.unreachable?.includes(url)) {
         return throwError(() => httpError(500));
       }
@@ -490,7 +491,7 @@ describe('getLinesUpdate', () => {
     });
 
     await service.getLinesUpdate();
-    const writes = jest.spyOn(stationModel, 'bulkWrite');
+    const writes = vi.spyOn(stationModel, 'bulkWrite');
     await service.getLinesUpdate();
 
     expect(writes).not.toHaveBeenCalled();
@@ -539,9 +540,7 @@ describe('getLinesUpdate', () => {
 
     // A page that links one direction must not cost us the other.
     expect(resp['21'].stations).toEqual(['5', '1']);
-    const requested = (httpService.get as jest.Mock).mock.calls.map(
-      ([url]) => url,
-    );
+    const requested = (httpService.get as Mock).mock.calls.map(([url]) => url);
     expect(requested).toContain(linked);
     expect(requested).toContain(kmlUrl('21', 1));
   });
@@ -601,7 +600,7 @@ describe('getStation', () => {
 
   it('asks the city for JSON, which the path no longer does for it', async () => {
     const { service, httpService } = build({});
-    (httpService.get as jest.Mock).mockImplementation((url: string) =>
+    (httpService.get as Mock).mockImplementation((url: string) =>
       url === busApiUrl('14')
         ? of({
             data: {
@@ -637,7 +636,7 @@ describe('getStation', () => {
     });
     // The endpoint reads the path for what to serve no longer: a request that
     // does not say it wants JSON is answered 400, not with the stop.
-    expect((httpService.get as jest.Mock).mock.calls[0][1]).toMatchObject({
+    expect((httpService.get as Mock).mock.calls[0][1]).toMatchObject({
       headers: { accept: 'application/json' },
     });
   });
@@ -728,9 +727,7 @@ describe('getStation', () => {
     });
     // The board answers for a stop that does not exist with an empty table,
     // which would read as a stop with no bus due rather than as no stop.
-    const requested = (httpService.get as jest.Mock).mock.calls.map(
-      ([url]) => url,
-    );
+    const requested = (httpService.get as Mock).mock.calls.map(([url]) => url);
     expect(requested).not.toContain(pasobusUrl('99'));
   });
 
@@ -746,9 +743,7 @@ describe('getStation', () => {
     await expect(service.getStation('1', 'api')).rejects.toMatchObject({
       response: { statusCode: 502 },
     });
-    const requested = (httpService.get as jest.Mock).mock.calls.map(
-      ([url]) => url,
-    );
+    const requested = (httpService.get as Mock).mock.calls.map(([url]) => url);
     expect(requested).not.toContain(pasobusUrl('1'));
   });
 });
@@ -892,11 +887,11 @@ describe('alerts', () => {
       ['primera', 'segunda'],
     );
     // Three asked for, and the third is what stopped the walk.
-    expect((httpService.post as jest.Mock).mock.calls).toHaveLength(3);
+    expect((httpService.post as Mock).mock.calls).toHaveLength(3);
   });
 
   it('stops showing an alert the day after it ends, cached or not', async () => {
-    const clock = jest
+    const clock = vi
       .spyOn(Date, 'now')
       .mockReturnValue(Date.parse('2026-08-31T09:00:00Z'));
     try {
@@ -1083,8 +1078,8 @@ describe('alert articles', () => {
     await service.getLinesUpdate();
 
     // Only the article changes; every other page answers as it did.
-    const asBefore = (httpService.get as jest.Mock).getMockImplementation();
-    (httpService.get as jest.Mock).mockImplementation((url: string) =>
+    const asBefore = (httpService.get as Mock).getMockImplementation();
+    (httpService.get as Mock).mockImplementation((url: string) =>
       url === articleUrl
         ? of({ data: article('Se amplía hasta el 30 de agosto.') })
         : asBefore(url),
@@ -1097,7 +1092,7 @@ describe('alert articles', () => {
   it('stops fetching the article of an alert that knows when it ends', async () => {
     const { service, reader, httpService } = withArticle();
     await service.getLinesUpdate();
-    (httpService.get as jest.Mock).mockClear();
+    (httpService.get as Mock).mockClear();
 
     await service.getLinesUpdate();
 
@@ -1105,7 +1100,7 @@ describe('alert articles', () => {
     // takes itself off the listings on that day.
     expect(reader.read).toHaveBeenCalledTimes(1);
     expect(
-      (httpService.get as jest.Mock).mock.calls.map(([url]) => url),
+      (httpService.get as Mock).mock.calls.map(([url]) => url),
     ).not.toContain(articleUrl);
   });
 
@@ -1125,8 +1120,8 @@ describe('alert articles', () => {
     });
     await service.getLinesUpdate();
 
-    const asBefore = (httpService.get as jest.Mock).getMockImplementation();
-    (httpService.get as jest.Mock).mockImplementation((url: string) =>
+    const asBefore = (httpService.get as Mock).getMockImplementation();
+    (httpService.get as Mock).mockImplementation((url: string) =>
       url === articleUrl
         ? of({ data: article('Se amplía hasta el 30 de agosto.') })
         : asBefore(url),
@@ -1232,8 +1227,8 @@ describe('alert articles', () => {
     expect(alertModel.docs[0]).toMatchObject({ scope: 'stations' });
 
     // The notice is rewritten and this run cannot read what it now says.
-    const asBefore = (httpService.get as jest.Mock).getMockImplementation();
-    (httpService.get as jest.Mock).mockImplementation((url: string) =>
+    const asBefore = (httpService.get as Mock).getMockImplementation();
+    (httpService.get as Mock).mockImplementation((url: string) =>
       url === articleUrl
         ? of({ data: article('Se amplía a toda la línea.') })
         : asBefore(url),

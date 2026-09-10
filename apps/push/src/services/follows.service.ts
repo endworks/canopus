@@ -127,6 +127,11 @@ export class FollowsService {
     return { removed: result.deletedCount > 0 };
   }
 
+  /** One follow, by the id the app was handed. */
+  byId(id: string): Promise<FollowDocument | null> {
+    return this.follows.findById(id).exec();
+  }
+
   /** Every follow still worth reading a board for. */
   live(): Promise<FollowDocument[]> {
     return this.follows.find({ expiresAt: { $gt: new Date() } }).exec();

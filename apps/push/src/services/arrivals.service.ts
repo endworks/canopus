@@ -35,6 +35,22 @@ const CADENCE = 15_000;
 /** How long before the arrival the phone is nudged. */
 const LEAD = 60_000;
 
+/**
+ * How long a phone may go without hearing anything before it is told again.
+ *
+ * Every other push here is a disagreement, and agreement is the ordinary case:
+ * a countdown ticking down in step with the board contradicts nothing, so a
+ * departure whose estimate holds is served in silence. That silence is correct
+ * and it is also indistinguishable from this service being dead, a token gone
+ * stale, or APNs refusing — and the app stops reading the board for itself
+ * once it has been handed over, so nobody would notice.
+ *
+ * Two minutes, then, the same reading sent again: it costs one push per follow
+ * per two minutes, it re-dates what the banner says it was confirmed at, and
+ * it is the only thing that lets a client tell a quiet road from a broken one.
+ */
+const CONFIRM = 120_000;
+
 /** The Live Activity's own topic, which is the app's with this on the end. */
 const ACTIVITY_TOPIC = '.push-type.liveactivity';
 
@@ -115,6 +131,40 @@ export class ArrivalsService {
     );
   }
 
+  /**
+   * The first reading, pushed the moment a follow is taken on.
+   *
+   * Without it the phone waits for the board to CHANGE before it hears
+   * anything, because every other push in this service is a disagreement with
+   * what the reader is already looking at. On a wait that is holding steady
+   * that is a minute of silence at the exact moment somebody has just asked to
+   * be told about a bus — and on Android, where the notification is drawn from
+   * the push and from nothing else, it is a minute of nothing on screen.
+   *
+   * It is also the only proof either end gets that the road works. The app
+   * stops reading the board for itself once this lands; a push that never
+   * arrives leaves it reading, which is the right way round.
+   *
+   * Best-effort and silent: the follow is already made, and a first push that
+   * fails is a countdown that starts a minute later rather than an error
+   * anybody can act on.
+   */
+  async announce(id: string): Promise<void> {
+    try {
+      const follow = await this.follows.byId(id);
+      if (!follow) return;
+      const now = new Date();
+      const board = await this.follows.board(follow.kind, follow.stopId);
+      const reading = this.follows.reading(follow, board, now);
+      // Nothing to say yet. The sweep will find it in fifteen seconds, and
+      // the app is still reading for itself until something arrives.
+      if (!reading) return;
+      await this.update(follow, reading, now);
+    } catch (error) {
+      this.logger.warn(`First reading not sent: ${(error as Error).message}`);
+    }
+  }
+
   /** What this board means for one phone. */
   private async answer(
     follow: FollowDocument,
@@ -140,7 +190,15 @@ export class ArrivalsService {
       await this.nudge(follow, reading, now);
       return;
     }
-    if (agrees(follow, reading, now)) return;
+    // Silent while the board says what the phone is showing — but never for
+    // longer than CONFIRM, so a phone that has stopped reading for itself is
+    // told the road still works.
+    if (
+      agrees(follow, reading, now) &&
+      now.getTime() - follow.taken.getTime() < CONFIRM
+    ) {
+      return;
+    }
     await this.update(follow, reading, now);
   }
 

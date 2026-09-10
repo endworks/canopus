@@ -357,3 +357,32 @@ jobs:
             else
               docker run --network canopus -p ${{ matrix.port }}/tcp -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
             fi
+
+            # `docker run` answering with an id is not the same as a service
+            # answering: a container that dies on boot leaves this step green,
+            # and the only sign is a gateway health check that cannot resolve
+            # the name days later. So wait for this one to be up and past its
+            # own healthcheck, and fail with its logs where it is not.
+            state=missing
+            health=none
+            up=false
+            i=0
+            while [ $i -lt 30 ]; do
+              state=$(docker inspect -f '{{.State.Status}}' "$CONTAINER" 2>/dev/null || echo missing)
+              health=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$CONTAINER" 2>/dev/null || echo none)
+              if [ "$state" = "running" ] && [ "$health" != "starting" ] && [ "$health" != "unhealthy" ]; then
+                up=true
+                break
+              fi
+              if [ "$state" = "exited" ]; then
+                break
+              fi
+              i=$((i + 1))
+              sleep 2
+            done
+            if [ "$up" != "true" ]; then
+              echo "$CONTAINER did not come up: state=$state health=$health"
+              docker logs --tail 80 "$CONTAINER" 2>&1 || true
+              exit 1
+            fi
+            echo "$CONTAINER is up (health=$health)"

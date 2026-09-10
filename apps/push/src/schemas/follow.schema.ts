@@ -80,6 +80,18 @@ export class Follow {
   @Prop()
   shown?: number;
 
+  /**
+   * Where this bus sat in its line's list when last read.
+   *
+   * Only ever a tiebreak: two departures of one line minutes apart are told
+   * apart by when they are due, and this is what settles the case where they
+   * are seconds apart and that cannot. It moves down as the buses in front of
+   * it leave — the second becomes the first — which is why it is stored rather
+   * than assumed constant.
+   */
+  @Prop()
+  position?: number;
+
   /** Whether the minute-before nudge has already gone out. */
   @Prop({ default: false })
   alerted: boolean;

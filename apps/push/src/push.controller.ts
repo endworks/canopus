@@ -45,8 +45,12 @@ export class PushController {
   }
 
   @MessagePattern(PUSH_PATTERNS.forgetDevice)
-  forgetDevice(@Payload() payload: Authorised<ForgetDevicePayload>) {
+  async forgetDevice(@Payload() payload: Authorised<ForgetDevicePayload>) {
     this.keys.assertClient(payload.clientKey);
+    // What it was having watched goes with it. Otherwise this service would
+    // read a stop every half a minute for the rest of the hour, to push a
+    // countdown at a phone that has just asked to be forgotten.
+    await this.follows.removeForToken(payload.token);
     return this.devices.forget(payload);
   }
 

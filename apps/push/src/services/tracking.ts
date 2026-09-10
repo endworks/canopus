@@ -39,6 +39,15 @@ export interface Reading {
   words: string;
   next?: Date;
   nextWords?: string;
+  /**
+   * Where this bus sat in its line's list on the board just read.
+   *
+   * Carried so the next reading can tell two buses apart when their instants
+   * cannot — see `identify`. It moves on its own as the buses in front depart,
+   * which is exactly why it is remembered rather than assumed: the second
+   * becomes the first, and is still the same bus.
+   */
+  position?: number;
 }
 
 /**
@@ -91,27 +100,48 @@ export const slackFor = (since: number): number => Math.max(120_000, since / 2);
  */
 export const identify = (
   board: Departure[],
-  follow: { line: string; destination: string; anchor: Date; taken: Date },
+  follow: {
+    line: string;
+    destination: string;
+    anchor: Date;
+    taken: Date;
+    /** Where it sat in this line's list when last seen. See `position`. */
+    position?: number;
+  },
   now: Date,
 ): Reading | null => {
   const matches = matching(board, follow.line, follow.destination);
   const slack = slackFor(now.getTime() - follow.taken.getTime());
   const anchor = follow.anchor.getTime();
 
-  // The row due nearest the instant last agreed on, and only where that is
-  // near enough to be the same bus. Not the soonest row: on a line the
-  // operator publishes twice, the soonest row is the bus in front of the one
-  // this reader is waiting for.
-  let tracked = -1;
-  let nearest = Infinity;
-  matches.forEach((row, index) => {
-    const gap = Math.abs(instant(row.time, now).getTime() - anchor);
-    if (gap <= slack && gap < nearest) {
-      tracked = index;
-      nearest = gap;
-    }
-  });
-  if (tracked < 0) return null;
+  // Every row near enough to the instant last agreed on to be the same bus.
+  // Not the soonest row: on a line the operator publishes twice, the soonest
+  // row is the bus in front of the one this reader is waiting for.
+  const near = matches
+    .map((row, index) => ({
+      index,
+      gap: Math.abs(instant(row.time, now).getTime() - anchor),
+    }))
+    .filter((one) => one.gap <= slack)
+    .sort((a, b) => a.gap - b.gap);
+  if (!near.length) return null;
+
+  // Which of them, where two are close enough together that the instant
+  // cannot separate them — a line running every couple of minutes, which
+  // Zaragoza has. Place decides it then, and only then: the bus that was
+  // second is second or first, never fourth, so the row nearest where it was
+  // last seen is the one. Ordinary boards never reach this line, because the
+  // second candidate is minutes away rather than seconds.
+  const best = near[0];
+  const rival = near[1];
+  let tracked = best.index;
+  if (rival && Math.abs(rival.gap - best.gap) < 60_000 && follow.position !== undefined) {
+    const from = follow.position;
+    tracked =
+      Math.abs(rival.index - from) < Math.abs(best.index - from)
+        ? rival.index
+        : best.index;
+  }
 
   // What is behind it is the row behind *it*, not the second on the board:
   // somebody watching the second bus is told about the third.
@@ -121,6 +151,7 @@ export const identify = (
     words: matches[tracked].time,
     next: behind ? instant(behind.time, now) : undefined,
     nextWords: behind?.time,
+    position: tracked,
   };
 };
 

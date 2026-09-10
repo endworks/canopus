@@ -96,6 +96,7 @@ export class FollowsService {
       locale: payload.locale,
       anchor,
       words,
+      position: picked?.position,
       taken: now,
       expiresAt: new Date(now.getTime() + LIFETIME),
     });
@@ -138,6 +139,16 @@ export class FollowsService {
   }
 
   /**
+   * The ones whose hour is up.
+   *
+   * They are ended rather than left to the TTL index: a row that simply
+   * vanishes leaves a countdown on somebody's phone with nothing behind it.
+   */
+  expired(): Promise<FollowDocument[]> {
+    return this.follows.find({ expiresAt: { $lte: new Date() } }).exec();
+  }
+
+  /**
    * One stop's next departures, from the service that owns them.
    *
    * Read through that service's own ten-second cache, which is the point: a
@@ -175,8 +186,22 @@ export class FollowsService {
         destination: follow.destination,
         anchor: follow.anchor,
         taken: follow.taken,
+        position: follow.position,
       },
       now,
     );
+  }
+
+  /**
+   * Everything this device was having watched for it.
+   *
+   * Called when the device itself goes — the reader turned notifications off,
+   * or the platform said the token is dead. Without it the poller would go on
+   * reading a stop every half a minute for an hour, to push a countdown at an
+   * address nobody is listening to.
+   */
+  async removeForToken(token: string): Promise<number> {
+    const result = await this.follows.deleteMany({ token });
+    return result.deletedCount ?? 0;
   }
 }

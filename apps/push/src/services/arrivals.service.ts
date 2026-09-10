@@ -37,6 +37,14 @@ const CADENCE = 30_000;
 const LEAD = 60_000;
 
 /**
+ * How near its own arrival a departure has to be for vanishing to mean it
+ * arrived rather than that it was lost.
+ *
+ * Ninety seconds either side: one sweep plus the drift these estimates have.
+ */
+const ARRIVING = 90_000;
+
+/**
  * How long a phone may go without hearing anything before it is told again.
  *
  * Every other push here is a disagreement, and agreement is the ordinary case:
@@ -104,6 +112,15 @@ export class ArrivalsService {
   }
 
   private async sweep(): Promise<void> {
+    // The ones whose hour is up, first. Mongo's TTL index would drop these
+    // rows on its own and tell nobody, leaving an ongoing notification on a
+    // phone counting down to a bus this service stopped watching — so they are
+    // ended out loud here, and the index becomes the backstop it was meant to
+    // be rather than the way follows normally end.
+    for (const stale of await this.follows.expired()) {
+      await this.end(stale, [], new Date());
+    }
+
     const live = await this.follows.live();
     if (!live.length) return;
 
@@ -174,6 +191,22 @@ export class ArrivalsService {
   ): Promise<void> {
     const reading = this.follows.reading(follow, board, now);
     if (!reading) {
+      // Off the board. Which of the two endings that is depends on where its
+      // own countdown had got to: a bus that disappears while it was still
+      // four minutes away was overtaken by the next reading and is gone, and
+      // one that disappears as it was due has arrived — many boards drop a
+      // departure at the stop rather than ever printing `En parada`. Saying
+      // "departed" to somebody watching their bus pull in is the one mistake
+      // here that would send them home.
+      const due = follow.anchor.getTime() - now.getTime();
+      if (due <= ARRIVING && due > -ARRIVING) {
+        await this.arrive(
+          follow,
+          { arrival: follow.anchor, words: follow.words },
+          now,
+        );
+        return;
+      }
       await this.end(follow, board, now);
       return;
     }
@@ -257,6 +290,7 @@ export class ArrivalsService {
     follow.anchor = reading.arrival;
     follow.words = reading.words;
     follow.shown = shownMinutes(reading.arrival, now);
+    follow.position = reading.position ?? follow.position;
     follow.taken = now;
     await follow.save();
   }
@@ -308,6 +342,7 @@ export class ArrivalsService {
     follow.anchor = reading.arrival;
     follow.words = reading.words;
     follow.shown = minutes;
+    follow.position = reading.position ?? follow.position;
     follow.taken = now;
     await follow.save();
   }
@@ -431,7 +466,7 @@ export class ArrivalsService {
     if (result === 'gone') {
       this.logger.log('A device is gone; dropping it and what it followed.');
       await this.devices.retire(follow.token);
-      await this.follows.remove({ id: follow.id as string });
+      await this.follows.removeForToken(follow.token);
       return false;
     }
     return result === 'sent';
@@ -471,7 +506,7 @@ export class ArrivalsService {
     if (result === 'gone') {
       this.logger.log('A device is gone; dropping it and what it followed.');
       await this.devices.retire(follow.token);
-      await this.follows.remove({ id: follow.id as string });
+      await this.follows.removeForToken(follow.token);
       return false;
     }
     return result === 'sent';

@@ -163,6 +163,33 @@ describe('identify', () => {
       identify(board(['21', 'Rosales', '3 min.']), quiet, at(now, 10)),
     ).toBeNull();
   });
+
+  it('tells two buses of one line apart by where they sat', () => {
+    // A line running every couple of minutes: both rows are within the drift
+    // of the instant this reader's bus was due, so when it is due cannot
+    // separate them. Theirs was the second, and the second it stays.
+    const second = { ...follow, anchor: at(now, 4), taken: now, position: 1 };
+    const reading = identify(
+      board(['21', 'Rosales', '3 min.'], ['21', 'Rosales', '4 min.']),
+      second,
+      at(now, 0.25),
+    );
+    expect(reading?.words).toBe('4 min.');
+    expect(reading?.position).toBe(1);
+  });
+
+  it('follows it down the list as the ones in front leave', () => {
+    // Same pair, one sweep later, with the bus in front gone: theirs is now
+    // the only row, and the position it reports moves with it.
+    const second = { ...follow, anchor: at(now, 4), taken: now, position: 1 };
+    const reading = identify(
+      board(['21', 'Rosales', '3 min.']),
+      second,
+      at(now, 0.75),
+    );
+    expect(reading?.words).toBe('3 min.');
+    expect(reading?.position).toBe(0);
+  });
 });
 
 describe('hasArrived', () => {

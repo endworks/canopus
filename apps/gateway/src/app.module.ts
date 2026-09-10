@@ -9,12 +9,14 @@ import { TwitterDownloaderController } from './controllers/twitter-downloader.co
 import { ZaragozaController } from './controllers/zaragoza.controller';
 import { WeatherController } from './controllers/weather.controller';
 import { ZineController } from './controllers/zine.controller';
+import { PushController } from './controllers/push.controller';
 import { CitiesService } from './services/cities.service';
 import { RAEService } from './services/rae.service';
 import { TwitterDownloaderService } from './services/twitter-downloader.service';
 import { ZaragozaService } from './services/zaragoza.service';
 import { WeatherService } from './services/weather.service';
 import { ZineService } from './services/zine.service';
+import { PushService } from './services/push.service';
 import { HealthModule } from './health/health.module';
 
 @Module({
@@ -48,6 +50,7 @@ import { HealthModule } from './health/health.module';
     WeatherController,
     RAEController,
     TwitterDownloaderController,
+    PushController,
   ],
   providers: [
     CitiesService,
@@ -56,6 +59,7 @@ import { HealthModule } from './health/health.module';
     WeatherService,
     RAEService,
     TwitterDownloaderService,
+    PushService,
   ],
 })
 export class AppModule {}

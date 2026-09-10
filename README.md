@@ -14,6 +14,7 @@ apps/
   weather/             # @canopus/weather            — weather & warnings, caller-supplied provider key
   rae/                 # @canopus/rae                — Spanish dictionary (RAE) scraper
   twitter-downloader/  # @canopus/twitter-downloader — tweet media-URL extractor
+  push/                # @canopus/push               — device registry, notification preferences and arrival countdowns, MongoDB
 packages/
   shared/              # @canopus/shared             — RPC contract types shared across packages
 ```
@@ -73,3 +74,38 @@ To finish the cutover:
    stop deploying), then archive the repos.
 4. Add the `TWITTER_CLIENT_TOKEN` secret to `endworks/canopus` — the
    twitter-downloader service reads it at runtime.
+
+## The push service
+
+`apps/push` is the one service that holds something belonging to a person: a
+push token, which addresses somebody's phone. It is built as a registry with
+producers rather than as an arrivals feature, because arrivals is only the
+first thing worth pushing:
+
+- **devices** — one row per install: which app, which store, the token, the
+  language, and which of `arrivals`, `promotions` and `events` it has agreed
+  to. Arrivals alone by default; the other two are opt-in, and the moment
+  somebody agreed is written down with the wording they agreed to.
+- **follows** — a departure somebody is waiting for. TTL-indexed, so a crash
+  mid-journey costs nothing: Mongo drops the row whether or not this service
+  ever runs again.
+- **the arrivals loop** — every fifteen seconds, the stops that somebody is
+  actually standing at, one read per stop however many followers it has, and a
+  push only where the board disagrees with what that phone is already showing.
+
+Two credentials, and they are not interchangeable. `PUSH_CLIENT_KEYS` is
+shipped inside the apps, so it is a gate and not an identity — the worst
+somebody who extracts it can do is address tokens they already hold.
+`PUSH_ADMIN_KEY` sends a message to everyone who opted in and is
+server-to-server only.
+
+iOS is spoken to over APNs directly rather than through Firebase, and not by
+preference: a Live Activity is updated by a push whose `apns-push-type` is
+`liveactivity`, and FCM will not send that header. Since that connection has to
+exist anyway it carries the ordinary notifications too.
+
+The gateway's `/push/*` routes are absent from the published API document —
+`@ApiExcludeController` — because that document describes a public transit API
+anybody may call, and these six are the private conversation between this
+deployment and its own apps. The key checked inside the service is what
+actually stands in front of them; the exclusion is tidiness.

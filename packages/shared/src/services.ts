@@ -18,4 +18,5 @@ export const SERVICE_TOKENS = {
   weather: 'WEATHER_SERVICE',
   rae: 'RAE_SERVICE',
   twitterDownloader: 'TWITTER_DOWNLOADER_SERVICE',
+  push: 'PUSH_SERVICE',
 } as const;

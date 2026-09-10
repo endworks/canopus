@@ -85,6 +85,9 @@ jobs:
             twitter-downloader:
               - *common
               - 'apps/twitter-downloader/**'
+            push:
+              - *common
+              - 'apps/push/**'
 
       - name: Build deploy matrix from affected services
         id: set-matrix
@@ -92,7 +95,7 @@ jobs:
           # Via env, not inline interpolation, so the input can't break the script.
           SERVICES: ${{ inputs.services }}
         run: |
-          ALL='["gateway","zaragoza","zine","weather","rae","twitter-downloader"]'
+          ALL='["gateway","zaragoza","zine","weather","rae","twitter-downloader","push"]'
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             if [ -z "$SERVICES" ] || [ "$SERVICES" = "all" ]; then
               CHANGED="$ALL"
@@ -112,7 +115,8 @@ jobs:
               zine:     {service:"zine",     image:"canopus-zine",     container:"canopus-zine",     port:"8878:3000", db:true, dockerfile:"Dockerfile"},
               weather:  {service:"weather",  image:"canopus-weather",  container:"canopus-weather",  port:"8880:3000", db:false, dockerfile:"Dockerfile"},
               rae:      {service:"rae",      image:"canopus-rae",      container:"canopus-rae",      port:"8879:3000", db:false, dockerfile:"Dockerfile"},
-              "twitter-downloader": {service:"twitter-downloader", image:"canopus-twitter-downloader", container:"canopus-twitter-downloader", port:"8876:3000", db:false, dockerfile:"Dockerfile"}
+              "twitter-downloader": {service:"twitter-downloader", image:"canopus-twitter-downloader", container:"canopus-twitter-downloader", port:"8876:3000", db:false, dockerfile:"Dockerfile"},
+              push:     {service:"push",     image:"canopus-push",     container:"canopus-push",     port:"8881:3000", db:true, dockerfile:"Dockerfile"}
             } as $cfg
             | {include: [ $changed[] | select($cfg[.] != null) | $cfg[.] ]}
           ')
@@ -283,6 +287,28 @@ jobs:
           # `docker run -e` intact.
           WEATHERKIT_PRIVATE_KEY: op://end.works/Apple WeatherKit/private key
 
+      - name: Load push secrets
+        if: ${{ github.event_name != 'pull_request' && (github.ref_name == 'main' || github.ref_type == 'tag') && matrix.service == 'push' }}
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          # The APNs key is team-wide rather than per app, and stored
+          # base64-encoded for the same reason WeatherKit's is: a .p8 is a PEM
+          # block and its newlines do not survive this trip.
+          APNS_TEAM_ID: op://end.works/Apple Push Notifications/team id
+          APNS_KEY_ID: op://end.works/Apple Push Notifications/key id
+          APNS_PRIVATE_KEY: op://end.works/Apple Push Notifications/private key
+          APNS_BUNDLE_ID: op://end.works/Apple Push Notifications/bundle id
+          APNS_ENVIRONMENT: op://end.works/Apple Push Notifications/environment
+          # What the apps send to register a device. Comma-separated to
+          # rotate: every listed key is accepted, so a new one goes in front,
+          # the apps ship, and the old one comes out.
+          PUSH_CLIENT_KEYS: op://end.works/Canopus Push/client keys
+          # What sending a promotion to everybody takes. Never in an app.
+          PUSH_ADMIN_KEY: op://end.works/Canopus Push/admin key
+
       - name: Compute image ref and container name
         if: ${{ github.event_name != 'pull_request' && (github.ref_name == 'main' || github.ref_type == 'tag') }}
         run: |
@@ -304,7 +330,7 @@ jobs:
           port: ${{ env.PORT }}
           username: ${{ env.USERNAME }}
           key: ${{ env.KEY }}
-          envs: IMAGE,CONTAINER,MONGODB_URI,TWITTER_CLIENT_TOKEN,THE_MOVIE_DB_API_KEY,GOOGLE_MAPS_API_KEY,ANTHROPIC_API_KEY,BIZI_GBFS_URL,WEATHERKIT_TEAM_ID,WEATHERKIT_SERVICE_ID,WEATHERKIT_KEY_ID,WEATHERKIT_PRIVATE_KEY,WEATHER_CLIENT_KEY_VERSION
+          envs: IMAGE,CONTAINER,MONGODB_URI,TWITTER_CLIENT_TOKEN,THE_MOVIE_DB_API_KEY,GOOGLE_MAPS_API_KEY,ANTHROPIC_API_KEY,BIZI_GBFS_URL,WEATHERKIT_TEAM_ID,WEATHERKIT_SERVICE_ID,WEATHERKIT_KEY_ID,WEATHERKIT_PRIVATE_KEY,WEATHER_CLIENT_KEY_VERSION,APNS_TEAM_ID,APNS_KEY_ID,APNS_PRIVATE_KEY,APNS_BUNDLE_ID,APNS_ENVIRONMENT,PUSH_CLIENT_KEYS,PUSH_ADMIN_KEY
           script: |
             docker pull "$IMAGE"
             # -t 1, because nothing here installs a SIGTERM handler: no app
@@ -319,6 +345,10 @@ jobs:
               docker run --network canopus -p ${{ matrix.port }}/tcp -e MONGODB_URI="$MONGODB_URI" -e ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" -e BIZI_GBFS_URL="$BIZI_GBFS_URL" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
             elif [ "$CONTAINER" = "canopus-weather" ]; then
               docker run --network canopus -p ${{ matrix.port }}/tcp -e WEATHERKIT_TEAM_ID="$WEATHERKIT_TEAM_ID" -e WEATHERKIT_SERVICE_ID="$WEATHERKIT_SERVICE_ID" -e WEATHERKIT_KEY_ID="$WEATHERKIT_KEY_ID" -e WEATHERKIT_PRIVATE_KEY="$WEATHERKIT_PRIVATE_KEY" -e WEATHER_CLIENT_KEY_VERSION="$WEATHER_CLIENT_KEY_VERSION" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
+            elif [ "$CONTAINER" = "canopus-push" ]; then
+              # It reads one stop's board for every follower of that stop, so
+              # it dials the transit service the way the gateway does.
+              docker run --network canopus -p ${{ matrix.port }}/tcp -e MONGODB_URI="$MONGODB_URI" -e ZARAGOZA_SERVICE_HOST=canopus-zaragoza -e APNS_TEAM_ID="$APNS_TEAM_ID" -e APNS_KEY_ID="$APNS_KEY_ID" -e APNS_PRIVATE_KEY="$APNS_PRIVATE_KEY" -e APNS_BUNDLE_ID="$APNS_BUNDLE_ID" -e APNS_ENVIRONMENT="$APNS_ENVIRONMENT" -e PUSH_CLIENT_KEYS="$PUSH_CLIENT_KEYS" -e PUSH_ADMIN_KEY="$PUSH_ADMIN_KEY" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
             elif [ "$CONTAINER" = "canopus-twitter-downloader" ]; then
               docker run --network canopus -p ${{ matrix.port }}/tcp -e TWITTER_CLIENT_TOKEN="$TWITTER_CLIENT_TOKEN" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
             else

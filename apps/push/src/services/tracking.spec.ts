@@ -154,6 +154,35 @@ describe('identify', () => {
     ).toBeNull();
   });
 
+  it('will not step onto the bus behind as its own comes in', () => {
+    // The one that never ended: theirs is a minute out, the next 21 is three
+    // minutes behind it, and theirs drops off the board as it pulls in. Two
+    // minutes of drift would call the next one theirs, re-anchor, and do it
+    // again with the one after — a countdown that never arrives.
+    const arriving = { ...follow, anchor: at(now, 1), taken: now };
+    expect(
+      identify(board(['21', 'Rosales', '3 min.']), arriving, at(now, 1)),
+    ).toBeNull();
+  });
+
+  it('still lets a bus that is nearly here run a little late', () => {
+    // Half a minute is always allowed, however short the wait: an estimate
+    // that wobbles is not a different bus.
+    const arriving = { ...follow, anchor: at(now, 1), taken: now };
+    expect(
+      identify(board(['21', 'Rosales', '1 min.']), arriving, at(now, 0.5)),
+    ).not.toBeNull();
+  });
+
+  it('allows a long wait the full drift', () => {
+    // Twenty minutes out, and the estimate slips two: still the same bus,
+    // because a third of what is left is more than the cap.
+    const distant = { ...follow, anchor: at(now, 20), taken: now };
+    expect(
+      identify(board(['21', 'Rosales', '21 min.']), distant, at(now, 0.75)),
+    ).not.toBeNull();
+  });
+
   it('calls it gone after a silence it cannot have survived', () => {
     // Due at :04, read again at :10 with the soonest three minutes out. Ours
     // came and went while the phone was in a pocket; the countdown must not

@@ -96,6 +96,7 @@ export class FollowsService {
       locale: payload.locale,
       anchor,
       words,
+      nextWords: picked?.nextWords,
       position: picked?.position,
       taken: now,
       expiresAt: new Date(now.getTime() + LIFETIME),

@@ -92,6 +92,29 @@ export const instant = (words: string, now: Date): Date =>
 export const slackFor = (since: number): number => Math.max(120_000, since / 2);
 
 /**
+ * How much LATER than expected a row may be and still be this bus.
+ *
+ * The asymmetric half of the rule, and the one that stops a countdown walking.
+ * Two minutes of drift is right for a bus twenty minutes out; it is nonsense
+ * for one that is a minute away, because on a line running every two or three
+ * minutes the row two minutes behind it is the *next bus*. Accept that and the
+ * countdown steps onto it, re-anchors, and does it again with the one after —
+ * a wait that never ends and a reader who never gets told their bus came.
+ *
+ * So the tolerance shrinks with the wait: a third of what is left, floored at
+ * half a minute so an estimate may always wobble, capped at two minutes
+ * because that is the drift these readings have at any distance.
+ *
+ * And then the silence is added on top, at the same half-a-clock rate as
+ * `slackFor`, because the two cases are told apart by exactly that. A bus four
+ * minutes later than expected is the next bus when the last reading was thirty
+ * seconds ago, and is ours running late when the last reading was ten minutes
+ * ago and the phone was in somebody's pocket for all of them.
+ */
+export const laterSlack = (remaining: number, since: number): number =>
+  Math.max(30_000, Math.min(120_000, remaining / 3)) + since / 2;
+
+/**
  * The followed bus in this board, or null if it is no longer on it.
  *
  * Null means gone, and gone is said out loud rather than left to a countdown
@@ -117,12 +140,22 @@ export const identify = (
   // Every row near enough to the instant last agreed on to be the same bus.
   // Not the soonest row: on a line the operator publishes twice, the soonest
   // row is the bus in front of the one this reader is waiting for.
+  // How far the instant may have moved, which is not the same answer in both
+  // directions: a bus may arrive sooner than the last estimate by anything the
+  // silence allows, and may fall behind only by what is credible for a wait
+  // this short — see `laterSlack`.
+  const later = laterSlack(
+    Math.max(0, anchor - now.getTime()),
+    Math.max(0, now.getTime() - follow.taken.getTime()),
+  );
   const near = matches
-    .map((row, index) => ({
-      index,
-      gap: Math.abs(instant(row.time, now).getTime() - anchor),
-    }))
-    .filter((one) => one.gap <= slack)
+    .map((row, index) => {
+      const due = instant(row.time, now).getTime();
+      return { index, due, gap: Math.abs(due - anchor) };
+    })
+    .filter((one) =>
+      one.due > anchor ? one.due - anchor <= later : one.gap <= slack,
+    )
     .sort((a, b) => a.gap - b.gap);
   if (!near.length) return null;
 

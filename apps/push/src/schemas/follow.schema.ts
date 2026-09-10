@@ -64,6 +64,17 @@ export class Follow {
   @Prop({ required: true })
   words: string;
 
+  /**
+   * The words for the one behind it, as last pushed.
+   *
+   * Stored because `agrees` compares it, and a field nothing ever writes is a
+   * comparison that can never match: without this the service disagreed with
+   * itself on every reading and pushed the phone a fresh countdown every half
+   * a minute, for the whole of the wait.
+   */
+  @Prop()
+  nextWords?: string;
+
   /** When that reading was taken. */
   @Prop({ required: true })
   taken: Date;

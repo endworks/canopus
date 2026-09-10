@@ -289,6 +289,7 @@ export class ArrivalsService {
     if (!sent) return;
     follow.anchor = reading.arrival;
     follow.words = reading.words;
+    follow.nextWords = reading.nextWords;
     follow.shown = shownMinutes(reading.arrival, now);
     follow.position = reading.position ?? follow.position;
     follow.taken = now;
@@ -341,6 +342,7 @@ export class ArrivalsService {
     follow.alerted = true;
     follow.anchor = reading.arrival;
     follow.words = reading.words;
+    follow.nextWords = reading.nextWords;
     follow.shown = minutes;
     follow.position = reading.position ?? follow.position;
     follow.taken = now;

@@ -6,7 +6,7 @@ import { PushPlatform } from '@canopus/shared';
  * One departure somebody is standing at a pole waiting for.
  *
  * The shortest-lived thing this service holds, and the only one that costs it
- * anything: while a follow exists its stop is read every fifteen seconds and
+ * anything: while a follow exists its stop is read every half a minute and
  * every change is pushed to the device that asked. It dies three ways — the
  * bus arrives and leaves, the reader stops following, or `expiresAt` passes
  * and Mongo removes it without anybody being asked to.
@@ -67,6 +67,18 @@ export class Follow {
   /** When that reading was taken. */
   @Prop({ required: true })
   taken: Date;
+
+  /**
+   * The number of minutes the reader was last told, as they read it.
+   *
+   * Not derivable from `anchor`: the countdown on the phone ticks by itself,
+   * so the number on the glass changes without anything being sent. This is
+   * what was actually said, and a difference between it and what the board now
+   * means is the definition of "the time changed" — which is when this service
+   * speaks. See `ArrivalsService.answer`.
+   */
+  @Prop()
+  shown?: number;
 
   /** Whether the minute-before nudge has already gone out. */
   @Prop({ default: false })

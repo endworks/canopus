@@ -100,7 +100,7 @@ export class ApnsService implements OnModuleDestroy {
       if (status === 200) return 'sent';
       // 410 is a device that has uninstalled; 400 BadDeviceToken and its
       // relatives are a token that was never good. Both mean stop writing to
-      // this row rather than try again in fifteen seconds.
+      // this row rather than try again on the next sweep.
       if (
         status === 410 ||
         reason === 'BadDeviceToken' ||

@@ -25,12 +25,13 @@ import {
 /**
  * How often a followed stop is read.
  *
- * Fifteen seconds, and not less. The transit service holds a board for ten,
- * the operator publishes whole minutes, and the thing being watched for — a
- * wait that changed — cannot happen faster than the source moves. Below this
- * the extra requests buy nothing and spend somebody else's quota.
+ * Thirty seconds. The operator publishes whole minutes and the transit service
+ * holds a board for ten, so the thing being watched for — a minute that
+ * changed — cannot happen more than twice within one of these, and is caught
+ * within half a minute of happening. Faster reading buys resolution the source
+ * does not have and spends somebody else's quota to do it.
  */
-const CADENCE = 15_000;
+const CADENCE = 30_000;
 
 /** How long before the arrival the phone is nudged. */
 const LEAD = 60_000;
@@ -57,7 +58,7 @@ const ACTIVITY_TOPIC = '.push-type.liveactivity';
 /**
  * The countdowns, kept true.
  *
- * This is the loop the whole push service exists for. Every fifteen seconds it
+ * This is the loop the whole push service exists for. Every half a minute it
  * reads the stops that somebody is actually waiting at — one read per stop, no
  * matter how many people that is — and tells each phone only what has changed
  * for it.
@@ -156,7 +157,7 @@ export class ArrivalsService {
       const now = new Date();
       const board = await this.follows.board(follow.kind, follow.stopId);
       const reading = this.follows.reading(follow, board, now);
-      // Nothing to say yet. The sweep will find it in fifteen seconds, and
+      // Nothing to say yet. The next sweep will find it, and
       // the app is still reading for itself until something arrives.
       if (!reading) return;
       await this.update(follow, reading, now);
@@ -190,10 +191,20 @@ export class ArrivalsService {
       await this.nudge(follow, reading, now);
       return;
     }
-    // Silent while the board says what the phone is showing — but never for
-    // longer than CONFIRM, so a phone that has stopped reading for itself is
-    // told the road still works.
+    // The number on the glass, as the reader reads it. It is what this
+    // service exists to keep true, so it is what decides whether to speak:
+    // every minute it changes, they are told, until the bus is there.
+    //
+    // Not the same question as `agrees`, and both are asked. The phone ticks
+    // its own countdown, so the minutes can change with the board saying
+    // exactly what it said before — and the board can move without the minutes
+    // changing, which is an estimate that slipped inside a minute and is still
+    // worth sending, because the instant behind it is what the phone counts
+    // to. CONFIRM is under both: silence for longer than that is
+    // indistinguishable from a service that has died.
+    const minutes = shownMinutes(reading.arrival, now);
     if (
+      minutes === follow.shown &&
       agrees(follow, reading, now) &&
       now.getTime() - follow.taken.getTime() < CONFIRM
     ) {
@@ -245,6 +256,7 @@ export class ArrivalsService {
     if (!sent) return;
     follow.anchor = reading.arrival;
     follow.words = reading.words;
+    follow.shown = shownMinutes(reading.arrival, now);
     follow.taken = now;
     await follow.save();
   }
@@ -295,6 +307,7 @@ export class ArrivalsService {
     follow.alerted = true;
     follow.anchor = reading.arrival;
     follow.words = reading.words;
+    follow.shown = minutes;
     follow.taken = now;
     await follow.save();
   }
@@ -437,7 +450,7 @@ export class ArrivalsService {
    * The send itself, and what a refusal means.
    *
    * A token Apple calls dead takes its device and its follows with it: the row
-   * is not retried every fifteen seconds for an hour, which is what a registry
+   * is not retried on every sweep for an hour, which is what a registry
    * that never forgets turns into.
    */
   private async deliver(

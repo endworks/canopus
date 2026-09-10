@@ -14,7 +14,7 @@ import { Injectable, Logger } from '@nestjs/common';
  * notification message is drawn by Google's own SDK while the app is in the
  * background, which is exactly the wrong shape here: what Android has to do
  * with an arrival is update the ongoing notification it is already showing,
- * counting down, rather than stack a fresh banner every fifteen seconds. Data
+ * counting down, rather than stack a fresh banner every time it moves. Data
  * means the app decides what to draw.
  *
  * A deployment with no credential is not an error: it says so once and every
@@ -67,7 +67,7 @@ export class FcmService {
    *
    * Answers what should happen to the token, the way the APNs client does:
    * `gone` is Google saying this install no longer exists, which is a row to
-   * delete rather than something to log every fifteen seconds forever.
+   * delete rather than something to log on every sweep forever.
    *
    * The time to live is short on purpose — an arrival held in a queue and
    * delivered four minutes late is worse than one never sent at all.

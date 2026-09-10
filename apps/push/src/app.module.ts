@@ -20,7 +20,7 @@ import { Follow, FollowSchema } from './schemas/follow.schema';
  *
  * It knows two things and does one. It knows which devices exist and what they
  * have agreed to hear about, and it knows which departures somebody is waiting
- * for; what it does is read those stops every fifteen seconds and tell each
+ * for; what it does is read those stops every half a minute and tell each
  * phone the parts that changed.
  *
  * The transit service is a client here rather than a dependency: this asks it

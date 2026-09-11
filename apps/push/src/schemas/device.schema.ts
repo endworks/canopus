@@ -14,7 +14,7 @@ import { PushCategory, PushPlatform } from '@canopus/shared';
  * needed it first. A second app is a second bundle id and a second credential
  * in the environment; it is not a second copy of this.
  */
-@Schema({ timestamps: true, collection: 'push_devices' })
+@Schema({ timestamps: true, collection: 'devices' })
 export class Device {
   @Prop({ required: true, index: true })
   app: string;

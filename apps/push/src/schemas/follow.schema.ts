@@ -15,7 +15,7 @@ import { PushPlatform } from '@canopus/shared';
  * board request and one decision, and what they are told is identical by
  * construction rather than by two anchors happening to agree.
  */
-@Schema({ timestamps: true, collection: 'push_follows' })
+@Schema({ timestamps: true, collection: 'follows' })
 export class Follow {
   /** The bus this phone is waiting for. */
   @Prop({ required: true, index: true })

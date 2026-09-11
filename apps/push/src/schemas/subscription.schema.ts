@@ -20,7 +20,9 @@ import { HydratedDocument } from 'mongoose';
  * reaches the stop, or the hour runs out, the followers are told and both the
  * subscription and every follow of it go together.
  */
-@Schema({ timestamps: true, collection: 'push_subscriptions' })
+// Named for what it holds and nothing else: the database is `push`, so a
+// `push_` on every collection in it was the service's name said twice.
+@Schema({ timestamps: true, collection: 'subscriptions' })
 export class Subscription {
   /** `bus` or `tram`, and the stop as the operator's feed knows it. */
   @Prop({ required: true })

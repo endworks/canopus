@@ -49,6 +49,12 @@ export class PushService {
     );
   }
 
+  announceFollow(payload: { id: string; clientKey?: string }) {
+    return lastValueFrom(
+      this.client.send(PUSH_PATTERNS.announceFollow, payload),
+    );
+  }
+
   unfollow(payload: UnfollowPayload & { clientKey?: string }) {
     return lastValueFrom(this.client.send(PUSH_PATTERNS.unfollow, payload));
   }

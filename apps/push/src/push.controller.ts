@@ -72,6 +72,13 @@ export class PushController {
     return this.follows.refresh(payload);
   }
 
+  @MessagePattern(PUSH_PATTERNS.announceFollow)
+  async announceFollow(@Payload() payload: Authorised<{ id: string }>) {
+    this.keys.assertClient(payload.clientKey);
+    await this.arrivals.announce(payload.id);
+    return { announced: true };
+  }
+
   @MessagePattern(PUSH_PATTERNS.unfollow)
   unfollow(@Payload() payload: Authorised<UnfollowPayload>) {
     this.keys.assertClient(payload.clientKey);

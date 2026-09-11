@@ -26,6 +26,18 @@ const LIFETIME = 60 * 60 * 1000;
 /** What one stop's board looks like coming back from the transit service. */
 interface StationResponse {
   times?: Departure[];
+  /**
+   * Which road it came down: `api` is the operator's own feed, `web` is their
+   * departure board scraped. They do not move at the same rate, which is what
+   * decides how often this service asks again — see `ArrivalsService`.
+   */
+  source?: string;
+}
+
+/** A stop's departures and where they were read from. */
+export interface Board {
+  times: Departure[];
+  source?: string;
 }
 
 @Injectable()
@@ -54,7 +66,7 @@ export class FollowsService {
    * row, which is what every build before this one did.
    */
   async create(payload: FollowPayload): Promise<FollowResponse | null> {
-    const board = await this.board(payload.kind, payload.stopId);
+    const { times: board } = await this.board(payload.kind, payload.stopId);
     const matches = matching(board, payload.line, payload.destination);
     if (!matches.length) return null;
 
@@ -156,7 +168,7 @@ export class FollowsService {
    * hundred people waiting at Plaza España cost the operator one request, and
    * the reading they share is the same one the app's own sheet would get.
    */
-  async board(kind: string, stopId: string): Promise<Departure[]> {
+  async board(kind: string, stopId: string): Promise<Board> {
     const pattern =
       kind === 'tram'
         ? ZARAGOZA_PATTERNS.tramStation
@@ -167,14 +179,14 @@ export class FollowsService {
           .send<StationResponse>(pattern, { id: stopId })
           .pipe(timeout(8000)),
       );
-      return station?.times ?? [];
+      return { times: station?.times ?? [], source: station?.source };
     } catch (error) {
       this.logger.warn(
         `No board for ${kind}:${stopId}: ${(error as Error).message}`,
       );
       // An empty board is not "the bus has gone" — see the poller, which
       // treats a failed read as a reason to say nothing at all.
-      return [];
+      return { times: [] };
     }
   }
 

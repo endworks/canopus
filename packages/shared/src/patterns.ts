@@ -86,6 +86,15 @@ export const PUSH_PATTERNS = {
   follow: 'push/follows/create',
   /** A new Live Activity token for a follow already running. */
   refreshFollow: 'push/follows/refresh',
+  /**
+   * Read this follow's stop now and push what it says.
+   *
+   * What the button on a Lock Screen countdown asks for. The app could read
+   * the board itself, and used to: the reason it does not is that two things
+   * writing one countdown is how a reader ends up watching it jump when they
+   * open the app. Whoever is keeping the countdown is the one who changes it.
+   */
+  announceFollow: 'push/follows/announce',
   /** Stop following. */
   unfollow: 'push/follows/delete',
 } as const;
@@ -181,6 +190,10 @@ export interface RefreshFollowPayload {
 }
 
 export interface UnfollowPayload {
+  id: string;
+}
+
+export interface AnnounceFollowPayload {
   id: string;
 }
 

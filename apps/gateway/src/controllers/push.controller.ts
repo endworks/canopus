@@ -83,6 +83,15 @@ export class PushController {
     });
   }
 
+  /** Read this follow's stop now, and push what it says. */
+  @Post('follows/:id/reading')
+  announceFollow(
+    @Param('id') id: string,
+    @Headers(CLIENT_KEY) clientKey?: string,
+  ) {
+    return this.push.announceFollow({ id, clientKey });
+  }
+
   @Delete('follows/:id')
   unfollow(@Param('id') id: string, @Headers(CLIENT_KEY) clientKey?: string) {
     return this.push.unfollow({ id, clientKey });

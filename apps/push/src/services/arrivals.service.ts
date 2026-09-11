@@ -23,15 +23,31 @@ import {
 } from './tracking';
 
 /**
- * How often a followed stop is read.
+ * How often this loop wakes.
  *
- * Thirty seconds. The operator publishes whole minutes and the transit service
- * holds a board for ten, so the thing being watched for — a minute that
- * changed — cannot happen more than twice within one of these, and is caught
- * within half a minute of happening. Faster reading buys resolution the source
- * does not have and spends somebody else's quota to do it.
+ * Ten seconds, which is the fastest any stop is read — and most are not read
+ * on every tick. What decides that is `intervalFor`.
  */
-const CADENCE = 30_000;
+const CADENCE = 10_000;
+
+/**
+ * How often a stop is read, by the road its board came down.
+ *
+ * The operator serves the same stop two ways and they are not the same thing.
+ * `api` is their own feed: it dates its own answer, it moves as they move, and
+ * the transit service in front of it holds a reading for ten seconds — so
+ * asking every ten is asking exactly as often as there can be something new.
+ * `web` is their departure board scraped out of a page, which is slower to
+ * change and dearer to fetch, and half a minute is as fine as it gets.
+ *
+ * A stop nobody has read yet is assumed to be the slow kind, because guessing
+ * the other way spends somebody else's quota on a guess.
+ */
+const INTERVALS: Record<string, number> = { api: 10_000, web: 30_000 };
+const SLOWEST = 30_000;
+
+const intervalFor = (source?: string): number =>
+  (source && INTERVALS[source]) ?? SLOWEST;
 
 /** How long before the arrival the phone is nudged. */
 const LEAD = 60_000;
@@ -89,6 +105,16 @@ export class ArrivalsService {
   private readonly logger = new Logger(ArrivalsService.name);
   private running = false;
 
+  /**
+   * When each stop was last read, and down which road.
+   *
+   * In memory rather than on the follow, because it belongs to the stop and
+   * not to whoever is waiting at it: a hundred followers of one pole share one
+   * reading and therefore one clock. A restart loses it, which costs one early
+   * read per stop and nothing else.
+   */
+  private readonly lastRead = new Map<string, { at: number; source?: string }>();
+
   constructor(
     private readonly follows: FollowsService,
     private readonly devices: DevicesService,
@@ -134,16 +160,28 @@ export class ArrivalsService {
       byStop.set(key, group);
     }
 
+    // A stop nobody is waiting at any more keeps no clock.
+    for (const key of this.lastRead.keys()) {
+      if (!byStop.has(key)) this.lastRead.delete(key);
+    }
+
     const now = new Date();
     await Promise.all(
       [...byStop.entries()].map(async ([key, group]) => {
+        // Each stop on its own clock, set by the road its board came down:
+        // there is nothing new to find at a scraped board every ten seconds,
+        // and there may be at the operator's own feed.
+        const last = this.lastRead.get(key);
+        if (last && now.getTime() - last.at < intervalFor(last.source)) return;
+
         const [kind, stopId] = key.split(':');
         const board = await this.follows.board(kind, stopId);
+        this.lastRead.set(key, { at: now.getTime(), source: board.source });
         // Nothing came back. Silence is the honest answer: the phone keeps the
-        // last reading, with its own age printed under it.
-        if (!board.length) return;
+        // last reading, and its own countdown goes on ticking.
+        if (!board.times.length) return;
         for (const follow of group) {
-          await this.answer(follow, board, now);
+          await this.answer(follow, board.times, now);
         }
       }),
     );
@@ -172,8 +210,8 @@ export class ArrivalsService {
       const follow = await this.follows.byId(id);
       if (!follow) return;
       const now = new Date();
-      const board = await this.follows.board(follow.kind, follow.stopId);
-      const reading = this.follows.reading(follow, board, now);
+      const { times } = await this.follows.board(follow.kind, follow.stopId);
+      const reading = this.follows.reading(follow, times, now);
       // Nothing to say yet. The next sweep will find it, and
       // the app is still reading for itself until something arrives.
       if (!reading) return;

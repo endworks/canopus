@@ -168,7 +168,11 @@ export const identify = (
   const best = near[0];
   const rival = near[1];
   let tracked = best.index;
-  if (rival && Math.abs(rival.gap - best.gap) < 60_000 && follow.position !== undefined) {
+  if (
+    rival &&
+    Math.abs(rival.gap - best.gap) < 60_000 &&
+    follow.position !== undefined
+  ) {
     const from = follow.position;
     tracked =
       Math.abs(rival.index - from) < Math.abs(best.index - from)

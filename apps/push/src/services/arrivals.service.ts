@@ -113,7 +113,10 @@ export class ArrivalsService {
    * reading and therefore one clock. A restart loses it, which costs one early
    * read per stop and nothing else.
    */
-  private readonly lastRead = new Map<string, { at: number; source?: string }>();
+  private readonly lastRead = new Map<
+    string,
+    { at: number; source?: string }
+  >();
 
   constructor(
     private readonly follows: FollowsService,

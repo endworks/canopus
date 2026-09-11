@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { SwaggerTheme, SwaggerThemeNameEnum } from 'swagger-themes';
 import { RpcResponseInterceptor } from '@canopus/nest';
@@ -20,9 +21,22 @@ const pkg = JSON.parse(
 };
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bufferLogs: true,
+  });
   app.useLogger(app.get(Logger));
-  app.enableCors();
+  // Express stamps `x-powered-by` on every response, which hands scanners a
+  // free fingerprint of the stack.
+  app.disable('x-powered-by');
+  // CORS is enforced by browsers only: native apps, curl and service-to-service
+  // callers send no Origin and are unaffected by this list. CORS_ORIGINS is a
+  // comma-separated list; with none set the API stays open, which is what a
+  // local run wants.
+  const origins = (process.env.CORS_ORIGINS ?? '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  app.enableCors({ origin: origins.length > 0 ? origins : '*' });
   app.useGlobalInterceptors(new RpcResponseInterceptor());
 
   const config = new DocumentBuilder()

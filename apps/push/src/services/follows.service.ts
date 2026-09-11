@@ -34,6 +34,19 @@ interface StationResponse {
   source?: string;
 }
 
+/**
+ * Which pattern reads which kind of stop.
+ *
+ * Written out rather than decided with a ternary, so a kind nobody has taught
+ * this service about is refused rather than quietly read as a bus. A new means
+ * of transport is a line here and a case in `MarkerKind` on the app's side —
+ * everything between the two is already told which kind it is holding.
+ */
+const BOARDS: Record<string, string> = {
+  bus: ZARAGOZA_PATTERNS.busStation,
+  tram: ZARAGOZA_PATTERNS.tramStation,
+};
+
 /** A stop's departures and where they were read from. */
 export interface Board {
   times: Departure[];
@@ -169,10 +182,16 @@ export class FollowsService {
    * the reading they share is the same one the app's own sheet would get.
    */
   async board(kind: string, stopId: string): Promise<Board> {
-    const pattern =
-      kind === 'tram'
-        ? ZARAGOZA_PATTERNS.tramStation
-        : ZARAGOZA_PATTERNS.busStation;
+    const pattern = BOARDS[kind];
+    // A kind this service has no board for. Today that is a bike dock or a
+    // cinema, neither of which has a departure to follow; tomorrow it is
+    // whatever the city adds next, and the old spelling of this — anything
+    // that is not a tram is a bus — would have answered a question about
+    // trains with a list of buses and told nobody.
+    if (!pattern) {
+      this.logger.warn(`Nothing to read for a ${kind} stop; not following it.`);
+      return { times: [] };
+    }
     try {
       const station = await firstValueFrom(
         this.zaragoza

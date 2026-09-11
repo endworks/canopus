@@ -118,7 +118,15 @@ export class FollowsService {
     if (!subscription) {
       const { times: board } = await this.board(payload.kind, payload.stopId);
       const matches = matching(board, payload.line, payload.destination);
-      if (!matches.length) return null;
+      if (!matches.length) {
+        // Silent until now, and it is one of the two ways a reader taps a bell
+        // and watches nothing happen: this end read the stop and found no such
+        // departure on it.
+        this.logger.warn(
+          `No ${payload.line} to ${payload.destination} at ${payload.kind}:${payload.stopId}; not following it.`,
+        );
+        return null;
+      }
 
       const picked = payload.anchor
         ? identify(
@@ -136,7 +144,16 @@ export class FollowsService {
       // the app read the board. Refused rather than quietly followed on the
       // soonest row: this end would then be pushing a countdown for a bus
       // nobody asked about, and the app keeps its own.
-      if (payload.anchor && !picked) return null;
+      if (payload.anchor && !picked) {
+        // And the other way: the departure is there, but not the one they
+        // tapped — it went in the seconds between their board and this one.
+        // Logged with what each side saw, because the alternative is somebody
+        // reading an empty collection and guessing.
+        this.logger.warn(
+          `The ${payload.line} due at ${new Date(payload.anchor * 1000).toISOString()} is not on ${payload.kind}:${payload.stopId} any more (${matches.map((row) => row.time).join(', ')}); not following it.`,
+        );
+        return null;
+      }
 
       subscription = await this.subscriptions.create({
         kind: payload.kind,
@@ -166,6 +183,9 @@ export class FollowsService {
       activityToken: payload.activityToken,
       locale: payload.locale,
     });
+    this.logger.log(
+      `${payload.platform} is following the ${subscription.line} to ${subscription.destination} at ${subscription.stopKey}, due ${subscription.anchor.toISOString()}.`,
+    );
     return {
       id: follow.id as string,
       expiresAt: subscription.endsAt.toISOString(),

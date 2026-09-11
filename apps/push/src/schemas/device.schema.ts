@@ -69,3 +69,10 @@ export class Device {
 
 export type DeviceDocument = HydratedDocument<Device>;
 export const DeviceSchema = SchemaFactory.createForClass(Device);
+
+// A day after the platform called it dead, and then it goes. The comment on
+// `retiredAt` has always said "kept for a day"; nothing made that true, so a
+// registry that only ever grew was holding every token any phone has ever
+// retired. A device that comes back inside the day is recognised — `register`
+// clears the mark — and one that does not was never coming back.
+DeviceSchema.index({ retiredAt: 1 }, { expireAfterSeconds: 24 * 60 * 60 });

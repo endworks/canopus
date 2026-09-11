@@ -23,6 +23,17 @@ import { Departure, identify, instant, matching } from './tracking';
  */
 const LIFETIME = 60 * 60 * 1000;
 
+/**
+ * How long after that Mongo is allowed to take the row.
+ *
+ * The TTL index used to fire at the same instant the sweep was watching for,
+ * and the two raced: a row Mongo won was a follow that ended without the phone
+ * being told, leaving a countdown on a Lock Screen with nothing behind it.
+ * Five minutes hands the service the first go and leaves the index as what it
+ * was meant to be — the thing that cleans up after a crash.
+ */
+const GRACE = 5 * 60 * 1000;
+
 /** What one stop's board looks like coming back from the transit service. */
 interface StationResponse {
   times?: Departure[];
@@ -124,11 +135,12 @@ export class FollowsService {
       nextWords: picked?.nextWords,
       position: picked?.position,
       taken: now,
-      expiresAt: new Date(now.getTime() + LIFETIME),
+      endsAt: new Date(now.getTime() + LIFETIME),
+      expiresAt: new Date(now.getTime() + LIFETIME + GRACE),
     });
     return {
       id: follow.id as string,
-      expiresAt: follow.expiresAt.toISOString(),
+      expiresAt: follow.endsAt.toISOString(),
     };
   }
 
@@ -161,7 +173,7 @@ export class FollowsService {
 
   /** Every follow still worth reading a board for. */
   live(): Promise<FollowDocument[]> {
-    return this.follows.find({ expiresAt: { $gt: new Date() } }).exec();
+    return this.follows.find({ endsAt: { $gt: new Date() } }).exec();
   }
 
   /**
@@ -171,7 +183,7 @@ export class FollowsService {
    * vanishes leaves a countdown on somebody's phone with nothing behind it.
    */
   expired(): Promise<FollowDocument[]> {
-    return this.follows.find({ expiresAt: { $lte: new Date() } }).exec();
+    return this.follows.find({ endsAt: { $lte: new Date() } }).exec();
   }
 
   /**

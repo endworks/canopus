@@ -131,9 +131,23 @@ export class Follow {
   alerted: boolean;
 
   /**
-   * The far end of it. An hour is longer than any wait this app is for, and
-   * the TTL index below is what makes a crash mid-journey cost nothing: the
-   * rows clean themselves up whether or not this service ever runs again.
+   * When this service stops watching. An hour, which is longer than any wait
+   * this app is for.
+   *
+   * The sweep ends these out loud — the phone is told, and the row goes — so
+   * this is the ordinary way a forgotten follow dies, rather than a row
+   * vanishing under a countdown somebody is still looking at.
+   */
+  @Prop({ required: true })
+  endsAt: Date;
+
+  /**
+   * When Mongo drops the row whatever this service is doing.
+   *
+   * The backstop, and deliberately later than `endsAt`: the TTL monitor and
+   * the sweep were racing for the same moment, and a row Mongo won was a
+   * countdown nobody was ever told about. Five minutes is more than the sweep
+   * needs and nothing to a row that is already over.
    */
   @Prop({ required: true })
   expiresAt: Date;
@@ -142,7 +156,8 @@ export class Follow {
 export type FollowDocument = HydratedDocument<Follow>;
 export const FollowSchema = SchemaFactory.createForClass(Follow);
 
-// Mongo removes the row the moment it is due; nothing sweeps.
+// Mongo removes the row five minutes after this service should have, which
+// is what makes it a backstop rather than a competitor. See `expiresAt`.
 FollowSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 // The poller's own read: every live follow, grouped by the stop it watches.
 FollowSchema.index({ stopId: 1, kind: 1 });

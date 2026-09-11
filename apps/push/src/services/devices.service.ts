@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import {
@@ -29,6 +29,8 @@ const known = (categories: string[]): PushCategory[] =>
  */
 @Injectable()
 export class DevicesService {
+  private readonly logger = new Logger(DevicesService.name);
+
   constructor(
     @InjectModel(Device.name) private readonly devices: Model<DeviceDocument>,
   ) {}
@@ -95,10 +97,31 @@ export class DevicesService {
     return { categories: wanted };
   }
 
-  /** Whether this device has agreed to hear about this kind of thing. */
+  /**
+   * Whether this device has agreed to hear about this kind of thing.
+   *
+   * A row that says nothing about a category has not agreed to it, and that is
+   * the right answer for the two that are marketing: they are things somebody
+   * at this end decided to send, and silence is a no.
+   *
+   * `arrivals` is not one of those, and a MISSING ROW is not a refusal. It is
+   * a registration that did not land — no address yet, a gateway that was
+   * down, an entitlement the app shipped without — and treating it as a no
+   * meant the one notification this whole service exists for was dropped
+   * without a word, while the countdown it belongs to kept updating perfectly.
+   * Following a bus is asking to be told when it arrives; where there is no
+   * row to say otherwise, that stands.
+   */
   async accepts(token: string, category: PushCategory): Promise<boolean> {
     const device = await this.devices.findOne({ token, retiredAt: null });
-    return device?.categories.includes(category) ?? false;
+    if (!device) {
+      if (category !== 'arrivals') return false;
+      this.logger.warn(
+        'A followed departure has no device row; ringing for the arrival anyway.',
+      );
+      return true;
+    }
+    return device.categories.includes(category);
   }
 
   /** The reader turned everything off, or the app was deleted. */

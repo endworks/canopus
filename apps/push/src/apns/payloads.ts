@@ -65,9 +65,29 @@ export const updatePayload = (
     event: 'update',
     'content-state': state,
     'stale-date': state.arrival + 120,
-    ...(alert ? { alert } : {}),
+    // A bus a minute away is the definition of the thing Apple made this
+    // level for: it is worth a Focus interrupting for, and worth nothing at
+    // all an hour later. Only where there is something to say out loud — an
+    // ordinary update moves a number and must never make a sound.
+    ...(alert ? { alert, 'interruption-level': 'time-sensitive' } : {}),
+    // Where this countdown sits against the reader's other Live Activities.
+    // The one whose bus is nearest is the one that should be on top.
+    'relevance-score': relevance(state),
   },
 });
+
+/**
+ * How much this banner matters against the reader's other ones, 0 to 100.
+ *
+ * The nearer the bus, the higher: a departure two minutes away outranks one
+ * twenty minutes away, and an ending outranks both because it is the last
+ * thing anybody needs to see about it.
+ */
+const relevance = (state: ContentState): number => {
+  if (state.arrived || state.gone) return 100;
+  const minutes = Math.max(0, (state.arrival - epoch(new Date())) / 60);
+  return Math.round(Math.max(1, 99 - minutes));
+};
 
 /**
  * The end of one.
@@ -85,14 +105,28 @@ export const endPayload = (
     event: 'end',
     'content-state': state,
     'dismissal-date': epoch(new Date()) + 120,
-    ...(alert ? { alert } : {}),
+    // The bus is here. If this carries a sound at all it is because the
+    // reader never got the minute-before nudge, which makes it the last
+    // chance to tell them and the most time-sensitive thing this service
+    // sends.
+    ...(alert ? { alert, 'interruption-level': 'time-sensitive' } : {}),
   },
 });
 
-/** An ordinary notification, for a device with no activity to update. */
+/**
+ * An ordinary notification, for a device with no activity to update.
+ *
+ * Time sensitive, and this is the one place in this service where that claim
+ * is plainly true: it is sent about a minute before a bus reaches a pole
+ * somebody is standing at, it is useless a few minutes later, and a Focus that
+ * held it back until the evening would be holding back the only thing the
+ * reader asked for. The app carries the entitlement that lets it be honoured.
+ */
 export const alertPayload = (title: string, body: string) => ({
   aps: {
     alert: { title, body },
     sound: 'default',
+    'interruption-level': 'time-sensitive',
+    'relevance-score': 100,
   },
 });

@@ -35,7 +35,19 @@ import { Follow, FollowSchema } from './schemas/follow.schema';
       validate: (config) =>
         requireEnv(config, ['MONGODB_URI', 'ZARAGOZA_SERVICE_HOST']),
     }),
-    MongooseModule.forRoot(process.env.MONGODB_URI as string),
+    // Its own database, named after itself the way `zine` and `zaragoza` are.
+    // Without this it takes whatever the connection string defaults to, which
+    // is `test` — so a registry of real devices and the departures people are
+    // waiting for has been sitting in the database nobody is supposed to keep
+    // anything in.
+    //
+    // Nothing is migrated and nothing needs to be: a device re-registers the
+    // next time the app comes forward, and no follow outlives the hour. What
+    // is left behind in `test` is two collections that will never be read
+    // again and can be dropped by hand.
+    MongooseModule.forRoot(process.env.MONGODB_URI as string, {
+      dbName: 'push',
+    }),
     MongooseModule.forFeature([
       { name: Device.name, schema: DeviceSchema },
       { name: Follow.name, schema: FollowSchema },

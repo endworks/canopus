@@ -14,14 +14,20 @@ import { FollowsService } from './services/follows.service';
 import { ArrivalsService } from './services/arrivals.service';
 import { Device, DeviceSchema } from './schemas/device.schema';
 import { Follow, FollowSchema } from './schemas/follow.schema';
+import {
+  Subscription,
+  SubscriptionSchema,
+} from './schemas/subscription.schema';
 
 /**
  * The push service.
  *
- * It knows two things and does one. It knows which devices exist and what they
- * have agreed to hear about, and it knows which departures somebody is waiting
- * for; what it does is read those stops every half a minute and tell each
- * phone the parts that changed.
+ * It knows three things and does one. Which devices exist and what they have
+ * agreed to hear about; which departures are being watched — one row per bus,
+ * however many people are waiting for it; and which phone is waiting behind
+ * which. What it does is read those stops every half a minute and tell every
+ * phone behind a bus the parts that changed, in the same words at the same
+ * moment.
  *
  * The transit service is a client here rather than a dependency: this asks it
  * for a board over the same wire the gateway does, through its own ten-second
@@ -51,6 +57,7 @@ import { Follow, FollowSchema } from './schemas/follow.schema';
     MongooseModule.forFeature([
       { name: Device.name, schema: DeviceSchema },
       { name: Follow.name, schema: FollowSchema },
+      { name: Subscription.name, schema: SubscriptionSchema },
     ]),
     ScheduleModule.forRoot(),
     ClientsModule.register([

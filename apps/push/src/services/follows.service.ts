@@ -12,14 +12,19 @@ import {
   ZARAGOZA_PATTERNS,
 } from '@canopus/shared';
 import { Follow, FollowDocument } from '../schemas/follow.schema';
+import {
+  Subscription,
+  SubscriptionDocument,
+} from '../schemas/subscription.schema';
 import { Departure, identify, instant, matching } from './tracking';
 
 /**
- * How long a follow may live at the outside.
+ * How long a bus is watched at the outside.
  *
  * An hour is longer than any wait this app is for. It is not the normal end —
  * that is the bus arriving — it is the backstop that makes a crash cost
- * nothing: Mongo drops the row whether or not this service ever runs again.
+ * nothing: the rows clean themselves up whether or not this service ever runs
+ * again.
  */
 const LIFETIME = 60 * 60 * 1000;
 
@@ -27,10 +32,10 @@ const LIFETIME = 60 * 60 * 1000;
  * How long after that Mongo is allowed to take the row.
  *
  * The TTL index used to fire at the same instant the sweep was watching for,
- * and the two raced: a row Mongo won was a follow that ended without the phone
- * being told, leaving a countdown on a Lock Screen with nothing behind it.
- * Five minutes hands the service the first go and leaves the index as what it
- * was meant to be — the thing that cleans up after a crash.
+ * and the two raced: a row Mongo won ended without the phone being told,
+ * leaving a countdown on a Lock Screen with nothing behind it. Five minutes
+ * hands the service the first go and leaves the index as what it was meant to
+ * be — the thing that cleans up after a crash.
  */
 const GRACE = 5 * 60 * 1000;
 
@@ -64,93 +69,138 @@ export interface Board {
   source?: string;
 }
 
+/**
+ * How near an existing subscription's instant a new follower has to be for it
+ * to be the same bus.
+ *
+ * Ninety seconds. Two people tapping the same departure a minute apart read
+ * boards that disagree slightly — one saw `4 min.`, the other `3 min.` — and
+ * they are waiting for one bus, which should be watched once. Wider than this
+ * and a line running every two minutes starts pooling two departures into one.
+ */
+const SAME_BUS = 90_000;
+
 @Injectable()
 export class FollowsService {
   private readonly logger = new Logger(FollowsService.name);
 
   constructor(
     @InjectModel(Follow.name) private readonly follows: Model<FollowDocument>,
+    @InjectModel(Subscription.name)
+    private readonly subscriptions: Model<SubscriptionDocument>,
     @Inject(SERVICE_TOKENS.zaragoza) private readonly zaragoza: ClientProxy,
   ) {}
 
   /**
-   * Take on a departure.
+   * Take a departure on, for this phone.
    *
-   * The board is read once here rather than trusted from the caller: the app
-   * sends which departure it is following, and this end decides what that
-   * means — which bus, when, and what is behind it. From this moment the phone
-   * is told things rather than asking for them.
+   * Two rows, and which of them is made depends on whether anybody is already
+   * waiting for this bus. The subscription is the bus — read once, decided
+   * once, told to everybody — and the follow is this phone's place behind it.
+   * Somebody tapping a departure another reader already follows costs no board
+   * request at all.
    *
-   * Which departure, though, is the caller's to say. The operator publishes
-   * two of each line, and a reader standing at the pole watching the first one
-   * pull out is waiting for the second; nothing in a board read here can tell
-   * which of the two they tapped. So the app sends the instant its row was due
-   * and this finds that bus on its own reading — the same rule the poller uses
-   * from then on. A caller that sends no anchor is followed on the soonest
-   * row, which is what every build before this one did.
+   * Which departure is the caller's to say: the operator publishes two of each
+   * line, a reader at the pole watching the first pull out is waiting for the
+   * second, and nothing in a board read at this end can tell those apart. So
+   * the app sends the instant its row was due and this finds that bus on its
+   * own reading — the same rule the poller uses from then on.
    */
   async create(payload: FollowPayload): Promise<FollowResponse | null> {
-    const { times: board } = await this.board(payload.kind, payload.stopId);
-    const matches = matching(board, payload.line, payload.destination);
-    if (!matches.length) return null;
-
     const now = new Date();
-    const picked = payload.anchor
-      ? identify(
-          board,
-          {
-            line: payload.line,
-            destination: payload.destination,
-            anchor: new Date(payload.anchor * 1000),
-            taken: now,
-          },
-          now,
-        )
+
+    // Already watched? Then this is one more phone behind a bus this service
+    // is reading every half minute anyway.
+    let subscription = payload.anchor
+      ? await this.watching(payload, new Date(payload.anchor * 1000))
       : null;
-    // An anchor that matches nothing is a bus that has already gone in the
-    // seconds since the app read the board. Refused rather than quietly
-    // followed on the soonest row: this end would then be pushing a countdown
-    // for a bus nobody asked about, and the app keeps its own — which is what
-    // a refusal here means, not an error anybody sees.
-    if (payload.anchor && !picked) return null;
-    const words = picked?.words ?? matches[0].time;
-    const anchor = picked?.arrival ?? instant(matches[0].time, now);
-    // One at a time per device, like the Lock Screen it draws on: a second
-    // follow from the same phone replaces the first rather than joining it.
-    await this.follows.deleteMany({ token: payload.token });
+
+    if (!subscription) {
+      const { times: board } = await this.board(payload.kind, payload.stopId);
+      const matches = matching(board, payload.line, payload.destination);
+      if (!matches.length) return null;
+
+      const picked = payload.anchor
+        ? identify(
+            board,
+            {
+              line: payload.line,
+              destination: payload.destination,
+              anchor: new Date(payload.anchor * 1000),
+              taken: now,
+            },
+            now,
+          )
+        : null;
+      // An anchor that matches nothing is a bus that went in the seconds since
+      // the app read the board. Refused rather than quietly followed on the
+      // soonest row: this end would then be pushing a countdown for a bus
+      // nobody asked about, and the app keeps its own.
+      if (payload.anchor && !picked) return null;
+
+      subscription = await this.subscriptions.create({
+        kind: payload.kind,
+        stopId: payload.stopId,
+        stopKey: payload.stopKey,
+        stopName: payload.stopName,
+        line: payload.line,
+        destination: payload.destination,
+        anchor: picked?.arrival ?? instant(matches[0].time, now),
+        words: picked?.words ?? matches[0].time,
+        nextWords: picked?.nextWords,
+        position: picked?.position,
+        taken: now,
+        endsAt: new Date(now.getTime() + LIFETIME),
+        expiresAt: new Date(now.getTime() + LIFETIME + GRACE),
+      });
+    }
+
+    // One departure per phone, like the Lock Screen it draws on: a second
+    // follow from the same device replaces the first rather than joining it.
+    await this.unfollowToken(payload.token);
     const follow = await this.follows.create({
+      subscription: subscription.id,
       app: payload.app,
       platform: payload.platform,
       token: payload.token,
       activityToken: payload.activityToken,
-      kind: payload.kind,
-      stopId: payload.stopId,
-      stopKey: payload.stopKey,
-      stopName: payload.stopName,
-      line: payload.line,
-      destination: payload.destination,
       locale: payload.locale,
-      anchor,
-      words,
-      nextWords: picked?.nextWords,
-      position: picked?.position,
-      taken: now,
-      endsAt: new Date(now.getTime() + LIFETIME),
-      expiresAt: new Date(now.getTime() + LIFETIME + GRACE),
     });
     return {
       id: follow.id as string,
-      expiresAt: follow.endsAt.toISOString(),
+      expiresAt: subscription.endsAt.toISOString(),
     };
   }
 
   /**
-   * A new activity token for a follow already running.
+   * The bus somebody is asking to follow, where this service already watches it.
    *
-   * ActivityKit rotates these while an activity lives, and a push to the old
-   * one goes nowhere — so this is not an optimisation, it is what keeps a
-   * countdown alive past its first few minutes.
+   * Matched on when it is due rather than on anything the operator calls it,
+   * because they call it nothing — and within a minute and a half, because two
+   * people tapping one departure a minute apart read boards that disagree
+   * slightly and are still waiting for one bus.
    */
+  private async watching(
+    payload: FollowPayload,
+    anchor: Date,
+  ): Promise<SubscriptionDocument | null> {
+    const near = await this.subscriptions
+      .find({
+        stopId: payload.stopId,
+        kind: payload.kind,
+        line: payload.line,
+        destination: payload.destination,
+        endsAt: { $gt: new Date() },
+      })
+      .exec();
+    return (
+      near.find(
+        (one) => Math.abs(one.anchor.getTime() - anchor.getTime()) <= SAME_BUS,
+      ) ?? null
+    );
+  }
+
+  /** A new activity token for a banner already being pushed to. */
   async refresh(
     payload: RefreshFollowPayload,
   ): Promise<{ refreshed: boolean }> {
@@ -161,9 +211,40 @@ export class FollowsService {
     return { refreshed: result.matchedCount > 0 };
   }
 
+  /**
+   * One reader stops following.
+   *
+   * The bus goes on being watched while somebody else is waiting for it, and
+   * stops being watched the moment nobody is: a subscription with no followers
+   * is a board request nobody asked for.
+   */
   async remove(payload: UnfollowPayload): Promise<{ removed: boolean }> {
-    const result = await this.follows.deleteOne({ _id: payload.id });
-    return { removed: result.deletedCount > 0 };
+    const follow = await this.follows.findById(payload.id).exec();
+    if (!follow) return { removed: false };
+    await follow.deleteOne();
+    await this.prune(follow.subscription.toString());
+    return { removed: true };
+  }
+
+  /** Everything this device was having watched for it. */
+  async removeForToken(token: string): Promise<number> {
+    return this.unfollowToken(token);
+  }
+
+  private async unfollowToken(token: string): Promise<number> {
+    const going = await this.follows.find({ token }).exec();
+    if (!going.length) return 0;
+    await this.follows.deleteMany({ token });
+    for (const follow of going) {
+      await this.prune(follow.subscription.toString());
+    }
+    return going.length;
+  }
+
+  /** A bus nobody is waiting for any more is a bus nobody reads for. */
+  private async prune(subscription: string): Promise<void> {
+    const left = await this.follows.countDocuments({ subscription });
+    if (left === 0) await this.subscriptions.deleteOne({ _id: subscription });
   }
 
   /** One follow, by the id the app was handed. */
@@ -171,19 +252,50 @@ export class FollowsService {
     return this.follows.findById(id).exec();
   }
 
-  /** Every follow still worth reading a board for. */
-  live(): Promise<FollowDocument[]> {
-    return this.follows.find({ endsAt: { $gt: new Date() } }).exec();
+  /** The bus a follow is waiting for. */
+  subscriptionOf(follow: FollowDocument): Promise<SubscriptionDocument | null> {
+    return this.subscriptions.findById(follow.subscription).exec();
+  }
+
+  /** Every phone waiting for this bus. */
+  followersOf(subscription: SubscriptionDocument): Promise<FollowDocument[]> {
+    return this.follows.find({ subscription: subscription.id }).exec();
+  }
+
+  /** Every bus still worth reading a board for. */
+  live(): Promise<SubscriptionDocument[]> {
+    return this.subscriptions.find({ endsAt: { $gt: new Date() } }).exec();
   }
 
   /**
    * The ones whose hour is up.
    *
-   * They are ended rather than left to the TTL index: a row that simply
+   * Ended out loud rather than left to the TTL index: a row that simply
    * vanishes leaves a countdown on somebody's phone with nothing behind it.
    */
-  expired(): Promise<FollowDocument[]> {
-    return this.follows.find({ endsAt: { $lte: new Date() } }).exec();
+  expired(): Promise<SubscriptionDocument[]> {
+    return this.subscriptions.find({ endsAt: { $lte: new Date() } }).exec();
+  }
+
+  /** The bus and everybody waiting for it, gone together. */
+  async close(subscription: SubscriptionDocument): Promise<void> {
+    await this.follows.deleteMany({ subscription: subscription.id });
+    await subscription.deleteOne();
+  }
+
+  /** Which bus on this board is the one this subscription is watching. */
+  reading(subscription: SubscriptionDocument, board: Departure[], now: Date) {
+    return identify(
+      board,
+      {
+        line: subscription.line,
+        destination: subscription.destination,
+        anchor: subscription.anchor,
+        taken: subscription.taken,
+        position: subscription.position,
+      },
+      now,
+    );
   }
 
   /**
@@ -219,33 +331,5 @@ export class FollowsService {
       // treats a failed read as a reason to say nothing at all.
       return { times: [] };
     }
-  }
-
-  /** Which bus on this board is the one that follow is watching. */
-  reading(follow: FollowDocument, board: Departure[], now: Date) {
-    return identify(
-      board,
-      {
-        line: follow.line,
-        destination: follow.destination,
-        anchor: follow.anchor,
-        taken: follow.taken,
-        position: follow.position,
-      },
-      now,
-    );
-  }
-
-  /**
-   * Everything this device was having watched for it.
-   *
-   * Called when the device itself goes — the reader turned notifications off,
-   * or the platform said the token is dead. Without it the poller would go on
-   * reading a stop every half a minute for an hour, to push a countdown at an
-   * address nobody is listening to.
-   */
-  async removeForToken(token: string): Promise<number> {
-    const result = await this.follows.deleteMany({ token });
-    return result.deletedCount ?? 0;
   }
 }

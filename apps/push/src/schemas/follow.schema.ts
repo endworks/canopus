@@ -1,22 +1,27 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument } from 'mongoose';
+import { HydratedDocument, Types } from 'mongoose';
 import { PushPlatform } from '@canopus/shared';
 
 /**
- * One departure somebody is standing at a pole waiting for.
+ * One phone waiting for one bus.
  *
- * The shortest-lived thing this service holds, and the only one that costs it
- * anything: while a follow exists its stop is read every half a minute and
- * every change is pushed to the device that asked. It dies three ways — the
- * bus arrives and leaves, the reader stops following, or `expiresAt` passes
- * and Mongo removes it without anybody being asked to.
+ * Everything about the bus — when it is due, what the operator called it, what
+ * is behind it — belongs to the `Subscription` this points at, because it is
+ * the same for everybody waiting. What is left here is what differs between
+ * two people at one pole: which phone, which banner on it, which language, and
+ * whether this one has already been rung at.
  *
- * `anchor` and `words` are the last thing said to the device. They are what
- * the next reading is compared against, so that a board which has not changed
- * costs one comparison rather than one push.
+ * That split is the whole point. A hundred followers of one departure are one
+ * board request and one decision, and what they are told is identical by
+ * construction rather than by two anchors happening to agree.
  */
 @Schema({ timestamps: true, collection: 'push_follows' })
 export class Follow {
+  /** The bus this phone is waiting for. */
+  @Prop({ required: true, index: true })
+  subscription: Types.ObjectId;
+
+  /** One service, several apps: this is which one is speaking. */
   @Prop({ required: true, index: true })
   app: string;
 
@@ -28,136 +33,33 @@ export class Follow {
   token: string;
 
   /**
-   * The Live Activity's push token. Addressed at the activity rather than the
+   * The Live Activity's push token. Addressed at the banner rather than the
    * phone, and rotated by ActivityKit while it runs — see `refreshFollow`.
    */
   @Prop()
   activityToken?: string;
 
-  @Prop({ required: true })
-  kind: string;
-
-  /** What the operator's feed is asked about, and what the client calls it. */
-  @Prop({ required: true, index: true })
-  stopId: string;
-
-  @Prop({ required: true })
-  stopKey: string;
-
-  @Prop({ required: true })
-  stopName: string;
-
-  @Prop({ required: true })
-  line: string;
-
-  @Prop({ required: true })
-  destination: string;
-
+  /** The words this phone wants, which is the app's language and not the OS's. */
   @Prop()
   locale?: string;
 
-  /** When the bus this is following is expected, as last pushed. */
-  @Prop({ required: true })
-  anchor: Date;
-
-  /** The operator's own words for that wait, as last pushed. */
-  @Prop({ required: true })
-  words: string;
-
   /**
-   * The words for the one behind it, as last pushed.
+   * Whether the minute-before nudge has already rung here.
    *
-   * Stored because `agrees` compares it, and a field nothing ever writes is a
-   * comparison that can never match: without this the service disagreed with
-   * itself on every reading and pushed the phone a fresh countdown every half
-   * a minute, for the whole of the wait.
+   * The one decision that stays personal. Everything else about this bus is
+   * decided once for everybody; a phone that has already been rung must not
+   * ring again because somebody else joined the same wait a minute later.
    */
-  @Prop()
-  nextWords?: string;
-
-  /** When that reading was taken. */
-  @Prop({ required: true })
-  taken: Date;
-
-  /**
-   * The number of minutes the reader was last told, as they read it.
-   *
-   * Not derivable from `anchor`: the countdown on the phone ticks by itself,
-   * so the number on the glass changes without anything being sent. This is
-   * what was actually said, and a difference between it and what the board now
-   * means is the definition of "the time changed" — which is when this service
-   * speaks. See `ArrivalsService.answer`.
-   */
-  @Prop()
-  shown?: number;
-
-  /**
-   * Where this bus sat in its line's list when last read.
-   *
-   * Only ever a tiebreak: two departures of one line minutes apart are told
-   * apart by when they are due, and this is what settles the case where they
-   * are seconds apart and that cannot. It moves down as the buses in front of
-   * it leave — the second becomes the first — which is why it is stored rather
-   * than assumed constant.
-   */
-  @Prop()
-  position?: number;
-
-  /**
-   * How many times the last word has been attempted and not landed.
-   *
-   * Every other reading is followed by another half a minute later; the one
-   * that says the bus arrived or went is the last, and a phone that misses it
-   * keeps a countdown to a bus it is already standing on. So it is retried a
-   * few times before the row is let go. See ENDINGS.
-   */
-  @Prop({ default: 0 })
-  attempts?: number;
-
-  /**
-   * Whether the last thing said was that it is coming in.
-   *
-   * What tells an arrival from a departure when the row disappears: a vehicle
-   * that was pulling in and is now off the board arrived, and one that was
-   * four minutes away and is now off the board was overtaken by the reading.
-   * It matters most on the tram, whose board never says `En parada` and simply
-   * counts to nought and stops listing it.
-   */
-  @Prop({ default: false })
-  arriving?: boolean;
-
-  /** Whether the minute-before nudge has already gone out. */
   @Prop({ default: false })
   alerted: boolean;
 
-  /**
-   * When this service stops watching. An hour, which is longer than any wait
-   * this app is for.
-   *
-   * The sweep ends these out loud — the phone is told, and the row goes — so
-   * this is the ordinary way a forgotten follow dies, rather than a row
-   * vanishing under a countdown somebody is still looking at.
-   */
-  @Prop({ required: true })
-  endsAt: Date;
-
-  /**
-   * When Mongo drops the row whatever this service is doing.
-   *
-   * The backstop, and deliberately later than `endsAt`: the TTL monitor and
-   * the sweep were racing for the same moment, and a row Mongo won was a
-   * countdown nobody was ever told about. Five minutes is more than the sweep
-   * needs and nothing to a row that is already over.
-   */
-  @Prop({ required: true })
-  expiresAt: Date;
+  /** How many times an ending has been attempted at this phone and not landed. */
+  @Prop({ default: 0 })
+  attempts?: number;
 }
 
 export type FollowDocument = HydratedDocument<Follow>;
 export const FollowSchema = SchemaFactory.createForClass(Follow);
 
-// Mongo removes the row five minutes after this service should have, which
-// is what makes it a backstop rather than a competitor. See `expiresAt`.
-FollowSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
-// The poller's own read: every live follow, grouped by the stop it watches.
-FollowSchema.index({ stopId: 1, kind: 1 });
+// One phone follows one departure at a time, like the Lock Screen it draws on.
+FollowSchema.index({ token: 1 }, { unique: true });

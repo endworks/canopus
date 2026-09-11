@@ -1,7 +1,7 @@
 import {
   agrees,
   Departure,
-  hasArrived,
+  isArriving,
   identify,
   minutesUntilDeparture,
   shownMinutes,
@@ -221,21 +221,64 @@ describe('identify', () => {
   });
 });
 
-describe('hasArrived', () => {
+describe('isArriving', () => {
   it('is the words with no number in them', () => {
-    // A bus standing at the pole is the thing the reader was waiting for, and
-    // the end of the follow rather than a stage of it.
-    expect(hasArrived('En parada')).toBe(true);
-    expect(hasArrived('Sin estimación')).toBe(true);
+    // A bus standing at the pole. The tram has no such wording at all, which
+    // is why this asks about the number rather than about the words.
+    expect(isArriving('En parada')).toBe(true);
+    expect(isArriving('Sin estimación')).toBe(true);
   });
 
   it('is a countdown that has reached nought', () => {
-    expect(hasArrived('0 min.')).toBe(true);
+    expect(isArriving('0 min.')).toBe(true);
   });
 
   it('is not a bus that is still coming', () => {
-    expect(hasArrived('1 min.')).toBe(false);
-    expect(hasArrived('12 min.')).toBe(false);
+    expect(isArriving('1 min.')).toBe(false);
+    expect(isArriving('12 min.')).toBe(false);
+  });
+
+  it('does not depend on a wording the tram never uses', () => {
+    // A tram counts to nought and then the row goes; it never prints
+    // `En parada`. So nought is the vehicle coming in, and the row
+    // disappearing afterwards is the arrival — see `answerLost`.
+    expect(isArriving('0 min.')).toBe(true);
+  });
+});
+
+describe('the limit of one vehicle', () => {
+  const now = new Date('2026-09-11T08:00:00Z');
+  const follow = {
+    line: '21',
+    destination: 'Rosales',
+    anchor: at(now, 1),
+    taken: now,
+  };
+
+  it('refuses a leap of four minutes on a bus that was nearly here', () => {
+    // One minute becomes five: that is the next one. The reader's was pulling
+    // in and has gone, which `answerLost` reads as the arrival it was.
+    expect(
+      identify(board(['21', 'Rosales', '5 min.']), follow, at(now, 0.5)),
+    ).toBeNull();
+  });
+
+  it('holds a bus that slipped inside the limit', () => {
+    // Two minutes late on a wait of ten is an estimate moving, not a
+    // different vehicle: the cap is two minutes and the silence buys the rest.
+    const patient = { ...follow, anchor: at(now, 10), taken: now };
+    expect(
+      identify(board(['21', 'Rosales', '12 min.']), patient, at(now, 0.5)),
+    ).not.toBeNull();
+  });
+
+  it('refuses a leap past the cap however long the wait', () => {
+    // Ten minutes becomes twenty on a fresh reading. Nothing loses ten
+    // minutes in thirty seconds; that is the one behind it.
+    const patient = { ...follow, anchor: at(now, 10), taken: now };
+    expect(
+      identify(board(['21', 'Rosales', '20 min.']), patient, at(now, 0.5)),
+    ).toBeNull();
   });
 });
 

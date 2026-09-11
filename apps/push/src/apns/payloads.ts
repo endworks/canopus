@@ -32,6 +32,14 @@ export interface ContentState {
    * it". Both end the follow.
    */
   arrived: boolean;
+  /**
+   * The vehicle is coming in — nought minutes, or standing at the pole.
+   *
+   * A stage rather than an ending: the countdown stays up, saying so, until
+   * the board stops listing it. That is the only arrival a tram ever
+   * announces, since its board has no at-the-stop wording of its own.
+   */
+  arriving: boolean;
 }
 
 export const contentState = (
@@ -39,6 +47,7 @@ export const contentState = (
   taken: Date,
   gone = false,
   arrived = false,
+  arriving = false,
 ): ContentState => ({
   arrival: epoch(reading.arrival),
   words: reading.words,
@@ -47,6 +56,7 @@ export const contentState = (
   nextWords: reading.nextWords,
   gone,
   arrived,
+  arriving,
 });
 
 /**

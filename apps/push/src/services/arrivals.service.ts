@@ -15,7 +15,7 @@ import { FollowsService } from './follows.service';
 import {
   agrees,
   Departure,
-  hasArrived,
+  isArriving,
   instant,
   matching,
   Reading,
@@ -281,15 +281,16 @@ export class ArrivalsService {
     }
 
     for (const { reading, follows: waiting } of buses.values()) {
-      // Here. The last thing worth saying about this bus, and it is said to
-      // everybody at once: they are all getting on it.
-      if (hasArrived(reading.words)) {
-        for (const follow of waiting) await this.arrive(follow, reading, now);
-        continue;
-      }
+      // Coming in. Told to everybody waiting for it, and the follow lives on:
+      // this is the moment they are standing there for, not the end of it.
+      // The end is the board dropping the row, which is `answerLost`.
+      const arriving = isArriving(reading.words);
       // One decision for the bus: if it has anything to say to any of them,
       // it says it to all of them, so nobody is left a minute behind.
-      const speak = waiting.some((follow) => this.moved(follow, reading, now));
+      const speak = waiting.some(
+        (follow) =>
+          this.moved(follow, reading, now) || arriving !== follow.arriving,
+      );
       for (const follow of waiting) {
         // The minute-before nudge is the exception, and it is per phone: a
         // wait that has not changed still crosses the one-minute mark, and a
@@ -301,7 +302,7 @@ export class ArrivalsService {
           await this.nudge(follow, reading, now);
           continue;
         }
-        if (speak) await this.update(follow, reading, now);
+        if (speak) await this.update(follow, reading, now, arriving);
       }
     }
   }
@@ -342,8 +343,14 @@ export class ArrivalsService {
     board: Departure[],
     now: Date,
   ): Promise<void> {
+    // It came. Two ways of knowing, and the first is the one that matters on
+    // a network with no at-the-stop wording: the last thing this reader was
+    // told was a minute or less, or it was already pulling in — and then the
+    // row went. That is a vehicle that arrived and left, however far the next
+    // one has leapt ahead.
+    const close = follow.arriving || (follow.shown ?? Infinity) <= 1;
     const due = follow.anchor.getTime() - now.getTime();
-    if (due <= ARRIVING && due > -ARRIVING) {
+    if (close || (due <= ARRIVING && due > -ARRIVING)) {
       await this.arrive(
         follow,
         { arrival: follow.anchor, words: follow.words },
@@ -403,8 +410,9 @@ export class ArrivalsService {
     follow: FollowDocument,
     reading: Reading,
     now: Date,
+    arriving = false,
   ): Promise<void> {
-    const state = contentState(reading, now);
+    const state = contentState(reading, now, false, false, arriving);
     const sent =
       follow.platform === 'android'
         ? await this.pushData(follow, state)
@@ -415,6 +423,7 @@ export class ArrivalsService {
     follow.nextWords = reading.nextWords;
     follow.shown = shownMinutes(reading.arrival, now);
     follow.position = reading.position ?? follow.position;
+    follow.arriving = arriving;
     follow.taken = now;
     await follow.save();
   }
@@ -582,6 +591,7 @@ export class ArrivalsService {
       taken: String(state.taken),
       gone: String(state.gone),
       arrived: String(state.arrived),
+      arriving: String(state.arriving),
     };
     if (state.next !== undefined) data.next = String(state.next);
     if (state.nextWords) data.nextWords = state.nextWords;

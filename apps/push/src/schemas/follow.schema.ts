@@ -114,6 +114,18 @@ export class Follow {
   @Prop({ default: 0 })
   attempts?: number;
 
+  /**
+   * Whether the last thing said was that it is coming in.
+   *
+   * What tells an arrival from a departure when the row disappears: a vehicle
+   * that was pulling in and is now off the board arrived, and one that was
+   * four minutes away and is now off the board was overtaken by the reading.
+   * It matters most on the tram, whose board never says `En parada` and simply
+   * counts to nought and stops listing it.
+   */
+  @Prop({ default: false })
+  arriving?: boolean;
+
   /** Whether the minute-before nudge has already gone out. */
   @Prop({ default: false })
   alerted: boolean;

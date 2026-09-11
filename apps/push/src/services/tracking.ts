@@ -102,8 +102,9 @@ export const slackFor = (since: number): number => Math.max(120_000, since / 2);
  * a wait that never ends and a reader who never gets told their bus came.
  *
  * So the tolerance shrinks with the wait: a third of what is left, floored at
- * half a minute so an estimate may always wobble, capped at two minutes
- * because that is the drift these readings have at any distance.
+ * half a minute so an estimate may always wobble, capped at three — which is
+ * the width of a vehicle running late that these boards actually produce, and
+ * a minute short of the gap at which a reader would call it the next one.
  *
  * And then the silence is added on top, at the same half-a-clock rate as
  * `slackFor`, because the two cases are told apart by exactly that. A bus four
@@ -112,7 +113,7 @@ export const slackFor = (since: number): number => Math.max(120_000, since / 2);
  * ago and the phone was in somebody's pocket for all of them.
  */
 export const laterSlack = (remaining: number, since: number): number =>
-  Math.max(30_000, Math.min(120_000, remaining / 3)) + since / 2;
+  Math.max(30_000, Math.min(180_000, remaining / 3)) + since / 2;
 
 /**
  * The followed bus in this board, or null if it is no longer on it.
@@ -193,19 +194,20 @@ export const identify = (
 };
 
 /**
- * Whether this reading is the bus arriving.
+ * Whether this reading is the vehicle coming in.
  *
- * Two ways the operator says it and both mean the wait is over: words with no
- * number in them — `En parada`, a bus standing at the pole — and a countdown
- * that has reached nought. Said in terms of the words rather than in Spanish,
- * so a change of wording at the operator's end cannot quietly stop this
- * working.
+ * Nought minutes, or words with no number in them at all — `En parada`, a bus
+ * standing at the pole. Said in terms of the number rather than in Spanish,
+ * because only one of the two networks here has an at-the-stop wording: the
+ * tram never prints one, and counts down to nought and disappears. A rule
+ * written around `En parada` would work for buses and quietly never fire for
+ * trams, and the same is true of whatever the city runs next.
  *
- * It is the end of a follow, not a stage of one. What somebody following a bus
- * asked for was to be told when it gets there; once it has, every further push
- * is about a bus they are on.
+ * This is a stage of a follow and not its end. The vehicle is pulling in,
+ * which is the thing the reader is standing there waiting to see; it ends when
+ * the board stops listing it, which is `arrived` — see `answerLost`.
  */
-export const hasArrived = (words: string): boolean =>
+export const isArriving = (words: string): boolean =>
   (minutesUntilDeparture(words) ?? 0) === 0;
 
 /**

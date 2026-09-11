@@ -53,6 +53,15 @@ const intervalFor = (source?: string): number =>
 const LEAD = 60_000;
 
 /**
+ * How many times the last word is attempted before the row is let go.
+ *
+ * Three sweeps, which is half a minute of a network being briefly unreachable
+ * — and after that, silence is better than a service holding a row open for
+ * an hour to say one thing to a phone that is not listening.
+ */
+const ENDINGS = 3;
+
+/**
  * How near its own arrival a departure has to be for vanishing to mean it
  * arrived rather than that it was lost.
  *
@@ -183,9 +192,7 @@ export class ArrivalsService {
         // Nothing came back. Silence is the honest answer: the phone keeps the
         // last reading, and its own countdown goes on ticking.
         if (!board.times.length) return;
-        for (const follow of group) {
-          await this.answer(follow, board.times, now);
-        }
+        await this.answerStop(group, board.times, now);
       }),
     );
   }
@@ -224,67 +231,127 @@ export class ArrivalsService {
     }
   }
 
-  /** What this board means for one phone. */
-  private async answer(
+  /**
+   * What this board means for everybody waiting at this stop.
+   *
+   * Grouped by the bus rather than by the phone, which is the whole point.
+   * Two people at one pole waiting for the same 21 are waiting for one thing,
+   * and this service used to decide for each of them separately: one board,
+   * one row, two decisions — and two countdowns that could differ, because
+   * their anchors were set seconds apart and each crossed the minute boundary
+   * on a different sweep, or one had heard from us more recently than the
+   * other. An iPhone and an Android phone at the same pole showed different
+   * numbers for the same bus, which is the report that led here.
+   *
+   * So the row is read once and, if anybody following it needs telling,
+   * everybody following it is told — in the same words, in the same sweep.
+   * The nudge stays personal, because `alerted` is a thing that has happened
+   * to one phone and ringing a second time is not made better by company.
+   */
+  private async answerStop(
+    follows: FollowDocument[],
+    board: Departure[],
+    now: Date,
+  ): Promise<void> {
+    // Keyed by where the bus sits on this board, which is the one name two
+    // followers of one departure are guaranteed to agree on.
+    const buses = new Map<
+      string,
+      { reading: Reading; follows: FollowDocument[] }
+    >();
+    const lost: FollowDocument[] = [];
+
+    for (const follow of follows) {
+      const reading = this.follows.reading(follow, board, now);
+      if (!reading) {
+        lost.push(follow);
+        continue;
+      }
+      const key = `${follow.line}|${follow.destination}|${reading.position ?? -1}`;
+      const bus = buses.get(key);
+      if (bus) bus.follows.push(follow);
+      else buses.set(key, { reading, follows: [follow] });
+    }
+
+    // A bus nobody can find on the board any more. Each of these is its own
+    // question — whether it arrived or went depends on where that phone's own
+    // countdown had got to — so they are answered one at a time.
+    for (const follow of lost) {
+      await this.answerLost(follow, board, now);
+    }
+
+    for (const { reading, follows: waiting } of buses.values()) {
+      // Here. The last thing worth saying about this bus, and it is said to
+      // everybody at once: they are all getting on it.
+      if (hasArrived(reading.words)) {
+        for (const follow of waiting) await this.arrive(follow, reading, now);
+        continue;
+      }
+      // One decision for the bus: if it has anything to say to any of them,
+      // it says it to all of them, so nobody is left a minute behind.
+      const speak = waiting.some((follow) => this.moved(follow, reading, now));
+      for (const follow of waiting) {
+        // The minute-before nudge is the exception, and it is per phone: a
+        // wait that has not changed still crosses the one-minute mark, and a
+        // phone that has already rung must not ring again.
+        if (
+          !follow.alerted &&
+          reading.arrival.getTime() - now.getTime() <= LEAD
+        ) {
+          await this.nudge(follow, reading, now);
+          continue;
+        }
+        if (speak) await this.update(follow, reading, now);
+      }
+    }
+  }
+
+  /**
+   * Whether this reading says anything this phone has not been told.
+   *
+   * The number on the glass, as the reader reads it, is what this service
+   * exists to keep true — so it is what decides whether to speak: every minute
+   * it changes, they are told, until the bus is there.
+   *
+   * Not the same question as `agrees`, and both are asked. The phone ticks its
+   * own countdown, so the minutes can change with the board saying exactly
+   * what it said before; and the board can move without the minutes changing,
+   * which is an estimate that slipped inside a minute and is still worth
+   * sending, because the instant behind it is what the phone counts to.
+   * CONFIRM is under both: silence for longer than that is indistinguishable
+   * from a service that has died.
+   */
+  private moved(follow: FollowDocument, reading: Reading, now: Date): boolean {
+    if (shownMinutes(reading.arrival, now) !== follow.shown) return true;
+    if (!agrees(follow, reading, now)) return true;
+    return now.getTime() - follow.taken.getTime() >= CONFIRM;
+  }
+
+  /**
+   * A follow whose bus is no longer on the board.
+   *
+   * Which of the two endings that is depends on where its own countdown had
+   * got to: a bus that disappears while it was still four minutes away was
+   * overtaken by the next reading and is gone, and one that disappears as it
+   * was due has arrived — many boards drop a departure at the stop rather than
+   * ever printing `En parada`. Saying "departed" to somebody watching their
+   * bus pull in is the one mistake here that would send them home.
+   */
+  private async answerLost(
     follow: FollowDocument,
     board: Departure[],
     now: Date,
   ): Promise<void> {
-    const reading = this.follows.reading(follow, board, now);
-    if (!reading) {
-      // Off the board. Which of the two endings that is depends on where its
-      // own countdown had got to: a bus that disappears while it was still
-      // four minutes away was overtaken by the next reading and is gone, and
-      // one that disappears as it was due has arrived — many boards drop a
-      // departure at the stop rather than ever printing `En parada`. Saying
-      // "departed" to somebody watching their bus pull in is the one mistake
-      // here that would send them home.
-      const due = follow.anchor.getTime() - now.getTime();
-      if (due <= ARRIVING && due > -ARRIVING) {
-        await this.arrive(
-          follow,
-          { arrival: follow.anchor, words: follow.words },
-          now,
-        );
-        return;
-      }
-      await this.end(follow, board, now);
+    const due = follow.anchor.getTime() - now.getTime();
+    if (due <= ARRIVING && due > -ARRIVING) {
+      await this.arrive(
+        follow,
+        { arrival: follow.anchor, words: follow.words },
+        now,
+      );
       return;
     }
-    // Here. The last thing worth saying about this bus, and then the follow
-    // goes: what is read after this is a bus the reader is sitting on, and
-    // nothing about it belongs on their Lock Screen.
-    if (hasArrived(reading.words)) {
-      await this.arrive(follow, reading, now);
-      return;
-    }
-    // The minute-before nudge, before the agreement check: a wait that has not
-    // changed still crosses the one-minute mark, and that is the moment this
-    // whole feature was asked for.
-    if (!follow.alerted && reading.arrival.getTime() - now.getTime() <= LEAD) {
-      await this.nudge(follow, reading, now);
-      return;
-    }
-    // The number on the glass, as the reader reads it. It is what this
-    // service exists to keep true, so it is what decides whether to speak:
-    // every minute it changes, they are told, until the bus is there.
-    //
-    // Not the same question as `agrees`, and both are asked. The phone ticks
-    // its own countdown, so the minutes can change with the board saying
-    // exactly what it said before — and the board can move without the minutes
-    // changing, which is an estimate that slipped inside a minute and is still
-    // worth sending, because the instant behind it is what the phone counts
-    // to. CONFIRM is under both: silence for longer than that is
-    // indistinguishable from a service that has died.
-    const minutes = shownMinutes(reading.arrival, now);
-    if (
-      minutes === follow.shown &&
-      agrees(follow, reading, now) &&
-      now.getTime() - follow.taken.getTime() < CONFIRM
-    ) {
-      return;
-    }
-    await this.update(follow, reading, now);
+    await this.end(follow, board, now);
   }
 
   /**
@@ -307,12 +374,27 @@ export class ArrivalsService {
       !follow.alerted && (await this.devices.accepts(follow.token, 'arrivals'))
         ? { title: follow.stopName, body: this.words(follow, 0) }
         : undefined;
-    if (follow.platform === 'android') {
-      await this.pushData(follow, state, alert ? { alert } : {});
-    } else if (follow.activityToken) {
-      await this.pushActivity(follow, endPayload(state, alert));
-    } else if (alert) {
-      await this.notifyDevice(follow, alertPayload(alert.title, alert.body));
+    const sent =
+      follow.platform === 'android'
+        ? await this.pushData(follow, state, alert ? { alert } : {})
+        : follow.activityToken
+          ? await this.pushActivity(follow, endPayload(state, alert))
+          : alert
+            ? await this.notifyDevice(
+                follow,
+                alertPayload(alert.title, alert.body),
+              )
+            : true;
+    // The one push that cannot simply be missed. Every other reading is
+    // followed by another thirty seconds later; this one is the last word, and
+    // a phone that does not get it keeps a countdown to a bus it is already
+    // standing on. So a failed send leaves the row for the next sweep to try
+    // again — the board will have stopped listing the bus by then, which
+    // `answerLost` reads as the arrival it was.
+    if (!sent && (follow.attempts ?? 0) < ENDINGS) {
+      follow.attempts = (follow.attempts ?? 0) + 1;
+      await follow.save();
+      return;
     }
     await this.follows.remove({ id: follow.id as string });
   }
@@ -417,10 +499,14 @@ export class ArrivalsService {
       true,
     );
 
-    if (follow.platform === 'android') {
-      await this.pushData(follow, state);
-    } else {
-      await this.pushActivity(follow, endPayload(state));
+    const sent =
+      follow.platform === 'android'
+        ? await this.pushData(follow, state)
+        : await this.pushActivity(follow, endPayload(state));
+    if (!sent && (follow.attempts ?? 0) < ENDINGS) {
+      follow.attempts = (follow.attempts ?? 0) + 1;
+      await follow.save();
+      return;
     }
     await this.follows.remove({ id: follow.id as string });
   }

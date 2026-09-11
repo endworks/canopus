@@ -103,6 +103,17 @@ export class Follow {
   @Prop()
   position?: number;
 
+  /**
+   * How many times the last word has been attempted and not landed.
+   *
+   * Every other reading is followed by another half a minute later; the one
+   * that says the bus arrived or went is the last, and a phone that misses it
+   * keeps a countdown to a bus it is already standing on. So it is retried a
+   * few times before the row is let go. See ENDINGS.
+   */
+  @Prop({ default: 0 })
+  attempts?: number;
+
   /** Whether the minute-before nudge has already gone out. */
   @Prop({ default: false })
   alerted: boolean;

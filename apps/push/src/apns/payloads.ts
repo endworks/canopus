@@ -132,11 +132,23 @@ export interface Attributes {
  * decides there is a countdown at all. `attributes-type` is the Swift type's
  * own name and has to stay spelled as the app spells it, because ActivityKit
  * matches on the string and a miss is silent.
+ *
+ * The alert is not optional here, and that is the whole of why this took a day
+ * to find. Raising a banner on somebody's Lock Screen is a thing done TO a
+ * reader, so iOS will only do it for a push that is itself user-visible: a
+ * start carrying no `alert` is accepted by APNs, answered 200, and then dropped
+ * on the device without a word to either end. The minute-before nudge carried
+ * one and worked; every start sent when the reader tapped follow carried none
+ * and vanished.
+ *
+ * `interruption-level` stays with the caller. The nudge is worth breaking a
+ * Focus for and the first frame of a countdown somebody just asked for is not.
  */
 export const startPayload = (
   attributes: Attributes,
   state: ContentState,
-  alert?: { title: string; body: string },
+  alert: { title: string; body: string },
+  timeSensitive = false,
 ) => ({
   aps: {
     timestamp: epoch(new Date()),
@@ -146,7 +158,8 @@ export const startPayload = (
     'content-state': state,
     'stale-date': state.taken + FRESH,
     'relevance-score': relevance(state),
-    ...(alert ? { alert, 'interruption-level': 'time-sensitive' } : {}),
+    alert,
+    ...(timeSensitive ? { 'interruption-level': 'time-sensitive' } : {}),
   },
 });
 

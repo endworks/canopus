@@ -633,6 +633,7 @@ export class ArrivalsService {
           follow,
           state,
           allowed ? alert : undefined,
+          allowed,
         )) ||
         (allowed &&
           (await this.notifyDevice(
@@ -699,6 +700,27 @@ export class ArrivalsService {
     await this.follows.unrang(follow, moment);
   }
 
+  /**
+   * What a banner says as it goes up, when nothing else has anything to say.
+   *
+   * Every push-to-start has to carry an alert or iOS discards it, so there is
+   * no such thing as a silent one — and a reader who has just tapped follow is
+   * owed a sentence naming what they followed rather than whatever the last
+   * caller happened to be sending.
+   */
+  private raised(
+    subscription: SubscriptionDocument,
+    follow: FollowDocument,
+  ): { title: string; body: string } {
+    const spanish = (follow.locale ?? 'es').startsWith('es');
+    return {
+      title: subscription.stopName,
+      body: spanish
+        ? `Siguiendo la línea ${subscription.line} hacia ${subscription.destination}`
+        : `Following line ${subscription.line} to ${subscription.destination}`,
+    };
+  }
+
   /** Whether this phone has agreed to be rung at about arrivals. */
   private rings(follow: FollowDocument): Promise<boolean> {
     return this.devices.accepts(follow.token, 'arrivals');
@@ -753,6 +775,7 @@ export class ArrivalsService {
     follow: FollowDocument,
     state: ReturnType<typeof contentState>,
     alert?: { title: string; body: string },
+    timeSensitive = false,
   ): Promise<boolean> {
     if (follow.platform !== ('ios' as PushPlatform)) return false;
     const token = await this.devices.pushToStartToken(follow.token);
@@ -783,7 +806,10 @@ export class ArrivalsService {
           destination: subscription.destination,
         },
         state,
-        alert,
+        // A start with nothing to say is a start iOS throws away, so where
+        // there is no sentence to carry it says which departure went up.
+        alert ?? this.raised(subscription, follow),
+        timeSensitive,
       ),
       {
         pushType: 'liveactivity',

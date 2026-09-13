@@ -75,6 +75,23 @@ export class Follow {
   @Prop({ type: [String], default: [] })
   rung: string[];
 
+  /**
+   * Whether a banner has already been raised on this phone for this departure.
+   *
+   * Push-to-start addresses the *kind* of activity, so there is nothing in a
+   * start push that says "the one already on screen" — send a second and iOS
+   * is being asked to start another. It is also rate-limited, and a service
+   * that re-sent a start on every changed estimate spent that allowance in a
+   * couple of minutes, after which no banner appeared at all and only the
+   * alerts riding on them did.
+   *
+   * Cleared by nothing: a follow is one departure on one phone, and the banner
+   * for it goes up once. Updating it afterwards needs the activity's own token,
+   * which the app reports back through `refreshFollow`.
+   */
+  @Prop({ default: false })
+  started?: boolean;
+
   /** How many times an ending has been attempted at this phone and not landed. */
   @Prop({ default: 0 })
   attempts?: number;

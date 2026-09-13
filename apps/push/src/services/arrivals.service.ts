@@ -811,6 +811,12 @@ export class ArrivalsService {
     timeSensitive = false,
   ): Promise<boolean> {
     if (follow.platform !== ('ios' as PushPlatform)) return false;
+    // Raised once. A second start is not an update — it asks iOS to begin
+    // another activity of the same kind — and the allowance for them is small
+    // enough that a service re-sending one per changed estimate stops being
+    // able to raise any at all. What keeps a banner current afterwards is its
+    // own token, which the app reports through `refreshFollow`.
+    if (follow.started) return false;
     const token = await this.devices.pushToStartToken(follow.token);
     // Said out loud rather than shrugged off. A banner that never appears looks
     // identical from the phone whether this end had nothing to address, or
@@ -853,6 +859,8 @@ export class ArrivalsService {
       },
     );
     if (raised) {
+      follow.started = true;
+      await this.follows.started(follow);
       // Said even though it worked. A banner Apple accepts and iOS then throws
       // away — a `content-state` it cannot decode, an `attributes-type` it does
       // not know — looks from here exactly like one that was never asked for,

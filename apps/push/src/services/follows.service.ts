@@ -214,6 +214,14 @@ export class FollowsService {
     );
   }
 
+  /** Written down that a banner is up on this phone, so a second is not asked for. */
+  async started(follow: FollowDocument): Promise<void> {
+    await this.follows.updateOne(
+      { _id: follow.id },
+      { $set: { started: true } },
+    );
+  }
+
   /** And that it did not, once the departure it warned about has moved back out. */
   async unrang(follow: FollowDocument, moment: string): Promise<void> {
     await this.follows.updateOne(
@@ -257,6 +265,14 @@ export class FollowsService {
     const result = await this.follows.updateOne(
       { _id: payload.id },
       { $set: { activityToken: payload.activityToken } },
+    );
+    // The one call that turns a banner this service raised into one it can
+    // keep: until it arrives there is no address for the activity itself, only
+    // for the kind of it.
+    this.logger.log(
+      `A phone reported the token of a banner it is showing (${payload.id}): ${
+        result.matchedCount ? 'recorded' : 'no such follow'
+      }.`,
     );
     return { refreshed: result.matchedCount > 0 };
   }

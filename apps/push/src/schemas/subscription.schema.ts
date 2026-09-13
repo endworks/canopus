@@ -97,6 +97,22 @@ export class Subscription {
   @Prop({ default: 0 })
   attempts?: number;
 
+  /**
+   * How many readings in a row have not found this bus on its board.
+   *
+   * These boards drop a row for one refresh and put it back — an operator
+   * re-estimating, a scrape that came down mid-write — and a row missing once
+   * is not a bus that has gone. It was treated as one: a single miss ended the
+   * watch, rang `gone` at everybody waiting, and left a reader looking at
+   * "Ha salido" while the board in the app beside it said the bus was a minute
+   * away.
+   *
+   * Reset by the next reading that finds it, so only a real disappearance —
+   * several in a row — is believed.
+   */
+  @Prop({ default: 0 })
+  missed?: number;
+
   /** When this service stops watching, whatever else happens. */
   @Prop({ required: true })
   endsAt: Date;

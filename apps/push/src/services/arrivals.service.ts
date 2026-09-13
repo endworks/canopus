@@ -101,6 +101,20 @@ const ENDINGS = 3;
 const ARRIVING = 90_000;
 
 /**
+ * How many readings in a row must fail to find a bus before it is called gone.
+ *
+ * One is not enough, and one is what it used to be. These boards drop a row for
+ * a single refresh — the operator re-estimating, a scrape caught mid-write —
+ * and the row is back on the next one; ending the watch on the first miss rang
+ * `gone` at a reader whose bus was a minute away and still listed.
+ *
+ * Only the `gone` judgement waits. A bus that vanishes while it was already
+ * pulling in has arrived, and that is the one ending nobody can afford to have
+ * held back — see `answer`.
+ */
+const LOST = 3;
+
+/**
  * How long a phone may go without hearing anything before it is told again.
  *
  * Every other push here is a disagreement, and agreement is the ordinary case:
@@ -315,8 +329,27 @@ export class ArrivalsService {
   ): Promise<void> {
     const reading = this.follows.reading(subscription, board, now);
     if (!reading) {
+      // Gone is the judgement worth waiting to make. Arrived is not: a row that
+      // disappears while it was already a minute out or pulling in is a bus at
+      // the pole, and holding that back is the one mistake that sends somebody
+      // home.
+      const here =
+        subscription.arriving || (subscription.shown ?? Infinity) <= 1;
+      const missed = (subscription.missed ?? 0) + 1;
+      if (!here && missed < LOST) {
+        subscription.missed = missed;
+        await subscription.save();
+        this.logger.log(
+          `The ${subscription.line} to ${subscription.destination} was not on its board (${missed} of ${LOST}); giving it another reading.`,
+        );
+        return;
+      }
       await this.answerLost(subscription, board, now);
       return;
+    }
+    if (subscription.missed) {
+      subscription.missed = 0;
+      await subscription.save();
     }
 
     const waiting = await this.follows.followersOf(subscription);

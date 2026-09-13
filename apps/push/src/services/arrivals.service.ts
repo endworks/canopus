@@ -792,7 +792,16 @@ export class ArrivalsService {
         collapseId: follow.id as string,
       },
     );
-    if (!raised) {
+    if (raised) {
+      // Said even though it worked. A banner Apple accepts and iOS then throws
+      // away — a `content-state` it cannot decode, an `attributes-type` it does
+      // not know — looks from here exactly like one that was never asked for,
+      // and from the phone exactly like one that was refused. Success logging
+      // nothing is what made those three the same thing.
+      this.logger.log(
+        `Apple took a banner for ${follow.subscription.toString()}; if none appears the phone discarded it.`,
+      );
+    } else {
       this.logger.warn(
         `Apple would not raise a banner for ${follow.subscription.toString()}; falling back to a notification.`,
       );

@@ -59,6 +59,11 @@ export class Follow {
    *
    * It is also what stops the ending's three retry sweeps from ringing a phone
    * that heard the first one.
+   *
+   * The minute's warning is taken back out of here when the departure moves
+   * genuinely back out (`REARM`): these estimates go backwards, and a bus that
+   * slips to three minutes and returns to one is worth warning about again. The
+   * two endings are never taken out — each happens once and closes the watch.
    */
   @Prop({ type: [String], default: [] })
   rung: string[];

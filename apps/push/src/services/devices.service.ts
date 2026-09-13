@@ -124,7 +124,6 @@ export class DevicesService {
     return device.categories.includes(category);
   }
 
-  /** The reader turned everything off, or the app was deleted. */
   /**
    * The token that can raise a Live Activity on this phone, if it has one.
    *
@@ -137,6 +136,7 @@ export class DevicesService {
     return device?.pushToStartToken;
   }
 
+  /** The reader turned everything off, or the app was deleted. */
   async forget(payload: ForgetDevicePayload): Promise<{ forgotten: boolean }> {
     const result = await this.devices.deleteOne({
       app: payload.app,

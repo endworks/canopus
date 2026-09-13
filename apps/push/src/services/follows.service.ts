@@ -193,6 +193,28 @@ export class FollowsService {
   }
 
   /**
+   * Written down that a moment has rung at this phone.
+   *
+   * `$addToSet` rather than reading the document and saving it back: two sweeps
+   * that reach the same ending together then cannot lose one another's write,
+   * and a retry that rings nothing adds nothing.
+   */
+  async rang(follow: FollowDocument, moment: string): Promise<void> {
+    await this.follows.updateOne(
+      { _id: follow.id },
+      { $addToSet: { rung: moment } },
+    );
+  }
+
+  /** And that it did not, once the departure it warned about has moved back out. */
+  async unrang(follow: FollowDocument, moment: string): Promise<void> {
+    await this.follows.updateOne(
+      { _id: follow.id },
+      { $pull: { rung: moment } },
+    );
+  }
+
+  /**
    * The bus somebody is asking to follow, where this service already watches it.
    *
    * Matched on when it is due rather than on anything the operator calls it,

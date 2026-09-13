@@ -51,7 +51,6 @@ const SLOWEST = 30_000;
 const intervalFor = (source?: string): number =>
   (source && INTERVALS[source]) ?? SLOWEST;
 
-/** How long before the arrival the phone is nudged. */
 /**
  * The three sentences this service ever says out loud.
  *
@@ -59,13 +58,29 @@ const intervalFor = (source?: string): number =>
  * writes its own words for them. These are the words a push has to carry
  * itself, because a notification carries text and not a key.
  */
-type Moment = 'arriving' | 'arrived' | 'gone';
+export type Moment = 'arriving' | 'arrived' | 'gone';
 
 /** Whether this phone has already been rung at about that moment. */
 const rungAt = (follow: FollowDocument, moment: Moment): boolean =>
   (follow.rung ?? []).includes(moment);
 
+/** How long before the arrival the phone is nudged. */
 const LEAD = 60_000;
+
+/**
+ * How far back out a departure has to move before the minute's warning is worth
+ * making again.
+ *
+ * These estimates go backwards. A bus a minute away that hits traffic is three
+ * minutes away a sweep later, and then a minute away again — and the second
+ * minute is as worth hearing about as the first, because it is the one the
+ * reader will actually walk out on. Ringing once per follow got that wrong.
+ *
+ * Above `LEAD` rather than equal to it so that a reading wobbling either side of
+ * sixty seconds rings once and not on every sweep: the departure has to have
+ * genuinely gone away again, not merely jittered.
+ */
+const REARM = 180_000;
 
 /**
  * How many times the last word is attempted before the row is let go.
@@ -292,11 +307,13 @@ export class ArrivalsService {
       this.moved(subscription, reading, now) ||
       arriving !== subscription.arriving;
 
+    const wait = reading.arrival.getTime() - now.getTime();
     for (const follow of waiting) {
-      if (
-        !rungAt(follow, 'arriving') &&
-        reading.arrival.getTime() - now.getTime() <= LEAD
-      ) {
+      // The bus went away again, so the warning is worth making again.
+      if (wait > REARM && rungAt(follow, 'arriving')) {
+        await this.unrang(follow, 'arriving');
+      }
+      if (!rungAt(follow, 'arriving') && wait <= LEAD) {
         await this.nudge(subscription, follow, reading, now);
         continue;
       }
@@ -441,22 +458,7 @@ export class ArrivalsService {
               body: this.words(subscription, follow, moment),
             }
           : undefined;
-      const sent =
-        follow.platform === 'android'
-          ? await this.pushData(
-              subscription,
-              follow,
-              state,
-              alert ? { alert } : {},
-            )
-          : follow.activityToken
-            ? await this.pushActivity(follow, endPayload(state, alert))
-            : alert
-              ? await this.notifyDevice(
-                  follow,
-                  alertPayload(alert.title, alert.body),
-                )
-              : true;
+      const sent = await this.sendEnding(subscription, follow, state, alert);
       if (!sent) missed = true;
       else if (alert) await this.rang(follow, moment);
     }
@@ -583,7 +585,9 @@ export class ArrivalsService {
     minutes = 1,
   ): string {
     const spanish = (follow.locale ?? 'es').startsWith('es');
-    const line = `${subscription.line} ${subscription.destination}`;
+    const line = spanish
+      ? `${subscription.line} hacia ${subscription.destination}`
+      : `${subscription.line} to ${subscription.destination}`;
     if (moment === 'gone') {
       return spanish
         ? `La línea ${line} ha salido de la parada`
@@ -607,7 +611,19 @@ export class ArrivalsService {
   /** Written down at the phone it rang at, so a retry does not ring it again. */
   private async rang(follow: FollowDocument, moment: Moment): Promise<void> {
     follow.rung = [...(follow.rung ?? []), moment];
-    await follow.save();
+    await this.follows.rang(follow, moment);
+  }
+
+  /**
+   * Forget that a moment rang, so it can ring again.
+   *
+   * Only ever the minute's warning: the two endings happen once to a departure
+   * and close the watch behind them, so there is nothing left for them to ring
+   * a second time about.
+   */
+  private async unrang(follow: FollowDocument, moment: Moment): Promise<void> {
+    follow.rung = (follow.rung ?? []).filter((rung) => rung !== moment);
+    await this.follows.unrang(follow, moment);
   }
 
   /** Whether this phone has agreed to be rung at about arrivals. */
@@ -622,6 +638,34 @@ export class ArrivalsService {
    * screen without the app being involved, which is the one thing the client
    * could never do for itself.
    */
+  /**
+   * The last word, by whatever route this phone can still be reached.
+   *
+   * A banner this service raised itself can only be ended once the phone has
+   * reported the activity's own token back — push-to-start addresses the *kind*
+   * of activity and nothing else, so there is no way to end one from here
+   * without it. The app reports it (`watchActivities`), `refreshFollow` records
+   * it, and the ending then goes out as an ordinary activity push. A phone that
+   * never reports one keeps a banner until its `stale-date` takes it down, and
+   * hears the ending as a plain notification.
+   */
+  private async sendEnding(
+    subscription: SubscriptionDocument,
+    follow: FollowDocument,
+    state: ReturnType<typeof contentState>,
+    alert?: { title: string; body: string },
+  ): Promise<boolean> {
+    if (follow.platform === 'android') {
+      return this.pushData(subscription, follow, state, alert ? { alert } : {});
+    }
+    if (follow.activityToken) {
+      return this.pushActivity(follow, endPayload(state, alert));
+    }
+    return alert
+      ? this.notifyDevice(follow, alertPayload(alert.title, alert.body))
+      : true;
+  }
+
   /**
    * Raise a banner on a phone that drew none of its own.
    *
@@ -668,6 +712,7 @@ export class ArrivalsService {
         pushType: 'liveactivity',
         topicSuffix: ACTIVITY_TOPIC,
         expiration: Math.round(Date.now() / 1000) + 120,
+        collapseId: follow.id as string,
       },
     );
     if (!raised) {
@@ -714,6 +759,7 @@ export class ArrivalsService {
     const data: Record<string, string> = {
       followId: follow.id as string,
       stopKey: subscription.stopKey,
+      stopId: subscription.stopId,
       stopName: subscription.stopName,
       line: subscription.line,
       destination: subscription.destination,

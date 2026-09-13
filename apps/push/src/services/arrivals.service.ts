@@ -250,9 +250,17 @@ export class ArrivalsService {
   async announce(id: string): Promise<void> {
     try {
       const follow = await this.follows.byId(id);
-      if (!follow) return;
+      if (!follow) {
+        this.logger.warn(`Nothing to announce: follow ${id} is already gone.`);
+        return;
+      }
       const subscription = await this.follows.subscriptionOf(follow);
-      if (!subscription) return;
+      if (!subscription) {
+        this.logger.warn(
+          `Nothing to announce: follow ${id} points at a subscription that is not there.`,
+        );
+        return;
+      }
       const now = new Date();
       const { times } = await this.follows.board(
         subscription.kind,
@@ -305,6 +313,9 @@ export class ArrivalsService {
     // the last reader unfollowed as this one was reading — and there is
     // nothing to say and no reason to go on reading.
     if (!waiting.length) {
+      this.logger.log(
+        `Nobody is waiting for the ${subscription.line} to ${subscription.destination} any more; letting it go.`,
+      );
       await this.follows.close(subscription);
       return;
     }
@@ -379,6 +390,13 @@ export class ArrivalsService {
     const close =
       subscription.arriving || (subscription.shown ?? Infinity) <= 1;
     const due = subscription.anchor.getTime() - now.getTime();
+    // The row left the board, and this is the judgement made of that: near its
+    // own arrival it means the bus is here, and far from it that the bus was
+    // lost. Said out loud with the numbers, because the two ring different
+    // sentences and a board that drops rows early makes the wrong one.
+    this.logger.log(
+      `The ${subscription.line} to ${subscription.destination} left the board ${Math.round(due / 1000)}s from its arrival (shown ${subscription.shown ?? '-'}, arriving ${subscription.arriving ?? false}); calling it ${close || (due <= ARRIVING && due > -ARRIVING) ? 'arrived' : 'gone'}.`,
+    );
     if (close || (due <= ARRIVING && due > -ARRIVING)) {
       await this.arrive(subscription, now);
       return;
@@ -469,6 +487,16 @@ export class ArrivalsService {
             }
           : undefined;
       const sent = await this.sendEnding(subscription, follow, state, alert);
+      // The last thing said to one phone, and whether it was said out loud.
+      // "I only ever get one notification" is answered here or nowhere: either
+      // the ending carried no alert, or it carried one and did not land.
+      this.logger.log(
+        `Ending (${moment}) for ${follow.platform}: ${
+          alert ? 'with a sound' : 'silent'
+        }${rungAt(follow, moment) ? ' (already rung)' : ''}, ${
+          sent ? 'delivered' : 'NOT delivered'
+        }.`,
+      );
       if (!sent) missed = true;
       else if (alert) await this.rang(follow, moment);
     }

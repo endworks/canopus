@@ -30,6 +30,8 @@ services:
     ports:
       - 8877:3000
     environment:
+      # Optional: without it the service runs and reports nothing.
+      SENTRY_DSN: ${SENTRY_DSN:-}
       MONGODB_URI: ${MONGODB_URI:-}
       # Optional: without it the service alerts are stored exactly as the
       # operator lists them, with no article read for dates or stops.
@@ -53,6 +55,8 @@ services:
     ports:
       - 8878:3000
     environment:
+      # Optional: without it the service runs and reports nothing.
+      SENTRY_DSN: ${SENTRY_DSN:-}
       MONGODB_URI: ${MONGODB_URI:-}
       THE_MOVIE_DB_API_KEY: ${THE_MOVIE_DB_API_KEY:-}
       GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
@@ -69,6 +73,8 @@ services:
     ports:
       - 8880:3000
     environment:
+      # Optional: without it the service runs and reports nothing.
+      SENTRY_DSN: ${SENTRY_DSN:-}
       # All four or none. Absent, the service holds no credential and callers
       # bring their own WeatherKit token; set, its own app can send nothing.
       # The private key is the .p8 base64-encoded — see the README.
@@ -106,6 +112,8 @@ services:
     ports:
       - 8876:3000
     environment:
+      # Optional: without it the service runs and reports nothing.
+      SENTRY_DSN: ${SENTRY_DSN:-}
       TWITTER_CLIENT_TOKEN: ${TWITTER_CLIENT_TOKEN:-}
     networks:
       - canopus

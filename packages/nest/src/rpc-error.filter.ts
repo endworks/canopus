@@ -6,6 +6,7 @@ import {
   RpcExceptionFilter,
 } from '@nestjs/common';
 import { ErrorResponse } from '@canopus/shared';
+import * as Sentry from '@sentry/node';
 import { Observable, of } from 'rxjs';
 
 /**
@@ -31,6 +32,13 @@ export class RpcErrorFilter implements RpcExceptionFilter {
                 : String(exception),
           };
     this.logger.error(response.message);
+    // Every service installs this filter, so this is the one place a thrown
+    // error has to be handed on from. An `HttpException` is this service
+    // answering a bad request and is not worth waking anybody for; anything
+    // else got here by surprise.
+    if (!(exception instanceof HttpException) && process.env.SENTRY_DSN) {
+      Sentry.captureException(exception);
+    }
     return of(response);
   }
 }

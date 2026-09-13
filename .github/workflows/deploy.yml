@@ -235,6 +235,7 @@ jobs:
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           MONGODB_URI: op://end.works/MongoDB ZgzPls/mongodb uri
+          SENTRY_DSN: op://end.works/Canopus Sentry/dsn
 
       - name: Load twitter secret
         if: ${{ github.event_name != 'pull_request' && (github.ref_name == 'main' || github.ref_type == 'tag') && matrix.service == 'twitter-downloader' }}
@@ -333,7 +334,7 @@ jobs:
           port: ${{ env.PORT }}
           username: ${{ env.USERNAME }}
           key: ${{ env.KEY }}
-          envs: IMAGE,CONTAINER,MONGODB_URI,TWITTER_CLIENT_TOKEN,THE_MOVIE_DB_API_KEY,GOOGLE_MAPS_API_KEY,ANTHROPIC_API_KEY,BIZI_GBFS_URL,WEATHERKIT_TEAM_ID,WEATHERKIT_SERVICE_ID,WEATHERKIT_KEY_ID,WEATHERKIT_PRIVATE_KEY,WEATHER_CLIENT_KEY_VERSION,APNS_TEAM_ID,APNS_KEY_ID,APNS_PRIVATE_KEY,APNS_BUNDLE_ID,APNS_ENVIRONMENT,PUSH_CLIENT_KEYS,PUSH_ADMIN_KEY,FCM_SERVICE_ACCOUNT
+          envs: IMAGE,CONTAINER,SENTRY_DSN,MONGODB_URI,TWITTER_CLIENT_TOKEN,THE_MOVIE_DB_API_KEY,GOOGLE_MAPS_API_KEY,ANTHROPIC_API_KEY,BIZI_GBFS_URL,WEATHERKIT_TEAM_ID,WEATHERKIT_SERVICE_ID,WEATHERKIT_KEY_ID,WEATHERKIT_PRIVATE_KEY,WEATHER_CLIENT_KEY_VERSION,APNS_TEAM_ID,APNS_KEY_ID,APNS_PRIVATE_KEY,APNS_BUNDLE_ID,APNS_ENVIRONMENT,PUSH_CLIENT_KEYS,PUSH_ADMIN_KEY,FCM_SERVICE_ACCOUNT
           script: |
             docker pull "$IMAGE"
             # -t 1, because nothing here installs a SIGTERM handler: no app
@@ -343,19 +344,19 @@ jobs:
             docker stop -t 1 "$CONTAINER" 2>/dev/null || true
             docker rm "$CONTAINER" 2>/dev/null || true
             if [ "$CONTAINER" = "canopus-zine" ]; then
-              docker run --network canopus -p ${{ matrix.port }}/tcp -e MONGODB_URI="$MONGODB_URI" -e THE_MOVIE_DB_API_KEY="$THE_MOVIE_DB_API_KEY" -e GOOGLE_MAPS_API_KEY="$GOOGLE_MAPS_API_KEY" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
+              docker run --network canopus -p ${{ matrix.port }}/tcp -e SENTRY_DSN="$SENTRY_DSN" -e MONGODB_URI="$MONGODB_URI" -e THE_MOVIE_DB_API_KEY="$THE_MOVIE_DB_API_KEY" -e GOOGLE_MAPS_API_KEY="$GOOGLE_MAPS_API_KEY" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
             elif [ "$CONTAINER" = "canopus-zaragoza" ]; then
-              docker run --network canopus -p ${{ matrix.port }}/tcp -e MONGODB_URI="$MONGODB_URI" -e ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" -e BIZI_GBFS_URL="$BIZI_GBFS_URL" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
+              docker run --network canopus -p ${{ matrix.port }}/tcp -e SENTRY_DSN="$SENTRY_DSN" -e MONGODB_URI="$MONGODB_URI" -e ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" -e BIZI_GBFS_URL="$BIZI_GBFS_URL" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
             elif [ "$CONTAINER" = "canopus-weather" ]; then
-              docker run --network canopus -p ${{ matrix.port }}/tcp -e WEATHERKIT_TEAM_ID="$WEATHERKIT_TEAM_ID" -e WEATHERKIT_SERVICE_ID="$WEATHERKIT_SERVICE_ID" -e WEATHERKIT_KEY_ID="$WEATHERKIT_KEY_ID" -e WEATHERKIT_PRIVATE_KEY="$WEATHERKIT_PRIVATE_KEY" -e WEATHER_CLIENT_KEY_VERSION="$WEATHER_CLIENT_KEY_VERSION" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
+              docker run --network canopus -p ${{ matrix.port }}/tcp -e SENTRY_DSN="$SENTRY_DSN" -e WEATHERKIT_TEAM_ID="$WEATHERKIT_TEAM_ID" -e WEATHERKIT_SERVICE_ID="$WEATHERKIT_SERVICE_ID" -e WEATHERKIT_KEY_ID="$WEATHERKIT_KEY_ID" -e WEATHERKIT_PRIVATE_KEY="$WEATHERKIT_PRIVATE_KEY" -e WEATHER_CLIENT_KEY_VERSION="$WEATHER_CLIENT_KEY_VERSION" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
             elif [ "$CONTAINER" = "canopus-push" ]; then
               # It reads one stop's board for every follower of that stop, so
               # it dials the transit service the way the gateway does.
-              docker run --network canopus -p ${{ matrix.port }}/tcp -e MONGODB_URI="$MONGODB_URI" -e ZARAGOZA_SERVICE_HOST=canopus-zaragoza -e APNS_TEAM_ID="$APNS_TEAM_ID" -e APNS_KEY_ID="$APNS_KEY_ID" -e APNS_PRIVATE_KEY="$APNS_PRIVATE_KEY" -e APNS_BUNDLE_ID="$APNS_BUNDLE_ID" -e APNS_ENVIRONMENT="$APNS_ENVIRONMENT" -e PUSH_CLIENT_KEYS="$PUSH_CLIENT_KEYS" -e PUSH_ADMIN_KEY="$PUSH_ADMIN_KEY" -e FCM_SERVICE_ACCOUNT="$FCM_SERVICE_ACCOUNT" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
+              docker run --network canopus -p ${{ matrix.port }}/tcp -e SENTRY_DSN="$SENTRY_DSN" -e MONGODB_URI="$MONGODB_URI" -e ZARAGOZA_SERVICE_HOST=canopus-zaragoza -e APNS_TEAM_ID="$APNS_TEAM_ID" -e APNS_KEY_ID="$APNS_KEY_ID" -e APNS_PRIVATE_KEY="$APNS_PRIVATE_KEY" -e APNS_BUNDLE_ID="$APNS_BUNDLE_ID" -e APNS_ENVIRONMENT="$APNS_ENVIRONMENT" -e PUSH_CLIENT_KEYS="$PUSH_CLIENT_KEYS" -e PUSH_ADMIN_KEY="$PUSH_ADMIN_KEY" -e FCM_SERVICE_ACCOUNT="$FCM_SERVICE_ACCOUNT" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
             elif [ "$CONTAINER" = "canopus-twitter-downloader" ]; then
-              docker run --network canopus -p ${{ matrix.port }}/tcp -e TWITTER_CLIENT_TOKEN="$TWITTER_CLIENT_TOKEN" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
+              docker run --network canopus -p ${{ matrix.port }}/tcp -e SENTRY_DSN="$SENTRY_DSN" -e TWITTER_CLIENT_TOKEN="$TWITTER_CLIENT_TOKEN" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
             else
-              docker run --network canopus -p ${{ matrix.port }}/tcp -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
+              docker run --network canopus -p ${{ matrix.port }}/tcp -e SENTRY_DSN="$SENTRY_DSN" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
             fi
 
             # `docker run` answering with an id is not the same as a service

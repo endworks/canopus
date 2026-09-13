@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import { PushPlatform } from '@canopus/shared';
+import { reportOnce } from '@canopus/nest';
 import { FollowDocument } from '../schemas/follow.schema';
 import { SubscriptionDocument } from '../schemas/subscription.schema';
 import { ApnsService } from '../apns/apns.service';
@@ -258,7 +259,16 @@ export class ArrivalsService {
         subscription.stopId,
       );
       const reading = this.follows.reading(subscription, times, now);
-      if (!reading) return;
+      // The one silence a reader cannot tell from this service being dead: the
+      // follow is saved, the first push never goes out, and nothing anywhere
+      // says so. It happens when the row leaves the board in the seconds
+      // between the app reading it and this re-reading it.
+      if (!reading) {
+        this.logger.warn(
+          `The ${subscription.line} to ${subscription.destination} was gone from ${subscription.kind}:${subscription.stopId} before the first reading; nothing was sent.`,
+        );
+        return;
+      }
       const arriving = isArriving(reading.words);
       for (const waiting of await this.follows.followersOf(subscription)) {
         await this.push(subscription, waiting, reading, now, arriving);
@@ -467,7 +477,31 @@ export class ArrivalsService {
       await subscription.save();
       return;
     }
+    this.silent(subscription, waiting);
     await this.follows.close(subscription);
+  }
+
+  /**
+   * A departure that ended having said nothing out loud, said out loud here.
+   *
+   * Every other warning in this service names a thing that went wrong at one
+   * step. This names the only outcome that matters to a reader — they followed
+   * a bus and their phone never made a sound — and it is the one thing none of
+   * the step-by-step failures adds up to on its own.
+   */
+  private silent(
+    subscription: SubscriptionDocument,
+    waiting: FollowDocument[],
+  ): void {
+    const quiet = waiting.filter((follow) => !(follow.rung ?? []).length);
+    if (!quiet.length) return;
+    this.logger.warn(
+      `${quiet.length} of ${waiting.length} following the ${subscription.line} to ${subscription.destination} at ${subscription.stopKey} heard nothing before it ended.`,
+    );
+    reportOnce(
+      'push.silent-departure',
+      'A departure ended with followers who were never rung: somebody waited for a bus and their phone said nothing.',
+    );
   }
 
   /** One reading, to one phone. */
@@ -691,6 +725,10 @@ export class ArrivalsService {
       this.logger.warn(
         `No push-to-start token for the phone following ${follow.subscription.toString()}; it will get a notification instead of a banner.`,
       );
+      reportOnce(
+        'push.no-push-to-start-token',
+        'A followed departure had no push-to-start token to raise a banner with; readers are getting notifications instead.',
+      );
       return false;
     }
     const raised = await this.deliver(
@@ -718,6 +756,10 @@ export class ArrivalsService {
     if (!raised) {
       this.logger.warn(
         `Apple would not raise a banner for ${follow.subscription.toString()}; falling back to a notification.`,
+      );
+      reportOnce(
+        'push.start-refused',
+        'Apple refused a push-to-start; no Live Activity is being raised for anybody.',
       );
     }
     return raised;

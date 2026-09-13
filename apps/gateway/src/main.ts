@@ -4,7 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { SwaggerTheme, SwaggerThemeNameEnum } from 'swagger-themes';
-import { RpcResponseInterceptor } from '@canopus/nest';
+import { RpcResponseInterceptor, startCrashReporting } from '@canopus/nest';
 import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 
@@ -19,6 +19,8 @@ const pkg = JSON.parse(
   license: string;
   author: { name: string; email: string; url: string };
 };
+
+startCrashReporting('gateway');
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {

@@ -2,8 +2,10 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { Transport } from '@nestjs/microservices';
 import { TCP_PORT } from '@canopus/shared';
-import { RpcErrorFilter } from '@canopus/nest';
+import { RpcErrorFilter, startCrashReporting } from '@canopus/nest';
 import { Logger } from 'nestjs-pino';
+
+startCrashReporting('zine');
 
 async function bootstrap() {
   const app = await NestFactory.createMicroservice(AppModule, {

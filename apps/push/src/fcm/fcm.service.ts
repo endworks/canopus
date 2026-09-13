@@ -1,5 +1,6 @@
 import { createPrivateKey, KeyObject, sign } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
+import { reportOnce } from '@canopus/nest';
 
 /**
  * Firebase Cloud Messaging, which is the only road to an Android phone.
@@ -51,9 +52,16 @@ export class FcmService {
       this.projectId = account.project_id;
       this.clientEmail = account.client_email;
       this.key = createPrivateKey(account.private_key);
+      this.logger.log(
+        `FCM ready for ${this.projectId} as ${this.clientEmail}; Android can be reached.`,
+      );
     } catch (error) {
       this.logger.error(
         `FCM service account unreadable: ${(error as Error).message}`,
+      );
+      reportOnce(
+        'fcm.account-unreadable',
+        'The FCM service account could not be read; no Android phone can be reached.',
       );
     }
   }
@@ -77,7 +85,16 @@ export class FcmService {
     data: Record<string, string>,
     options: { ttlSeconds?: number; collapseKey?: string } = {},
   ): Promise<'sent' | 'gone' | 'failed'> {
-    if (!this.key || !this.projectId) return 'failed';
+    if (!this.key || !this.projectId) {
+      this.logger.warn(
+        'An Android push was asked for with no FCM service account; nothing was sent.',
+      );
+      reportOnce(
+        'fcm.not-configured',
+        'This service is being asked to push to Android and has no FCM credential.',
+      );
+      return 'failed';
+    }
     const access = await this.accessToken();
     if (!access) return 'failed';
 
@@ -124,6 +141,14 @@ export class FcmService {
           body.error?.message ?? ''
         }`.trim(),
       );
+      // 401 and 403 are this deployment's credential, not this phone's token:
+      // every Android reader is in the same position and nobody is being told.
+      if (response.status === 401 || response.status === 403) {
+        reportOnce(
+          'fcm.refused',
+          `FCM is refusing pushes outright (${response.status} ${status ?? ''}); no Android phone is being reached.`,
+        );
+      }
       return 'failed';
     } catch (error) {
       this.logger.warn(`FCM unreachable: ${(error as Error).message}`);
@@ -168,7 +193,16 @@ export class FcmService {
         }),
       });
       if (!response.ok) {
-        this.logger.warn(`FCM token refused: ${response.status}`);
+        // The status alone says nothing worth acting on; `invalid_grant` is a
+        // clock adrift or a key withdrawn, and they are different jobs.
+        const reason = await response.text().catch(() => '');
+        this.logger.warn(
+          `FCM token refused: ${response.status} ${reason}`.trim(),
+        );
+        reportOnce(
+          'fcm.token-refused',
+          `Google would not mint an FCM access token (${response.status}); Android is unreachable until it does.`,
+        );
         return undefined;
       }
       const body = (await response.json()) as {

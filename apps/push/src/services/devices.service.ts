@@ -53,6 +53,19 @@ export class DevicesService {
       }
       existing.retiredAt = undefined;
       await existing.save();
+      // Never the token itself. What is worth knowing is which phones are
+      // reaching this end at all, and whether an iPhone has yet handed over the
+      // one thing that can raise a banner on it — the first question asked of
+      // any "I followed a departure and nothing happened".
+      this.logger.log(
+        `Registered again: ${payload.platform}${
+          payload.platform === 'ios'
+            ? existing.pushToStartToken
+              ? ', can be given a banner'
+              : ', cannot be given a banner yet'
+            : ''
+        }.`,
+      );
       return { id: existing.id as string };
     }
     const created = await this.devices.create({
@@ -66,6 +79,13 @@ export class DevicesService {
         : ['arrivals' as PushCategory],
       consent: {},
     });
+    this.logger.log(
+      `A new ${payload.platform} device registered${
+        payload.platform === 'ios' && !payload.pushToStartToken
+          ? ' with no push-to-start token yet'
+          : ''
+      }.`,
+    );
     return { id: created.id as string };
   }
 

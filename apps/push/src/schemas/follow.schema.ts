@@ -28,8 +28,15 @@ export class Follow {
   @Prop({ required: true })
   platform: PushPlatform;
 
-  /** The device's own token, so a dead device takes its follows with it. */
-  @Prop({ required: true, index: true })
+  /**
+   * The device's own token, so a dead device takes its follows with it.
+   *
+   * Indexed below rather than here. Declared in both places Mongoose keeps the
+   * first and drops the second — and the second is the one carrying `unique`,
+   * so the constraint this schema says it has was never actually built. It
+   * warned about it on every boot.
+   */
+  @Prop({ required: true })
   token: string;
 
   /**

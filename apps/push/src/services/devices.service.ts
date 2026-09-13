@@ -43,59 +43,55 @@ export class DevicesService {
    * quietly put back a switch they turned off.
    */
   async register(payload: RegisterDevicePayload): Promise<{ id: string }> {
+    // One statement rather than a read and then a write. `token` is uniquely
+    // indexed, so two registrations arriving together — a launch that asks for
+    // an address while the last answer is still in flight — both missed the
+    // read and both inserted, and one of them died on the duplicate key. The
+    // phone was told its registration failed for no reason it could act on.
     const existing = await this.devices.findOne({ token: payload.token });
-    if (existing) {
-      existing.app = payload.app;
-      existing.platform = payload.platform;
-      if (payload.locale) existing.locale = payload.locale;
-      if (payload.pushToStartToken) {
-        existing.pushToStartToken = payload.pushToStartToken;
-      }
-      existing.retiredAt = undefined;
-      await existing.save();
-      // Never the token itself. What is worth knowing is which phones are
-      // reaching this end at all, and whether an iPhone has yet handed over the
-      // one thing that can raise a banner on it — the first question asked of
-      // any "I followed a departure and nothing happened".
-      this.logger.log(
-        `Registered again: ${payload.platform}${
-          payload.platform === 'ios'
-            ? existing.pushToStartToken
-              ? ', can be given a banner'
-              : ', cannot be given a banner yet'
-            : ''
-        }.`,
-      );
-      return { id: existing.id as string };
-    }
-    const created = await this.devices.create({
+    const update: Record<string, unknown> = {
       app: payload.app,
       platform: payload.platform,
-      token: payload.token,
-      locale: payload.locale,
-      pushToStartToken: payload.pushToStartToken,
-      categories: payload.categories
-        ? known(payload.categories)
-        : ['arrivals' as PushCategory],
-      consent: {},
-    });
+      retiredAt: undefined,
+    };
+    if (payload.locale) update.locale = payload.locale;
+    // Only ever set, never cleared: a registration that arrives before
+    // ActivityKit has minted this install's token must not take away the one
+    // already on file, and one that arrives with a fresh token replaces it.
+    if (payload.pushToStartToken) {
+      update.pushToStartToken = payload.pushToStartToken;
+    }
+    const device = await this.devices.findOneAndUpdate(
+      { token: payload.token },
+      {
+        $set: update,
+        $setOnInsert: {
+          token: payload.token,
+          // Read only on the first sight of a device: afterwards they are the
+          // reader's, and a re-registration must not put back a switch they
+          // turned off.
+          categories: payload.categories
+            ? known(payload.categories)
+            : ['arrivals' as PushCategory],
+          consent: {},
+        },
+      },
+      { upsert: true, new: true },
+    );
     this.logger.log(
-      `A new ${payload.platform} device registered${
-        payload.platform === 'ios' && !payload.pushToStartToken
-          ? ' with no push-to-start token yet'
+      `${existing ? 'Registered again' : 'A new device registered'}: ${payload.platform}${
+        payload.platform === 'ios'
+          ? device?.pushToStartToken
+            ? payload.pushToStartToken
+              ? ', can be given a banner'
+              : ', can be given a banner but did not send a token this time'
+            : ', cannot be given a banner'
           : ''
       }.`,
     );
-    return { id: created.id as string };
+    return { id: device?.id as string };
   }
 
-  /**
-   * Which categories this device wants.
-   *
-   * The moment of consent is written down for the ones that are marketing:
-   * later, the thing that has to be producible is not "they are subscribed"
-   * but "they said yes, then, to that sentence".
-   */
   async setPreferences(
     payload: SetPreferencesPayload,
   ): Promise<{ categories: PushCategory[] }> {

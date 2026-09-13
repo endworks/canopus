@@ -16,6 +16,7 @@ import {
   Subscription,
   SubscriptionDocument,
 } from '../schemas/subscription.schema';
+import { argb } from './colour';
 import { Departure, identify, instant, matching } from './tracking';
 
 /**
@@ -61,6 +62,12 @@ interface StationResponse {
 const BOARDS: Record<string, string> = {
   bus: ZARAGOZA_PATTERNS.busStation,
   tram: ZARAGOZA_PATTERNS.tramStation,
+};
+
+/** The same split, for the listing that knows what colour a line is drawn in. */
+const LINES: Record<string, string> = {
+  bus: ZARAGOZA_PATTERNS.busLine,
+  tram: ZARAGOZA_PATTERNS.tramLine,
 };
 
 /** A stop's departures and where they were read from. */
@@ -156,6 +163,7 @@ export class FollowsService {
       }
 
       subscription = await this.subscriptions.create({
+        lineArgb: await this.lineColour(payload.kind, payload.line),
         kind: payload.kind,
         stopId: payload.stopId,
         stopKey: payload.stopKey,
@@ -347,6 +355,32 @@ export class FollowsService {
    * hundred people waiting at Plaza España cost the operator one request, and
    * the reading they share is the same one the app's own sheet would get.
    */
+  /**
+   * What colour the operator draws this line in, asked once per watch.
+   *
+   * Cosmetic and therefore never allowed to matter: a listing that is slow, a
+   * line the operator gives no colour, a kind with no listing at all — each
+   * answers nothing and the banner falls back to the app's own red, which is
+   * what it did before this existed.
+   */
+  async lineColour(kind: string, line: string): Promise<number | undefined> {
+    const pattern = LINES[kind];
+    if (!pattern) return undefined;
+    try {
+      const found = await firstValueFrom(
+        this.zaragoza
+          .send<{ color?: string }>(pattern, { id: line })
+          .pipe(timeout(4000)),
+      );
+      return argb(found?.color);
+    } catch (error) {
+      this.logger.warn(
+        `No colour for ${kind} line ${line}: ${(error as Error).message}`,
+      );
+      return undefined;
+    }
+  }
+
   async board(kind: string, stopId: string): Promise<Board> {
     const pattern = BOARDS[kind];
     // A kind this service has no board for. Today that is a bike dock or a

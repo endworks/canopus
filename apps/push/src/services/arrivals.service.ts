@@ -804,6 +804,7 @@ export class ArrivalsService {
           kindKey: subscription.kind,
           line: subscription.line,
           destination: subscription.destination,
+          lineArgb: subscription.lineArgb,
         },
         state,
         // A start with nothing to say is a start iOS throws away, so where

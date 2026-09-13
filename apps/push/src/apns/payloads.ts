@@ -121,6 +121,8 @@ export interface Attributes {
   kindKey: string;
   line: string;
   destination: string;
+  /** Absent where the operator publishes no colour; the app then draws its own red. */
+  lineArgb?: number;
 }
 
 /**

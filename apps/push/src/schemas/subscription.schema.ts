@@ -45,6 +45,21 @@ export class Subscription {
   destination: string;
 
   /**
+   * The line's colour as the app spells one, or absent where the operator
+   * publishes none.
+   *
+   * Read once when the watch opens rather than on every push: a line's colour
+   * is the one thing about a departure that cannot change while somebody waits
+   * for it. It is here because a banner this service raises has to carry the
+   * attributes the app would have written itself, and the app resolves this
+   * from a line listing half a megabyte long that an extension has no room to
+   * open — so if it does not travel, the banner is drawn in the fallback red
+   * and every line looks like every other.
+   */
+  @Prop()
+  lineArgb?: number;
+
+  /**
    * When this bus is due, as last read.
    *
    * What identifies it. The operator publishes two of each line and gives

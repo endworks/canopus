@@ -125,6 +125,18 @@ export class DevicesService {
   }
 
   /** The reader turned everything off, or the app was deleted. */
+  /**
+   * The token that can raise a Live Activity on this phone, if it has one.
+   *
+   * ActivityKit mints it per install and rotates it, and it exists only from
+   * 17.2 — so a phone that has never sent one cannot be given a banner it did
+   * not ask to draw itself, and the caller falls back to an ordinary alert.
+   */
+  async pushToStartToken(token: string): Promise<string | undefined> {
+    const device = await this.devices.findOne({ token, retiredAt: null });
+    return device?.pushToStartToken;
+  }
+
   async forget(payload: ForgetDevicePayload): Promise<{ forgotten: boolean }> {
     const result = await this.devices.deleteOne({
       app: payload.app,

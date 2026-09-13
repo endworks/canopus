@@ -44,14 +44,24 @@ export class Follow {
   locale?: string;
 
   /**
-   * Whether the minute-before nudge has already rung here.
+   * Which moments have already rung here.
    *
    * The one decision that stays personal. Everything else about this bus is
    * decided once for everybody; a phone that has already been rung must not
    * ring again because somebody else joined the same wait a minute later.
+   *
+   * A list rather than the single flag it was, because the flag made them one
+   * ring per follow for the life of the follow: the minute's warning set it,
+   * and the arrival then asked for `!alerted` and found it taken. A reader who
+   * got the nudge was never told the bus had actually reached the pole — the
+   * one sentence they were waiting for — and nothing in either app could put
+   * that right, because the push simply carried no alert.
+   *
+   * It is also what stops the ending's three retry sweeps from ringing a phone
+   * that heard the first one.
    */
-  @Prop({ default: false })
-  alerted: boolean;
+  @Prop({ type: [String], default: [] })
+  rung: string[];
 
   /** How many times an ending has been attempted at this phone and not landed. */
   @Prop({ default: 0 })

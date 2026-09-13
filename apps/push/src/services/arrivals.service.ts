@@ -6,6 +6,7 @@ import { SubscriptionDocument } from '../schemas/subscription.schema';
 import { ApnsService } from '../apns/apns.service';
 import {
   alertPayload,
+  startPayload,
   contentState,
   endPayload,
   updatePayload,
@@ -51,6 +52,19 @@ const intervalFor = (source?: string): number =>
   (source && INTERVALS[source]) ?? SLOWEST;
 
 /** How long before the arrival the phone is nudged. */
+/**
+ * The three sentences this service ever says out loud.
+ *
+ * The app names the same three — `DepartureMoment` in its shared logic — and
+ * writes its own words for them. These are the words a push has to carry
+ * itself, because a notification carries text and not a key.
+ */
+type Moment = 'arriving' | 'arrived' | 'gone';
+
+/** Whether this phone has already been rung at about that moment. */
+const rungAt = (follow: FollowDocument, moment: Moment): boolean =>
+  (follow.rung ?? []).includes(moment);
+
 const LEAD = 60_000;
 
 /**
@@ -246,7 +260,7 @@ export class ArrivalsService {
    *
    * One identification, one decision, and then the same words to every phone
    * following it — which is what the subscription is for. The only thing left
-   * that is decided per phone is the minute-before nudge, because `alerted` is
+   * that is decided per phone is which moments have rung, because `rung` is
    * a thing that has happened to one phone and ringing a second time is not
    * made better by company.
    */
@@ -280,7 +294,7 @@ export class ArrivalsService {
 
     for (const follow of waiting) {
       if (
-        !follow.alerted &&
+        !rungAt(follow, 'arriving') &&
         reading.arrival.getTime() - now.getTime() <= LEAD
       ) {
         await this.nudge(subscription, follow, reading, now);
@@ -415,11 +429,16 @@ export class ArrivalsService {
     const waiting = await this.follows.followersOf(subscription);
     let missed = false;
     for (const follow of waiting) {
+      // Both endings are worth a sound, and each is worth one. Reaching the
+      // pole and pulling away from it are different sentences to somebody
+      // looking at a Lock Screen, and the leaving used to be silent because
+      // only `arrived` was ever asked about.
+      const moment = arrived ? 'arrived' : 'gone';
       const alert =
-        arrived && !follow.alerted && (await this.rings(follow))
+        !rungAt(follow, moment) && (await this.rings(follow))
           ? {
               title: subscription.stopName,
-              body: this.words(subscription, follow, 0),
+              body: this.words(subscription, follow, moment),
             }
           : undefined;
       const sent =
@@ -439,6 +458,7 @@ export class ArrivalsService {
                 )
               : true;
       if (!sent) missed = true;
+      else if (alert) await this.rang(follow, moment);
     }
     if (missed && (subscription.attempts ?? 0) < ENDINGS) {
       subscription.attempts = (subscription.attempts ?? 0) + 1;
@@ -457,9 +477,12 @@ export class ArrivalsService {
     arriving: boolean,
   ): Promise<boolean> {
     const state = contentState(reading, now, false, false, arriving);
-    return follow.platform === 'android'
-      ? this.pushData(subscription, follow, state)
-      : this.pushActivity(follow, updatePayload(state));
+    if (follow.platform === 'android') {
+      return this.pushData(subscription, follow, state);
+    }
+    return follow.activityToken
+      ? this.pushActivity(follow, updatePayload(state))
+      : this.startActivity(subscription, follow, state);
   }
 
   /** What the bus was last told to say, written down for the next reading. */
@@ -482,7 +505,7 @@ export class ArrivalsService {
   /**
    * About a minute away, at one phone.
    *
-   * The one decision left that is personal: `alerted` is something that has
+   * The one decision left that is personal: `rung` is something that has
    * happened to this phone, and it must not ring again because somebody else
    * joined the same wait a minute later.
    *
@@ -500,7 +523,7 @@ export class ArrivalsService {
     const minutes = shownMinutes(reading.arrival, now);
     const alert = {
       title: subscription.stopName,
-      body: this.words(subscription, follow, minutes),
+      body: this.words(subscription, follow, 'arriving', minutes),
     };
     const state = contentState(reading, now);
     // The switch is asked about here and nowhere else in this loop, and the
@@ -524,16 +547,26 @@ export class ArrivalsService {
         updatePayload(state, allowed ? alert : undefined),
       );
     } else {
+      // No banner of its own, so one is raised from here — carrying the sound,
+      // which is one buzz and a countdown already on screen rather than a
+      // notification about a countdown that is not. A phone too old to be
+      // given one, or that has never sent a push-to-start token, still gets
+      // the plain alert it always did.
       sent =
-        allowed &&
-        (await this.notifyDevice(
+        (await this.startActivity(
+          subscription,
           follow,
-          alertPayload(alert.title, alert.body),
-        ));
+          state,
+          allowed ? alert : undefined,
+        )) ||
+        (allowed &&
+          (await this.notifyDevice(
+            follow,
+            alertPayload(alert.title, alert.body),
+          )));
     }
     if (!sent) return;
-    follow.alerted = true;
-    await follow.save();
+    await this.rang(follow, 'arriving');
   }
 
   /**
@@ -546,10 +579,21 @@ export class ArrivalsService {
   private words(
     subscription: SubscriptionDocument,
     follow: FollowDocument,
-    minutes: number,
+    moment: Moment,
+    minutes = 1,
   ): string {
     const spanish = (follow.locale ?? 'es').startsWith('es');
     const line = `${subscription.line} ${subscription.destination}`;
+    if (moment === 'gone') {
+      return spanish
+        ? `La línea ${line} ha salido de la parada`
+        : `Line ${line} has left the stop`;
+    }
+    if (moment === 'arrived') {
+      return spanish
+        ? `La línea ${line} está en la parada`
+        : `Line ${line} is at the stop`;
+    }
     if (minutes <= 0) {
       return spanish
         ? `La línea ${line} está llegando`
@@ -558,6 +602,12 @@ export class ArrivalsService {
     return spanish
       ? `La línea ${line} llega en un minuto aproximadamente`
       : `Line ${line} is about a minute away`;
+  }
+
+  /** Written down at the phone it rang at, so a retry does not ring it again. */
+  private async rang(follow: FollowDocument, moment: Moment): Promise<void> {
+    follow.rung = [...(follow.rung ?? []), moment];
+    await follow.save();
   }
 
   /** Whether this phone has agreed to be rung at about arrivals. */
@@ -572,6 +622,47 @@ export class ArrivalsService {
    * screen without the app being involved, which is the one thing the client
    * could never do for itself.
    */
+  /**
+   * Raise a banner on a phone that drew none of its own.
+   *
+   * The app asks to be followed with no activity token when its own fallback is
+   * switched off, and this is what answers: the push-to-start token addresses
+   * the kind of activity rather than a running one. False rather than an
+   * incident when there is no such token — a phone before 17.2, or one that has
+   * not sent one yet — and the caller falls back to what it did before.
+   */
+  private async startActivity(
+    subscription: SubscriptionDocument,
+    follow: FollowDocument,
+    state: ReturnType<typeof contentState>,
+    alert?: { title: string; body: string },
+  ): Promise<boolean> {
+    if (follow.platform !== ('ios' as PushPlatform)) return false;
+    const token = await this.devices.pushToStartToken(follow.token);
+    if (!token) return false;
+    return this.deliver(
+      follow,
+      token,
+      startPayload(
+        {
+          stop: subscription.stopName,
+          stopKey: subscription.stopKey,
+          stopId: subscription.stopId,
+          kindKey: subscription.kind,
+          line: subscription.line,
+          destination: subscription.destination,
+        },
+        state,
+        alert,
+      ),
+      {
+        pushType: 'liveactivity',
+        topicSuffix: ACTIVITY_TOPIC,
+        expiration: Math.round(Date.now() / 1000) + 120,
+      },
+    );
+  }
+
   private async pushActivity(
     follow: FollowDocument,
     payload: unknown,

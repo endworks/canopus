@@ -60,11 +60,25 @@ export const contentState = (
 });
 
 /**
+ * How long a reading's own words are worth repeating, in seconds.
+ *
+ * The app's `READING_FRESH_SECONDS`, and it has to stay the app's: the banner
+ * asks `isStale` before it shows the operator's minute or the departure behind
+ * it, and this is the number that answers. Readings go out every half a minute,
+ * so a banner this far past its last one is a banner nothing is keeping.
+ */
+const FRESH = 150;
+
+/**
  * An update to a running activity.
  *
- * `stale-date` is the same two minutes past the arrival the app sets for
- * itself: past it the phone dims the banner on its own, which is what keeps a
- * countdown honest when this service stops being able to speak to it.
+ * `stale-date` is dated from when the reading was taken rather than from the
+ * arrival it names. Two minutes past the arrival was a window that opened only
+ * at the very end: a countdown this service stopped speaking to twenty minutes
+ * out stayed un-stale for the whole of the rest of it, and the banner went on
+ * showing an operator's `5 min` that nothing had moved since. The countdown
+ * survives that on its own, because it counts to an instant; the words do not,
+ * because they were true once.
  */
 export const updatePayload = (
   state: ContentState,
@@ -74,7 +88,7 @@ export const updatePayload = (
     timestamp: epoch(new Date()),
     event: 'update',
     'content-state': state,
-    'stale-date': state.arrival + 120,
+    'stale-date': state.taken + FRESH,
     // A bus a minute away is the definition of the thing Apple made this
     // level for: it is worth a Focus interrupting for, and worth nothing at
     // all an hour later. Only where there is something to say out loud — an
@@ -99,6 +113,43 @@ const relevance = (state: ContentState): number => {
   return Math.round(Math.max(1, 99 - minutes));
 };
 
+/** What a banner is built from, as the app's own `DepartureAttributes` spells it. */
+export interface Attributes {
+  stop: string;
+  stopKey: string;
+  stopId: string;
+  kindKey: string;
+  line: string;
+  destination: string;
+}
+
+/**
+ * A banner raised from here, on a phone that drew none of its own.
+ *
+ * The app asks to be followed with no activity token when it is not allowed to
+ * raise one itself, and this is the other half of that: the push-to-start token
+ * addresses the *kind* of activity rather than a running one, so this service
+ * decides there is a countdown at all. `attributes-type` is the Swift type's
+ * own name and has to stay spelled as the app spells it, because ActivityKit
+ * matches on the string and a miss is silent.
+ */
+export const startPayload = (
+  attributes: Attributes,
+  state: ContentState,
+  alert?: { title: string; body: string },
+) => ({
+  aps: {
+    timestamp: epoch(new Date()),
+    event: 'start',
+    'attributes-type': 'DepartureAttributes',
+    attributes,
+    'content-state': state,
+    'stale-date': state.taken + FRESH,
+    'relevance-score': relevance(state),
+    ...(alert ? { alert, 'interruption-level': 'time-sensitive' } : {}),
+  },
+});
+
 /**
  * The end of one.
  *
@@ -115,10 +166,9 @@ export const endPayload = (
     event: 'end',
     'content-state': state,
     'dismissal-date': epoch(new Date()) + 120,
-    // The bus is here. If this carries a sound at all it is because the
-    // reader never got the minute-before nudge, which makes it the last
-    // chance to tell them and the most time-sensitive thing this service
-    // sends.
+    // The bus is here, or it has gone. Either is worth a sound of its own
+    // whether or not the minute-before nudge already rang — they are three
+    // different sentences, and `rung` is what keeps each of them to one.
     ...(alert ? { alert, 'interruption-level': 'time-sensitive' } : {}),
   },
 });

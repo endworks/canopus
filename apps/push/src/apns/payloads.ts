@@ -60,14 +60,25 @@ export const contentState = (
 });
 
 /**
+ * How often a phone is told again even when nothing has changed, in seconds.
+ *
+ * `CONFIRM` in the sweep, and the two have to stay in this order: a banner is
+ * stale `FRESH` seconds after the reading it carries, so a heartbeat slower
+ * than that would let every quiet departure go stale and hide the operator's
+ * own words between one confirmation and the next. Written here as one pair
+ * rather than as two literals in two files that happened to agree.
+ */
+export const CONFIRM_SECONDS = 120;
+
+/**
  * How long a reading's own words are worth repeating, in seconds.
  *
  * The app's `READING_FRESH_SECONDS`, and it has to stay the app's: the banner
  * asks `isStale` before it shows the operator's minute or the departure behind
- * it, and this is the number that answers. Readings go out every half a minute,
- * so a banner this far past its last one is a banner nothing is keeping.
+ * it, and this is the number that answers. One confirmation plus a sweep, so a
+ * banner is only ever stale when a heartbeat has actually been missed.
  */
-const FRESH = 150;
+const FRESH = CONFIRM_SECONDS + 30;
 
 /**
  * An update to a running activity.

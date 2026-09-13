@@ -7,6 +7,7 @@ import { SubscriptionDocument } from '../schemas/subscription.schema';
 import { ApnsService } from '../apns/apns.service';
 import {
   alertPayload,
+  CONFIRM_SECONDS,
   startPayload,
   contentState,
   endPayload,
@@ -128,7 +129,7 @@ const LOST = 3;
  * per two minutes, it re-dates what the banner says it was confirmed at, and
  * it is the only thing that lets a client tell a quiet road from a broken one.
  */
-const CONFIRM = 120_000;
+const CONFIRM = CONFIRM_SECONDS * 1000;
 
 /** The Live Activity's own topic, which is the app's with this on the end. */
 const ACTIVITY_TOPIC = '.push-type.liveactivity';

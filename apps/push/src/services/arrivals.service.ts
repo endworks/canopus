@@ -278,8 +278,19 @@ export class ArrivalsService {
         return;
       }
       const arriving = isArriving(reading.words);
-      for (const waiting of await this.follows.followersOf(subscription)) {
-        await this.push(subscription, waiting, reading, now, arriving);
+      const waiting = await this.follows.followersOf(subscription);
+      // The first reading is the one that puts a countdown on the phone, and it
+      // is the only push that does not wait for the estimate to move. If it
+      // does not go out, nothing else will for two minutes and the reader is
+      // looking at a screen with nothing on it.
+      this.logger.log(
+        `Announcing the ${subscription.line} to ${subscription.destination}: ${waiting.length} waiting, board says "${reading.words}".`,
+      );
+      for (const one of waiting) {
+        const sent = await this.push(subscription, one, reading, now, arriving);
+        this.logger.log(
+          `First reading to ${one.platform}: ${sent ? 'delivered' : 'NOT delivered'}.`,
+        );
       }
       await this.recorded(subscription, reading, now, arriving);
     } catch (error) {

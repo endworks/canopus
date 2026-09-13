@@ -639,8 +639,17 @@ export class ArrivalsService {
   ): Promise<boolean> {
     if (follow.platform !== ('ios' as PushPlatform)) return false;
     const token = await this.devices.pushToStartToken(follow.token);
-    if (!token) return false;
-    return this.deliver(
+    // Said out loud rather than shrugged off. A banner that never appears looks
+    // identical from the phone whether this end had nothing to address, or
+    // addressed it and Apple refused — and the reader gets the same plain
+    // notification either way, which is the fallback working and hiding it.
+    if (!token) {
+      this.logger.warn(
+        `No push-to-start token for the phone following ${follow.subscription.toString()}; it will get a notification instead of a banner.`,
+      );
+      return false;
+    }
+    const raised = await this.deliver(
       follow,
       token,
       startPayload(
@@ -661,6 +670,12 @@ export class ArrivalsService {
         expiration: Math.round(Date.now() / 1000) + 120,
       },
     );
+    if (!raised) {
+      this.logger.warn(
+        `Apple would not raise a banner for ${follow.subscription.toString()}; falling back to a notification.`,
+      );
+    }
+    return raised;
   }
 
   private async pushActivity(

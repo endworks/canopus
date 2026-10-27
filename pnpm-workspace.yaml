@@ -7,7 +7,7 @@ packages:
 # is published, and an override outranks what a package asked for. `js-yaml@3:
 # '>=3.15.2'` handed js-yaml 5 to a reader that wanted 3.
 overrides:
-  multer: '^2.3.0'
+  multer: '^2.5.0'
   # express 5 and body-parser both allow it; they just have not asked yet.
   qs: '^6.16.0'
   # GHSA-2883-xcg3-v3hh. The 3.x line left with jest; what still asks for a
@@ -15,6 +15,10 @@ overrides:
   # runtime image is built `--prod`, so it does not ship. swagger's js-yaml 5
   # is unaffected.
   'js-yaml@4': '^4.3.2'
+  # GHSA-vfpm-58rq-9qcg and five more in the dev server. Only vitest and
+  # unplugin-swc pull it in, so it never ships; vitest allows any 8.x and the
+  # lockfile was holding 8.2.2.
+  vite: '^8.2.4'
 allowBuilds:
   # swc ships a prebuilt native binding per platform, musl included, so
   # this resolves a download and not a compile.

@@ -18,7 +18,7 @@ services:
       dockerfile: apps/gateway/Dockerfile
     image: ghcr.io/endworks/canopus
     ports:
-      - 3000:3000
+      - "127.0.0.1:3000:3000"
     networks:
       - canopus
 
@@ -28,7 +28,7 @@ services:
       dockerfile: apps/zaragoza/Dockerfile
     image: ghcr.io/endworks/canopus-zaragoza
     ports:
-      - 8877:3000
+      - "127.0.0.1:8877:3000"
     environment:
       # Optional: without it the service runs and reports nothing.
       SENTRY_DSN: ${SENTRY_DSN:-}
@@ -53,7 +53,7 @@ services:
       dockerfile: apps/zine/Dockerfile
     image: ghcr.io/endworks/canopus-zine
     ports:
-      - 8878:3000
+      - "127.0.0.1:8878:3000"
     environment:
       # Optional: without it the service runs and reports nothing.
       SENTRY_DSN: ${SENTRY_DSN:-}
@@ -71,7 +71,7 @@ services:
       dockerfile: apps/weather/Dockerfile
     image: ghcr.io/endworks/canopus-weather
     ports:
-      - 8880:3000
+      - "127.0.0.1:8880:3000"
     environment:
       # Optional: without it the service runs and reports nothing.
       SENTRY_DSN: ${SENTRY_DSN:-}
@@ -98,7 +98,7 @@ services:
       dockerfile: apps/rae/Dockerfile
     image: ghcr.io/endworks/canopus-rae
     ports:
-      - 8879:3000
+      - "127.0.0.1:8879:3000"
     networks:
       - canopus
     depends_on:
@@ -110,7 +110,7 @@ services:
       dockerfile: apps/twitter-downloader/Dockerfile
     image: ghcr.io/endworks/canopus-twitter-downloader
     ports:
-      - 8876:3000
+      - "127.0.0.1:8876:3000"
     environment:
       # Optional: without it the service runs and reports nothing.
       SENTRY_DSN: ${SENTRY_DSN:-}

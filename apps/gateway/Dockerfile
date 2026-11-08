@@ -29,6 +29,7 @@ COPY --from=installer /prod/ .
 # ConfigModule loads `.env.${NODE_ENV}` when NODE_ENV is set and `.env` otherwise;
 # only `.env` exists, so NODE_ENV is intentionally left unset.
 COPY apps/gateway/.env ./.env
+USER node
 EXPOSE 3000/tcp
 # Liveness: accepts TCP connections (dependency-free; /health is for monitoring).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \

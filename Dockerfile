@@ -39,6 +39,7 @@ FROM node:24-alpine AS runner
 LABEL org.opencontainers.image.source=https://github.com/endworks/canopus
 WORKDIR /app
 COPY --from=installer /prod/ .
+USER node
 EXPOSE 3000/tcp
 # Liveness: succeeds as soon as the service accepts TCP connections.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \

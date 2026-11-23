@@ -10,6 +10,7 @@ import { BusModule } from './modules/bus.module';
 import { BiziModule } from './modules/bizi.module';
 import { TramModule } from './modules/tram.module';
 import { PlacesModule } from './modules/places.module';
+import { SearchController } from './controllers/search.controller';
 
 @Module({
   imports: [
@@ -28,7 +29,7 @@ import { PlacesModule } from './modules/places.module';
     BiziModule,
     PlacesModule,
   ],
-  controllers: [],
+  controllers: [SearchController],
   providers: [],
 })
 export class AppModule {}

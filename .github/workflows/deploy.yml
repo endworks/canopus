@@ -88,6 +88,9 @@ jobs:
             push:
               - *common
               - 'apps/push/**'
+            agenda:
+              - *common
+              - 'apps/agenda/**'
 
       - name: Build deploy matrix from affected services
         id: set-matrix
@@ -95,7 +98,7 @@ jobs:
           # Via env, not inline interpolation, so the input can't break the script.
           SERVICES: ${{ inputs.services }}
         run: |
-          ALL='["gateway","zaragoza","zine","weather","rae","twitter-downloader","push"]'
+          ALL='["gateway","zaragoza","zine","weather","rae","twitter-downloader","push","agenda"]'
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             if [ -z "$SERVICES" ] || [ "$SERVICES" = "all" ]; then
               CHANGED="$ALL"
@@ -116,7 +119,8 @@ jobs:
               weather:  {service:"weather",  image:"canopus-weather",  container:"canopus-weather",  port:"8880:3000", db:false, dockerfile:"Dockerfile"},
               rae:      {service:"rae",      image:"canopus-rae",      container:"canopus-rae",      port:"8879:3000", db:false, dockerfile:"Dockerfile"},
               "twitter-downloader": {service:"twitter-downloader", image:"canopus-twitter-downloader", container:"canopus-twitter-downloader", port:"8876:3000", db:false, dockerfile:"Dockerfile"},
-              push:     {service:"push",     image:"canopus-push",     container:"canopus-push",     port:"8881:3000", db:true, dockerfile:"Dockerfile"}
+              push:     {service:"push",     image:"canopus-push",     container:"canopus-push",     port:"8881:3000", db:true, dockerfile:"Dockerfile"},
+              agenda:   {service:"agenda",   image:"canopus-agenda",   container:"canopus-agenda",   port:"8882:3000", db:true, dockerfile:"Dockerfile"}
             } as $cfg
             | {include: [ $changed[] | select($cfg[.] != null) | $cfg[.] ]}
           ')
@@ -288,6 +292,17 @@ jobs:
           # `docker run -e` intact.
           WEATHERKIT_PRIVATE_KEY: op://end.works/Apple WeatherKit/private key
 
+      - name: Load agenda admin token
+        if: ${{ github.event_name != 'pull_request' && (github.ref_name == 'main' || github.ref_type == 'tag') && matrix.service == 'gateway' }}
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          # What running the agenda's imports by hand takes. The gateway checks
+          # it; nothing in an app ever holds it.
+          AGENDA_ADMIN_TOKEN: op://end.works/Canopus Agenda/admin token
+
       - name: Load push secrets
         if: ${{ github.event_name != 'pull_request' && (github.ref_name == 'main' || github.ref_type == 'tag') && matrix.service == 'push' }}
         uses: 1password/load-secrets-action@v2
@@ -334,7 +349,7 @@ jobs:
           port: ${{ env.PORT }}
           username: ${{ env.USERNAME }}
           key: ${{ env.KEY }}
-          envs: IMAGE,CONTAINER,SENTRY_DSN,MONGODB_URI,TWITTER_CLIENT_TOKEN,THE_MOVIE_DB_API_KEY,GOOGLE_MAPS_API_KEY,ANTHROPIC_API_KEY,BIZI_GBFS_URL,WEATHERKIT_TEAM_ID,WEATHERKIT_SERVICE_ID,WEATHERKIT_KEY_ID,WEATHERKIT_PRIVATE_KEY,WEATHER_CLIENT_KEY_VERSION,APNS_TEAM_ID,APNS_KEY_ID,APNS_PRIVATE_KEY,APNS_BUNDLE_ID,APNS_ENVIRONMENT,PUSH_CLIENT_KEYS,PUSH_ADMIN_KEY,FCM_SERVICE_ACCOUNT
+          envs: IMAGE,CONTAINER,SENTRY_DSN,MONGODB_URI,TWITTER_CLIENT_TOKEN,THE_MOVIE_DB_API_KEY,GOOGLE_MAPS_API_KEY,ANTHROPIC_API_KEY,BIZI_GBFS_URL,WEATHERKIT_TEAM_ID,WEATHERKIT_SERVICE_ID,WEATHERKIT_KEY_ID,WEATHERKIT_PRIVATE_KEY,WEATHER_CLIENT_KEY_VERSION,APNS_TEAM_ID,APNS_KEY_ID,APNS_PRIVATE_KEY,APNS_BUNDLE_ID,APNS_ENVIRONMENT,PUSH_CLIENT_KEYS,PUSH_ADMIN_KEY,FCM_SERVICE_ACCOUNT,AGENDA_ADMIN_TOKEN
           script: |
             docker pull "$IMAGE"
             # -t 1, because nothing here installs a SIGTERM handler: no app
@@ -353,6 +368,10 @@ jobs:
               # It reads one stop's board for every follower of that stop, so
               # it dials the transit service the way the gateway does.
               docker run --network canopus --memory 512m --memory-swap 512m --security-opt no-new-privileges --cap-drop ALL -p 127.0.0.1:${{ matrix.port }}/tcp -p "[::1]:${{ matrix.port }}/tcp" -p 172.17.0.1:${{ matrix.port }}/tcp -e SENTRY_DSN="$SENTRY_DSN" -e MONGODB_URI="$MONGODB_URI" -e ZARAGOZA_SERVICE_HOST=canopus-zaragoza -e APNS_TEAM_ID="$APNS_TEAM_ID" -e APNS_KEY_ID="$APNS_KEY_ID" -e APNS_PRIVATE_KEY="$APNS_PRIVATE_KEY" -e APNS_BUNDLE_ID="$APNS_BUNDLE_ID" -e APNS_ENVIRONMENT="$APNS_ENVIRONMENT" -e PUSH_CLIENT_KEYS="$PUSH_CLIENT_KEYS" -e PUSH_ADMIN_KEY="$PUSH_ADMIN_KEY" -e FCM_SERVICE_ACCOUNT="$FCM_SERVICE_ACCOUNT" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
+            elif [ "$CONTAINER" = "canopus" ]; then
+              docker run --network canopus --memory 512m --memory-swap 512m --security-opt no-new-privileges --cap-drop ALL -p 127.0.0.1:${{ matrix.port }}/tcp -p "[::1]:${{ matrix.port }}/tcp" -p 172.17.0.1:${{ matrix.port }}/tcp -e SENTRY_DSN="$SENTRY_DSN" -e AGENDA_ADMIN_TOKEN="$AGENDA_ADMIN_TOKEN" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
+            elif [ "$CONTAINER" = "canopus-agenda" ]; then
+              docker run --network canopus --memory 512m --memory-swap 512m --security-opt no-new-privileges --cap-drop ALL -p 127.0.0.1:${{ matrix.port }}/tcp -p "[::1]:${{ matrix.port }}/tcp" -p 172.17.0.1:${{ matrix.port }}/tcp -e SENTRY_DSN="$SENTRY_DSN" -e MONGODB_URI="$MONGODB_URI" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
             elif [ "$CONTAINER" = "canopus-twitter-downloader" ]; then
               docker run --network canopus --memory 512m --memory-swap 512m --security-opt no-new-privileges --cap-drop ALL -p 127.0.0.1:${{ matrix.port }}/tcp -p "[::1]:${{ matrix.port }}/tcp" -p 172.17.0.1:${{ matrix.port }}/tcp -e SENTRY_DSN="$SENTRY_DSN" -e TWITTER_CLIENT_TOKEN="$TWITTER_CLIENT_TOKEN" -d --restart unless-stopped --name "$CONTAINER" "$IMAGE"
             else

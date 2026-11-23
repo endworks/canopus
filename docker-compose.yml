@@ -47,6 +47,24 @@ services:
     depends_on:
       - canopus
 
+  canopus-agenda:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: agenda
+    image: ghcr.io/endworks/canopus-agenda
+    ports:
+      - "127.0.0.1:8882:3000"
+    environment:
+      # Optional: without it the service runs and reports nothing.
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      MONGODB_URI: ${MONGODB_URI:-}
+    networks:
+      - canopus
+    depends_on:
+      - canopus
+
   canopus-zine:
     build:
       context: .

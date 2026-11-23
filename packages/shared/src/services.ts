@@ -19,4 +19,5 @@ export const SERVICE_TOKENS = {
   rae: 'RAE_SERVICE',
   twitterDownloader: 'TWITTER_DOWNLOADER_SERVICE',
   push: 'PUSH_SERVICE',
+  agenda: 'AGENDA_SERVICE',
 } as const;

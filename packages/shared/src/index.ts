@@ -7,6 +7,7 @@
 export * from './async';
 export * from './config';
 export * from './patterns';
+export * from './search';
 export * from './services';
 
 /** Request payload for the message patterns that look up a record by id. */

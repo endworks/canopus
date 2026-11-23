@@ -24,6 +24,8 @@ export const ZARAGOZA_PATTERNS = {
   places: 'places',
   place: 'place',
   taxis: 'taxis',
+  /** Bus, tram and Bizi stops whose name, street or lines match a query. */
+  search: 'search',
 } as const;
 
 /**
@@ -51,6 +53,40 @@ export const ZINE_PATTERNS = {
   cached: 'cached',
   prune: 'prune',
   updateAll: 'updateAll',
+} as const;
+
+/**
+ * The agenda's wire: what is on in the city, its big dates and its places.
+ *
+ * Versioned with the API it serves (docs/agenda/api.md): a pattern is added,
+ * never renamed, and a breaking change is a new `agenda/v2/...` beside it.
+ */
+export const AGENDA_PATTERNS = {
+  feed: 'agenda/v1/feed',
+  highlights: 'agenda/v1/highlights',
+  comingUp: 'agenda/v1/series/coming-up',
+  series: 'agenda/v1/series/one',
+  event: 'agenda/v1/events/one',
+  events: 'agenda/v1/events/list',
+  schedule: 'agenda/v1/events/schedule',
+  places: 'agenda/v1/places/list',
+  place: 'agenda/v1/places/one',
+  search: 'agenda/v1/search',
+  taxonomy: 'agenda/v1/taxonomy',
+  /** Everything below is the admin side: the gateway lets it through only with the token. */
+  run: 'agenda/v1/admin/run',
+  status: 'agenda/v1/admin/status',
+  runs: 'agenda/v1/admin/runs',
+  editorialList: 'agenda/v1/admin/editorial/list',
+  editorialGet: 'agenda/v1/admin/editorial/get',
+  editorialPut: 'agenda/v1/admin/editorial/put',
+  editorialState: 'agenda/v1/admin/editorial/state',
+  editorialBulk: 'agenda/v1/admin/editorial/bulk',
+  editorialHistory: 'agenda/v1/admin/editorial/history',
+  editorialRevert: 'agenda/v1/admin/editorial/revert',
+  editorialExport: 'agenda/v1/admin/editorial/export',
+  reviews: 'agenda/v1/admin/reviews/list',
+  reviewResolve: 'agenda/v1/admin/reviews/resolve',
 } as const;
 
 export const WEATHER_PATTERNS = {

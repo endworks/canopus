@@ -10,6 +10,9 @@ import { ZaragozaController } from './controllers/zaragoza.controller';
 import { WeatherController } from './controllers/weather.controller';
 import { ZineController } from './controllers/zine.controller';
 import { PushController } from './controllers/push.controller';
+import { AgendaController } from './controllers/agenda.controller';
+import { AgendaAdminController } from './controllers/agenda-admin.controller';
+import { SearchController } from './controllers/search.controller';
 import { CitiesService } from './services/cities.service';
 import { RAEService } from './services/rae.service';
 import { TwitterDownloaderService } from './services/twitter-downloader.service';
@@ -17,6 +20,7 @@ import { ZaragozaService } from './services/zaragoza.service';
 import { WeatherService } from './services/weather.service';
 import { ZineService } from './services/zine.service';
 import { PushService } from './services/push.service';
+import { AgendaService } from './services/agenda.service';
 import { HealthModule } from './health/health.module';
 
 @Module({
@@ -51,6 +55,9 @@ import { HealthModule } from './health/health.module';
     RAEController,
     TwitterDownloaderController,
     PushController,
+    AgendaController,
+    AgendaAdminController,
+    SearchController,
   ],
   providers: [
     CitiesService,
@@ -60,6 +67,7 @@ import { HealthModule } from './health/health.module';
     RAEService,
     TwitterDownloaderService,
     PushService,
+    AgendaService,
   ],
 })
 export class AppModule {}

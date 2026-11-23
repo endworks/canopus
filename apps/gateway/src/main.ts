@@ -40,6 +40,9 @@ async function bootstrap() {
     .filter(Boolean);
   app.enableCors({ origin: origins.length > 0 ? origins : '*' });
   app.useGlobalInterceptors(new RpcResponseInterceptor());
+  // An edition's whole programme is posted as one body: Pilar's 750 acts run
+  // to a few hundred kilobytes, past the default limit of 100.
+  app.useBodyParser('json', { limit: '5mb' });
 
   const config = new DocumentBuilder()
     .setTitle('Canopus API')
@@ -55,6 +58,10 @@ async function bootstrap() {
     .addTag(
       'Weather',
       'Current conditions, a short forecast and official warnings, from the provider whose key the caller sends',
+    )
+    .addTag(
+      'Agenda',
+      'What is on in Zaragoza: the city’s agenda, its big dates and its places',
     )
     .addTag('RAE definitions', 'Spanish dictionary (RAE) lookups')
     .addTag('Twitter downloader', 'Media URLs extracted from tweets')

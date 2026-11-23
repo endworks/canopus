@@ -1,0 +1,719 @@
+{
+  "abba": {
+    "id": 316987,
+    "subEvent": [
+      {
+        "id": 316583,
+        "location": {
+          "id": 939,
+          "title": "Auditorio de Zaragoza Princesa Leonor",
+          "streetAddress": "C/ Eduardo Ibarra , 3",
+          "postalCode": "50009",
+          "junta": "Junta Municipal Universidad",
+          "addressLocality": "Zaragoza",
+          "addressRegion": "Zaragoza",
+          "addressCountry": "España",
+          "telephone": "976 721300, 1312",
+          "faxNumber": "976 721 396",
+          "email": "info@zaragozacultural.com",
+          "accessibility": "<ul><li>Baño adaptado: SI</li><li>Ascensor adaptado: SI</li><li>Rampa: planta calle</li><li>Puertas automáticas: SI</li></ul>",
+          "sameAs": "http://www.zaragoza.es/api/recurso/cultura-ocio/lugar/evento-zaragoza/939"
+        },
+        "startDate": "2026-12-05T00:00:00",
+        "endDate": "2026-12-05T00:00:00",
+        "space": {
+          "id": 231,
+          "title": "Sala Mozart",
+          "codUsuario": 1,
+          "description": "<p>Esta es la sala principal, una sala sinfónica, que ha sido comparada a la de la Sinfónica de Berlín y que ha recibido todo tipo de elegios por los músicos que han pasado por ella dado que hace gala de una acústica excepcional. La sala cuenta con capacidad para 2.000 personas y su diseño está inspirdo en un teatro griego, de modo que la orquesta permanece rodeada por el público que permite tanto la creación como el silencio absoluto, propiciado por un sistema de aire acondicionado no perceptible confiriendo un carácter único a a sala.</p>",
+          "image": "//www.zaragoza.es/cont/paginas/actividades/imagen/sala-mozart.jpg",
+          "idEquipamiento": 939,
+          "nombreEquipamiento": "Auditorio de Zaragoza Princesa Leonor"
+        },
+        "openingHours": [
+          {
+            "dayOfWeek": "Sábado",
+            "startTime": "19:00",
+            "codSesion": 194528,
+            "codigosIndividuales": false
+          }
+        ]
+      }
+    ],
+    "title": "Abba The New Experience",
+    "description": "<p>Revolution Tour.</p>\n",
+    "program": {
+      "id": 2340,
+      "title": "Navidad",
+      "description": "<p>La Navidad vuelve a transformar Zaragoza. A partir del&nbsp;<strong>27 de noviembre</strong>, la ciudad se envuelve en un universo luminoso y vibrante que invita a vivir la ilusi&oacute;n en cada calle, en cada plaza, en cada rinc&oacute;n. Durante m&aacute;s de cinco semanas, la capital aragonesa se convierte en un gran escenario navide&ntilde;o, donde el brillo de la tradici&oacute;n convive con nuevas experiencias culturales, lum&iacute;nicas y sensoriales dise&ntilde;adas para disfrutar en familia.</p>\n\n<p>Con m&aacute;s de&nbsp;<strong>600 actividades</strong>&nbsp;repartidas a lo largo de&nbsp;<strong>40 d&iacute;as</strong>, la programaci&oacute;n navide&ntilde;a vuelve a posicionar a Zaragoza como uno de los destinos imprescindibles en estas fechas. M&aacute;s de&nbsp;<strong>1.000 sesiones y pases</strong>&nbsp;dar&aacute;n vida a espect&aacute;culos, conciertos, talleres, mercados, dinamizaciones y propuestas para todos los p&uacute;blicos, con la plaza del Pilar y la Muestra Navide&ntilde;a como epicentro, y actividades en el Parque Grande Jos&eacute; Antonio Labordeta, como la Estrella o como el Mercado Gourmet.</p>\n\n<p>Esta edici&oacute;n incorpora importantes novedades: un renovado acto de encendido, la ampliaci&oacute;n de la iluminaci&oacute;n art&iacute;stica en diversos puntos de la ciudad, como el Paseo Independencia; un nuevo espect&aacute;culo en el Parque Grande Jos&eacute; Antonio Labordeta, La Estrella y una Cabalgata de Reyes con el recorrido actualizado que sigue la estela de &quot;Oro, Incienso y Mirra&quot;. Zaragoza ya est&aacute; preparada para sorprender. Bienvenido a una Navidad que se vive, se siente y se comparte. Bienvenido a la ciudad donde la magia sucede.</p>\n",
+      "image": "//www.zaragoza.es/cont/paginas/actividades/imagen/navidad2026_2027-1.png",
+      "link": "https://www.zaragoza.es/sede/portal/cultura/navidad/",
+      "ordenDestacado": 1,
+      "inicioDestacado": "2025-11-20T00:00:00",
+      "finDestacado": "2026-01-07T00:00:00",
+      "lastUpdated": "2026-11-19T11:11:49"
+    },
+    "destacada": true,
+    "population": [
+      {
+        "id": 6,
+        "title": "Población en general"
+      }
+    ],
+    "validacion": "N",
+    "startDate": "2026-12-05T00:00:00",
+    "endDate": "2026-12-05T00:00:00",
+    "visible": "S",
+    "alt": "https://www.zaragoza.es/sede/servicio/cultura/evento/316987",
+    "category": [
+      {
+        "id": 22,
+        "title": "Ferias y Fiestas",
+        "image": "//www.zaragoza.es/cont/paginas/actividades/imagen/fiestas.gif",
+        "imageAlt": "//www.zaragoza.es/cont/paginas/actividades/icon/fiestas.png"
+      }
+    ],
+    "portales": [
+      {
+        "portal": {
+          "id": 1,
+          "title": "Web Municipal"
+        },
+        "featuredStartDate": "2026-11-23T00:00:00",
+        "featuredEndDate": "2026-12-05T00:00:00",
+        "featuredOrder": 4,
+        "visible": "S"
+      },
+      {
+        "portal": {
+          "id": 12,
+          "title": "Navidad"
+        },
+        "visible": "S"
+      }
+    ],
+    "image": "//www.zaragoza.es/cont/paginas/actividades/imagen/abba-1.png",
+    "creationDate": "2026-11-18T13:12:30",
+    "lastUpdated": "2026-11-23T12:36:20",
+    "attachment": {
+      "id": 342793,
+      "imageAlt": "//www.zaragoza.es/cont/paginas/actividades/imagen/abba-1.png"
+    },
+    "codUsuario": 1,
+    "daysLeft": 12,
+    "type": "Otras",
+    "location": "Auditorio de Zaragoza Princesa Leonor. Sala Mozart",
+    "sameAs": "http://www.zaragoza.es/api/recurso/cultura-ocio/evento-zaragoza/316987"
+  },
+  "sweet": {
+    "id": 317296,
+    "subEvent": [
+      {
+        "id": 316956,
+        "location": {
+          "id": 10646,
+          "title": "Plaza del Pilar",
+          "streetAddress": "Pza. del Pilar, 15",
+          "postalCode": "50003",
+          "junta": "Junta Municipal Casco Histórico",
+          "addressLocality": "Zaragoza",
+          "addressRegion": "Zaragoza",
+          "addressCountry": "España",
+          "accessibility": "<p class=\"destacado\">Accesibilidad Física</p>\n\n<ul>\n\t<li>Aparcamiento accesible reservado</li>\n\t<li>Espacio accesible reservado</li>\n\t<li>Aseos Adaptados: Sí</li>\n\t<li>Se permiten perros guía</li>\n</ul>\n\n<p><em>Información facilitada por el Observatorio de Cultura </em></p>\n",
+          "sameAs": "http://www.zaragoza.es/api/recurso/cultura-ocio/lugar/evento-zaragoza/10646"
+        },
+        "startDate": "2026-11-27T00:00:00",
+        "endDate": "2027-01-06T00:00:00",
+        "openingHours": [
+          {
+            "dayOfWeek": "Sábado",
+            "startTime": "11:00",
+            "endTime": "13:30",
+            "codSesion": 195176,
+            "codigosIndividuales": false
+          },
+          {
+            "dayOfWeek": "Miércoles",
+            "startTime": "16:30",
+            "endTime": "21:00",
+            "codSesion": 195166,
+            "codigosIndividuales": false
+          },
+          {
+            "dayOfWeek": "Domingo",
+            "startTime": "11:00",
+            "endTime": "13:30",
+            "codSesion": 195175,
+            "codigosIndividuales": false
+          },
+          {
+            "dayOfWeek": "Jueves",
+            "startTime": "16:30",
+            "endTime": "21:00",
+            "codSesion": 195172,
+            "codigosIndividuales": false
+          },
+          {
+            "dayOfWeek": "Viernes",
+            "startTime": "16:30",
+            "endTime": "22:00",
+            "codSesion": 195167,
+            "codigosIndividuales": false
+          },
+          {
+            "dayOfWeek": "Jueves",
+            "startTime": "11:00",
+            "endTime": "13:30",
+            "codSesion": 195170,
+            "codigosIndividuales": false
+          },
+          {
+            "dayOfWeek": "Miércoles",
+            "startTime": "11:00",
+            "endTime": "13:30",
+            "codSesion": 195178,
+            "codigosIndividuales": false
+          },
+          {
+            "dayOfWeek": "Martes",
+            "startTime": "11:00",
+            "endTime": "13:30",
+            "codSesion": 195169,
+            "codigosIndividuales": false
+          },
+          {
+            "dayOfWeek": "Martes",
+            "startTime": "16:30",
+            "endTime": "21:00",
+            "codSesion": 195171,
+            "codigosIndividuales": false
+          },
+          {
+            "dayOfWeek": "Lunes",
+            "startTime": "16:30",
+            "endTime": "21:00",
+            "codSesion": 195173,
+            "codigosIndividuales": false
+          },
+          {
+            "dayOfWeek": "Domingo",
+            "startTime": "16:30",
+            "endTime": "22:00",
+            "codSesion": 195177,
+            "codigosIndividuales": false
+          },
+          {
+            "dayOfWeek": "Sábado",
+            "startTime": "16:30",
+            "endTime": "22:00",
+            "codSesion": 195168,
+            "codigosIndividuales": false
+          },
+          {
+            "dayOfWeek": "Viernes",
+            "startTime": "11:00",
+            "endTime": "13:30",
+            "codSesion": 195179,
+            "codigosIndividuales": false
+          },
+          {
+            "dayOfWeek": "Lunes",
+            "startTime": "11:00",
+            "endTime": "13:30",
+            "codSesion": 195174,
+            "codigosIndividuales": false
+          }
+        ]
+      }
+    ],
+    "title": "Sweet Palace",
+    "program": {
+      "id": 2340,
+      "title": "Navidad",
+      "description": "<p>La Navidad vuelve a transformar Zaragoza. A partir del&nbsp;<strong>27 de noviembre</strong>, la ciudad se envuelve en un universo luminoso y vibrante que invita a vivir la ilusi&oacute;n en cada calle, en cada plaza, en cada rinc&oacute;n. Durante m&aacute;s de cinco semanas, la capital aragonesa se convierte en un gran escenario navide&ntilde;o, donde el brillo de la tradici&oacute;n convive con nuevas experiencias culturales, lum&iacute;nicas y sensoriales dise&ntilde;adas para disfrutar en familia.</p>\n\n<p>Con m&aacute;s de&nbsp;<strong>600 actividades</strong>&nbsp;repartidas a lo largo de&nbsp;<strong>40 d&iacute;as</strong>, la programaci&oacute;n navide&ntilde;a vuelve a posicionar a Zaragoza como uno de los destinos imprescindibles en estas fechas. M&aacute;s de&nbsp;<strong>1.000 sesiones y pases</strong>&nbsp;dar&aacute;n vida a espect&aacute;culos, conciertos, talleres, mercados, dinamizaciones y propuestas para todos los p&uacute;blicos, con la plaza del Pilar y la Muestra Navide&ntilde;a como epicentro, y actividades en el Parque Grande Jos&eacute; Antonio Labordeta, como la Estrella o como el Mercado Gourmet.</p>\n\n<p>Esta edici&oacute;n incorpora importantes novedades: un renovado acto de encendido, la ampliaci&oacute;n de la iluminaci&oacute;n art&iacute;stica en diversos puntos de la ciudad, como el Paseo Independencia; un nuevo espect&aacute;culo en el Parque Grande Jos&eacute; Antonio Labordeta, La Estrella y una Cabalgata de Reyes con el recorrido actualizado que sigue la estela de &quot;Oro, Incienso y Mirra&quot;. Zaragoza ya est&aacute; preparada para sorprender. Bienvenido a una Navidad que se vive, se siente y se comparte. Bienvenido a la ciudad donde la magia sucede.</p>\n",
+      "image": "//www.zaragoza.es/cont/paginas/actividades/imagen/navidad2026_2027-1.png",
+      "link": "https://www.zaragoza.es/sede/portal/cultura/navidad/",
+      "ordenDestacado": 1,
+      "inicioDestacado": "2025-11-20T00:00:00",
+      "finDestacado": "2026-01-07T00:00:00",
+      "lastUpdated": "2026-11-19T11:11:49"
+    },
+    "destacada": true,
+    "population": [
+      {
+        "id": 6,
+        "title": "Población en general"
+      }
+    ],
+    "validacion": "N",
+    "startDate": "2026-11-27T00:00:00",
+    "endDate": "2027-01-06T00:00:00",
+    "visible": "S",
+    "alt": "https://www.zaragoza.es/sede/servicio/cultura/evento/317296",
+    "category": [
+      {
+        "id": 26,
+        "title": "Otros",
+        "image": "//www.zaragoza.es/cont/paginas/actividades/imagen/otros.gif"
+      }
+    ],
+    "portales": [
+      {
+        "portal": {
+          "id": 1,
+          "title": "Web Municipal"
+        },
+        "visible": "S"
+      },
+      {
+        "portal": {
+          "id": 12,
+          "title": "Navidad"
+        },
+        "visible": "S"
+      }
+    ],
+    "image": "//www.zaragoza.es/cont/paginas/actividades/imagen/navidad2026_2027-1.png",
+    "creationDate": "2026-11-19T14:30:49",
+    "lastUpdated": "2026-11-23T10:21:55",
+    "price": [
+      {
+        "fareGroup": "Normal",
+        "hasCurrencyValue": 4,
+        "hasCurrency": "EUR",
+        "minSize": "1"
+      }
+    ],
+    "codUsuario": 1,
+    "daysLeft": 4,
+    "type": "Fiestas",
+    "location": "Plaza del Pilar",
+    "sameAs": "http://www.zaragoza.es/api/recurso/cultura-ocio/evento-zaragoza/317296"
+  },
+  "paco": {
+    "id": 315060,
+    "subEvent": [
+      {
+        "id": 314419,
+        "location": {
+          "id": 2479,
+          "title": "Centro de Historias",
+          "streetAddress": "Pza. San Agustin, 2",
+          "postalCode": "50002",
+          "junta": "Junta Municipal Casco Histórico",
+          "addressLocality": "Zaragoza",
+          "addressRegion": "Zaragoza",
+          "addressCountry": "España",
+          "telephone": "976 721 885",
+          "faxNumber": " 976 723 679",
+          "email": "centrodehistorias@zaragoza.es",
+          "publicTransport": "22, 35, 36",
+          "accessibility": "<ul>\n\t<li><strong>Acceso</strong>: Rampa adaptada</li>\n\t<li>Es accesible. No ofrece ninguna dificultad para la movilidad</li>\n</ul>\n\n<p><em>Información facilitada por </em><em>Fundación Dfa.</em></p>\n\n<p class=\"destacado\">Accesibilidad Física</p>\n\n<ul>\n\t<li>Aparcamiento accesible reservado</li>\n\t<li>Espacio accesible reservado</li>\n\t<li>Aseos Adaptados: Sí</li>\n\t<li>Se permiten perros guía</li>\n</ul>\n\n<p><em>Información facilitada por el Observatorio de Cultura</em></p>\n",
+          "sameAs": "http://www.zaragoza.es/api/recurso/cultura-ocio/lugar/evento-zaragoza/2479"
+        },
+        "startDate": "2026-10-02T00:00:00",
+        "endDate": "2027-01-10T00:00:00",
+        "space": {
+          "id": 683,
+          "title": "Espacio Tránsito",
+          "codUsuario": 36,
+          "description": "Dedicado a intervenciones artísticas qué rompen la bidimensionalidad de sus paredes para adentrarse en propuestas con un carácter más performativo dadas las características específicas del espacio. Artistas qué transitan hacia el ámbito profesional. Se encuentra en la planta baja del Centro de Historias.",
+          "imagen_sala": "4.jpg",
+          "idEquipamiento": 2479,
+          "nombreEquipamiento": "Centro de Historias"
+        },
+        "openingHours": [
+          {
+            "dayOfWeek": "Sábado",
+            "startTime": "10:00",
+            "endTime": "14:00",
+            "codSesion": 189752,
+            "codigosIndividuales": false
+          },
+          {
+            "dayOfWeek": "Miércoles",
+            "startTime": "10:00",
+            "endTime": "14:00",
+            "codSesion": 189775,
+            "codigosIndividuales": false
+          },
+          {
+            "dayOfWeek": "Viernes",
+            "startTime": "10:00",
+            "endTime": "14:00",
+            "codSesion": 189778,
+            "codigosIndividuales": false
+          },
+          {
+            "dayOfWeek": "Miércoles",
+            "startTime": "17:00",
+            "endTime": "21:00",
+            "codSesion": 189780,
+            "codigosIndividuales": false
+          },
+          {
+            "dayOfWeek": "Jueves",
+            "startTime": "17:00",
+            "endTime": "21:00",
+            "codSesion": 189781,
+            "codigosIndividuales": false
+          },
+          {
+            "dayOfWeek": "Jueves",
+            "startTime": "10:00",
+            "endTime": "14:00",
+            "codSesion": 189753,
+            "codigosIndividuales": false
+          },
+          {
+            "dayOfWeek": "Viernes",
+            "startTime": "17:00",
+            "endTime": "21:00",
+            "codSesion": 189754,
+            "codigosIndividuales": false
+          },
+          {
+            "dayOfWeek": "Martes",
+            "startTime": "17:00",
+            "endTime": "21:00",
+            "codSesion": 189776,
+            "codigosIndividuales": false
+          },
+          {
+            "dayOfWeek": "Domingo",
+            "startTime": "10:00",
+            "endTime": "14:30",
+            "codSesion": 189777,
+            "codigosIndividuales": false
+          },
+          {
+            "dayOfWeek": "Martes",
+            "startTime": "10:00",
+            "endTime": "14:00",
+            "codSesion": 189751,
+            "codigosIndividuales": false
+          },
+          {
+            "dayOfWeek": "Sábado",
+            "startTime": "17:00",
+            "endTime": "21:00",
+            "codSesion": 189779,
+            "codigosIndividuales": false
+          }
+        ]
+      }
+    ],
+    "title": "LA EDAD DE PIEDRA DE PACO ROCA...Y ALGUNA COSITA MÁS",
+    "description": "<p>El Centro de Historias de Zaragoza presenta <strong>LA EDAD DE PIEDRA DE PACO ROCA...Y ALGUNA COSITA M&Aacute;S</strong>, una exposici&oacute;n que propone un recorrido por los primeros a&ntilde;os creativos de uno de los autores fundamentales del c&oacute;mic contempor&aacute;neo espa&ntilde;ol.</p>\n\n<p>La exposici&oacute;n formar&aacute; parte de la programaci&oacute;n <strong>Diciembre mes del comic</strong> de Zaragoza, organizado por el Servicio de Centros C&iacute;vicos, en la que se promueven diversas actividades en torno al comic como eje principal y transversal a todas ellas.</p>\n\n<p>Del 2 de octubre de 2026 al 10 de enero de 2027, el p&uacute;blico podr&aacute; descubrir la faceta menos conocida de Paco Roca a trav&eacute;s de <strong>125 im&aacute;genes y piezas, la mayor&iacute;a originales</strong>.</p>\n\n<p>Una selecci&oacute;n de trabajos que permite seguir su evoluci&oacute;n desde que ten&iacute;a 9 a&ntilde;os hasta su primeras experiencias profesionales y los momentos inmediatamente anteriores a la consolidaci&oacute;n de su trayectoria como <strong>autor de c&oacute;mic</strong>.</p>\n\n<p>Porque antes de ser Paco Roca hubo un ni&ntilde;o que, como todos, dibujaba. Pero &eacute;l sigui&oacute; dibujando...</p>\n",
+    "destacada": true,
+    "url": "https://www.zaragoza.es/sede/servicio/cultura/evento/315060",
+    "twitter": "https://www.x.com/https://www.google.com/searc",
+    "facebook": "https://www.facebook.com/centrodehistoriaszarag",
+    "instagram": "https://www.instagram.com/centrohistorias/?hl=es",
+    "population": [
+      {
+        "id": 6,
+        "title": "Población en general"
+      }
+    ],
+    "validacion": "N",
+    "startDate": "2026-10-02T00:00:00",
+    "endDate": "2027-01-10T00:00:00",
+    "visible": "S",
+    "organizer": [
+      {
+        "id": 17650,
+        "title": "Centro de Historias",
+        "streetAddress": "Pza san Agustín, 2",
+        "addressLocality": "Zaragoza",
+        "postalCode": "50002",
+        "telephone": "976 721 885",
+        "email": "centrodehistorias@zaragoza.es",
+        "openingHours": "<div>de martes a sábado, de 10 a 14 y de 17 a 21 h;&nbsp;domingo y festivos, de 10 a 14,30 h.</div>\n",
+        "url": "https://www.zaragoza.es/sede/portal/museos/centro-historias/",
+        "lastUpdated": "2016-12-14T11:07:13",
+        "validation": true,
+        "receiveInscMail": false
+      }
+    ],
+    "alt": "https://www.zaragoza.es/sede/servicio/cultura/evento/315060",
+    "category": [
+      {
+        "id": 92,
+        "title": "Artes plásticas",
+        "image": "//www.zaragoza.es/cont/paginas/actividades/imagen/artesplasticas.gif",
+        "imageAlt": "//www.zaragoza.es/cont/paginas/actividades/icon/artes-plasticas.png"
+      }
+    ],
+    "portales": [
+      {
+        "portal": {
+          "id": 37,
+          "title": "Centro de Historias"
+        },
+        "featuredStartDate": "2026-10-02T00:00:00",
+        "featuredEndDate": "2027-01-10T00:00:00",
+        "featuredOrder": 3,
+        "visible": "S"
+      }
+    ],
+    "image": "//www.zaragoza.es/cont/paginas/actividades/imagen/edadpiedra960x640.png",
+    "creationDate": "2026-09-22T13:27:31",
+    "lastUpdated": "2026-11-09T10:16:22",
+    "attachment": {
+      "id": 341312,
+      "imageAlt": "//www.zaragoza.es/cont/paginas/actividades/imagen/edadpiedra960x640.png"
+    },
+    "codUsuario": 36,
+    "daysLeft": 48,
+    "type": "Exposiciones",
+    "location": "Centro de Historias. Espacio Tránsito",
+    "accessible": true,
+    "sameAs": "http://www.zaragoza.es/api/recurso/cultura-ocio/evento-zaragoza/315060"
+  },
+  "muel": {
+    "id": 315093,
+    "subEvent": [
+      {
+        "id": 314455,
+        "location": {
+          "id": 21853,
+          "title": "FARTLECK SPORT",
+          "streetAddress": "CALLE TOMAS BRETÓN,46",
+          "postalCode": "50001",
+          "junta": "Junta Municipal Universidad",
+          "addressLocality": "Zaragoza",
+          "addressRegion": "Zaragoza",
+          "addressCountry": "España",
+          "telephone": "876169566",
+          "email": "INFO@FARTLECKSPORT.COM",
+          "sameAs": "http://www.zaragoza.es/api/recurso/cultura-ocio/lugar/evento-zaragoza/21853"
+        },
+        "startDate": "2027-01-10T00:00:00",
+        "endDate": "2027-01-10T00:00:00",
+        "openingHours": [
+          {
+            "dayOfWeek": "Domingo",
+            "startTime": "10:30",
+            "codSesion": 189835,
+            "codigosIndividuales": false
+          }
+        ]
+      }
+    ],
+    "title": "XVII Carrera Popular Villa de Muel",
+    "description": "<p>El pr&oacute;ximo domingo 10 de enero de 2027 se celebrar&aacute; en Muel la XVII Carrera Popular Villa de Muel . El Ayuntamiento de Muel promueve y organiza este evento deportivo, con la Direcci&oacute;n T&eacute;cnica de Fartleck Sport, incluyendo la prueba en el calendario auton&oacute;mico y bajo el control t&eacute;cnico del Comit&eacute; territorial de jueces FAA</p>\n",
+    "destacada": true,
+    "url": "https://fartlecksport.com/carrera-popular-de-muel/",
+    "facebook": "https://es-es.facebook.com/FartleckSport/",
+    "instagram": "https://www.instagram.com/fartlecksport_eventos",
+    "population": [
+      {
+        "id": 2,
+        "title": "Jóvenes"
+      }
+    ],
+    "validacion": "N",
+    "registration": {
+      "title": "FARTLECK SPORT",
+      "streetAddress": "PLAZA CANAL IMPERIAL Nº3",
+      "telephone": "639030430",
+      "url": "https://fartlecksport.com/carrera-popular-muel/inscribete/",
+      "email": "equipoeventos2@fartlecksport.com",
+      "startDate": "2026-09-23T00:00:00",
+      "endDate": "2027-01-06T00:00:00"
+    },
+    "startDate": "2027-01-10T00:00:00",
+    "endDate": "2027-01-10T00:00:00",
+    "visible": "S",
+    "organizer": [
+      {
+        "id": 18620,
+        "title": "Fartleck Sport",
+        "streetAddress": "Bretón, 46",
+        "addressLocality": "Zaragoza",
+        "postalCode": "50005",
+        "telephone2": "618 759 423",
+        "email": "info@fartlecksport.com",
+        "url": "http://www.fartlecksport.com",
+        "lastUpdated": "2018-08-02T15:00:39",
+        "validation": true,
+        "receiveInscMail": false
+      }
+    ],
+    "alt": "https://www.zaragoza.es/sede/servicio/cultura/evento/315093",
+    "category": [
+      {
+        "id": 25,
+        "title": "Deporte",
+        "image": "//www.zaragoza.es/cont/paginas/actividades/imagen/deporte.gif",
+        "imageAlt": "//www.zaragoza.es/cont/paginas/actividades/icon/deporte.png"
+      }
+    ],
+    "portales": [
+      {
+        "portal": {
+          "id": 2,
+          "title": "InfoJoven",
+          "code": "juvenil"
+        },
+        "featuredStartDate": "2027-01-03T00:00:00",
+        "featuredEndDate": "2027-01-08T00:00:00",
+        "visible": "S"
+      }
+    ],
+    "image": "//www.zaragoza.es/cont/paginas/actividades/imagen/6bb11824-2024-46c5-8775-fb6c9d95e149.jpg",
+    "creationDate": "2026-09-22T22:54:55",
+    "lastUpdated": "2026-09-23T08:33:39",
+    "priceComment": "<p>9&euro; (Hasta el 10/12/26) 11&euro; (Hasta el 03/01/27)</p>\n",
+    "attachment": {
+      "id": 341338,
+      "image": "//www.zaragoza.es/cont/paginas/actividades/imagen/6bb11824-2024-46c5-8775-fb6c9d95e149.jpg"
+    },
+    "codUsuario": 2,
+    "daysLeft": 48,
+    "type": "Exhibición, proyección, competición",
+    "location": "FARTLECK SPORT",
+    "sameAs": "http://www.zaragoza.es/api/recurso/cultura-ocio/evento-zaragoza/315093"
+  },
+  "course": {
+    "id": 310845,
+    "subEvent": [
+      {
+        "id": 309949,
+        "location": {
+          "id": 12201,
+          "title": "Centro Joaquín Roncal ",
+          "streetAddress": "C/ San Braulio, 5-7-9",
+          "postalCode": "50003",
+          "junta": "Junta Municipal Casco Histórico",
+          "addressLocality": "Zaragoza",
+          "addressRegion": "Zaragoza",
+          "addressCountry": "España",
+          "telephone": "976 290 301",
+          "faxNumber": " 976 290 302",
+          "email": "informacion@joaquinroncal.org",
+          "publicTransport": "35, 39",
+          "accessibility": "<p class=\"destacado\">Accesibilidad F&iacute;sica</p>\r\n<ul>\r\n    <li>Aparcamiento accesible reservado</li>\r\n    <li>Espacio accesible reservado</li>\r\n    <li>Aseos Adaptados: S&iacute;</li>\r\n    <li>Se permiten perros gu&iacute;a</li>\r\n    <li>C&oacute;digo QR</li>\r\n</ul>",
+          "sameAs": "http://www.zaragoza.es/api/recurso/cultura-ocio/lugar/evento-zaragoza/12201"
+        },
+        "startDate": "2026-11-03T00:00:00",
+        "endDate": "2026-11-23T00:00:00",
+        "openingHours": [
+          {
+            "dayOfWeek": "Viernes",
+            "startTime": "09:00",
+            "endTime": "11:00",
+            "codSesion": 180949,
+            "codigosIndividuales": false
+          },
+          {
+            "dayOfWeek": "Miércoles",
+            "startTime": "09:00",
+            "endTime": "11:00",
+            "codSesion": 180951,
+            "codigosIndividuales": false
+          },
+          {
+            "dayOfWeek": "Martes",
+            "startTime": "09:00",
+            "endTime": "11:00",
+            "codSesion": 180952,
+            "codigosIndividuales": false
+          },
+          {
+            "dayOfWeek": "Lunes",
+            "startTime": "09:00",
+            "endTime": "11:00",
+            "codSesion": 180950,
+            "codigosIndividuales": false
+          }
+        ]
+      }
+    ],
+    "title": "1.02  DISEÑO WEB Y TIENDA ONLINE (24 HORAS)",
+    "description": "<h6><font color=\"#000000\"><font face=\"Arial, sans-serif\"><font size=\"3\" style=\"font-size: 12pt\"><b><span style=\"background: transparent\"><span style=\"text-decoration: none\">CONTENIDOS:</span></span></b></font></font></font></h6>\n\n<h6 align=\"justify\" style=\"font-variant: normal; font-style: normal; text-decoration: none;\">&nbsp;</h6>\n\n<p align=\"justify\" style=\"font-variant: normal; line-height: 100%; margin-bottom: 0cm; font-style: normal; text-decoration: none;\"><font color=\"#000000\"><font face=\"Arial, sans-serif\"><font size=\"3\" style=\"font-size: 12pt\"><b><span style=\"background: transparent\"><span style=\"text-decoration: none\">Bloque 1. Fundamentos de una web </span></span></b></font></font></font></p>\n\n<ul>\n\t<li>\n\t<h5 style=\"margin-bottom: 0cm; line-height: 100%;\"><font face=\"Arial, sans-serif\"><font size=\"3\" style=\"font-size: 12pt\">Requisitos de una web </font></font></h5>\n\t</li>\n\t<li>\n\t<h5 style=\"margin-bottom: 0cm; line-height: 100%;\"><font face=\"Arial, sans-serif\"><font size=\"3\" style=\"font-size: 12pt\">Imagen de marca y propuesta de venta </font></font></h5>\n\t</li>\n\t<li>\n\t<h5 style=\"margin-bottom: 0cm; line-height: 100%;\"><font face=\"Arial, sans-serif\"><font size=\"3\" style=\"font-size: 12pt\">Plataformas para web y ecommerce </font></font></h5>\n\t</li>\n</ul>\n\n<h6 style=\"margin-bottom: 0cm; line-height: 100%;\">&nbsp;</h6>\n\n<h6 align=\"justify\" style=\"font-variant: normal; line-height: 100%; margin-bottom: 0cm; font-style: normal; text-decoration: none;\"><font color=\"#000000\"><font face=\"Arial, sans-serif\"><font size=\"3\" style=\"font-size: 12pt\"><b><span style=\"background: transparent\"><span style=\"text-decoration: none\">Bloque 2. Crear p&aacute;ginas atractivas</span></span></b></font></font></font></h6>\n\n<ul>\n\t<li>\n\t<h5 style=\"margin-bottom: 0cm; line-height: 100%;\"><font face=\"Arial, sans-serif\"><font size=\"3\" style=\"font-size: 12pt\">Configuraci&oacute;n de WordPress </font></font></h5>\n\t</li>\n\t<li>\n\t<h5><font face=\"Arial, sans-serif\"><font size=\"3\" style=\"font-size: 12pt\">Copywriting y optimizaci&oacute;n de contenidos </font></font></h5>\n\t</li>\n\t<li>\n\t<h5 style=\"margin-bottom: 0cm; line-height: 100%;\"><font face=\"Arial, sans-serif\"><font size=\"3\" style=\"font-size: 12pt\">Posicionamiento SEO b&aacute;sico</font></font></h5>\n\t</li>\n</ul>\n\n<h6 style=\"margin-bottom: 0cm; line-height: 100%;\">&nbsp;</h6>\n\n<h6 align=\"justify\" style=\"font-variant: normal; line-height: 100%; margin-bottom: 0cm; font-style: normal; text-decoration: none;\"><font color=\"#000000\"><font face=\"Arial, sans-serif\"><font size=\"3\" style=\"font-size: 12pt\"><b><span style=\"background: transparent\"><span style=\"text-decoration: none\">Bloque 3. Gestionar una tienda online</span></span></b></font></font></font></h6>\n\n<ul>\n\t<li style=\"margin-bottom: 0cm; line-height: 100%;\">\n\t<h5><font face=\"Arial, sans-serif\"><font size=\"3\" style=\"font-size: 12pt\">C&oacute;mo crear un cat&aacute;logo atractivo </font></font></h5>\n\t</li>\n\t<li style=\"margin-bottom: 0cm; line-height: 100%;\">\n\t<h5><font face=\"Arial, sans-serif\"><font size=\"3\" style=\"font-size: 12pt\">Impuestos, m&eacute;todos de pago y env&iacute;os </font></font></h5>\n\t</li>\n\t<li style=\"margin-bottom: 0cm; line-height: 100%;\">\n\t<h5><font face=\"Arial, sans-serif\"><font size=\"3\" style=\"font-size: 12pt\">Experiencia de usuario y fidelizaci&oacute;n del cliente </font></font></h5>\n\t</li>\n\t<li style=\"margin-bottom: 0cm; line-height: 100%;\">\n\t<h5><font face=\"Arial, sans-serif\"><font size=\"3\" style=\"font-size: 12pt\">C&oacute;mo crecer de forma sostenida </font></font></h5>\n\t</li>\n</ul>\n\n<p style=\"margin-bottom: 0cm; line-height: 100%\">&nbsp;</p>\n\n<p style=\"margin-bottom: 0cm; line-height: 100%\">&nbsp;</p>\n\n<p style=\"margin-bottom: 0cm; line-height: 100%\">&nbsp;</p>\n\n<p style=\"margin-bottom: 0cm; line-height: 100%\"><strong><font face=\"Arial, sans-serif\"><font size=\"3\" style=\"font-size: 12pt\">18 PLAZAS</font></font></strong></p>\n\n<p>\n<style type=\"text/css\">p { margin-bottom: 0.25cm; line-height: 115%; background: transparent }\n</style>\n</p>\n",
+    "program": {
+      "id": 2415,
+      "title": "Cursos y talleres del Servicio de Mujer e Igualdad Septiembre 2026"
+    },
+    "destacada": true,
+    "url": "https://www.zaragoza.es/sede/portal/servicios-sociales/mujer/",
+    "population": [
+      {
+        "id": 4,
+        "title": "Mujeres"
+      }
+    ],
+    "validacion": "N",
+    "registration": {
+      "description": "Ser mujer\nConocimientos de informática",
+      "openingHours": "<p style=\"margin-bottom: 0.5cm\"><strong>On line: </strong>desde las 9 h. del martes 15 de septiembre hasta las 23.59 h. del mi&eacute;rcoles 16 de septiembre.</p>\n\n<p style=\"margin-bottom: 0.5cm\"><strong>Presenc</strong><strong><b>ial</b></strong><strong>:</strong> en la Casa de la Mujer, c/ Don Juan de Arag&oacute;n 2, los d&iacute;as 15 y 16 de septiembre en horario de 9 a 19 h.</p>\n\n<p style=\"margin-bottom: 0.5cm\"><strong>Telef&oacute;nicamente:</strong> a trav&eacute;s del 619 123 232<span style=\"font-variant: normal\"><font color=\"#000000\"><span style=\"text-decoration: none\"><span style=\"background: #ffffff\"> </span></span></font></span>los d&iacute;as 15 y 16 de septiembre en horario de 9 a 19 h.</p>\n\n<p>\n<style type=\"text/css\">p { margin-bottom: 0cm; line-height: 115%; background: transparent }a:visited { so-language: zxx; color: #800000; text-decoration: underline }strong { font-weight: bold }a:link { so-language: zxx; color: #000080; text-decoration: underline }\n</style>\n</p>\n",
+      "url": "https://www.zaragoza.es/ciudad/sectores/mujer/index_CasaMujer",
+      "startDate": "2026-09-15T00:00:00",
+      "endDate": "2026-09-16T00:00:00"
+    },
+    "startDate": "2026-11-03T00:00:00",
+    "endDate": "2026-11-23T00:00:00",
+    "visible": "S",
+    "organizer": [
+      {
+        "id": 19202,
+        "title": "Servicio de Igualdad. Casa de La Mujer",
+        "streetAddress": "D. Juan de Aragón, 2",
+        "addressLocality": "Zaragoza",
+        "postalCode": "50001",
+        "telephone": "976 726 040",
+        "email": "casamujer@zaragoza.es",
+        "openingHours": "<p>lunes a jueves, de 9 a 14 h y&nbsp;de 16 a 19 h;<br />\nviernes, de 9 a 14 h.</p>\n",
+        "url": "https://www.zaragoza.es/mujer",
+        "lastUpdated": "2018-09-19T00:00:00",
+        "validation": true,
+        "receiveInscMail": false
+      }
+    ],
+    "alt": "https://www.zaragoza.es/sede/servicio/cultura/evento/310845",
+    "category": [
+      {
+        "id": 43,
+        "title": "Cursos y Talleres",
+        "image": "//www.zaragoza.es/cont/paginas/actividades/imagen/cursos-talleres.gif",
+        "imageAlt": "//www.zaragoza.es/cont/paginas/actividades/icon/cursos-talleres.png"
+      }
+    ],
+    "portales": [
+      {
+        "portal": {
+          "id": 27,
+          "title": "Mujer",
+          "code": "mujer"
+        },
+        "featuredStartDate": "2026-11-03T00:00:00",
+        "featuredEndDate": "2026-11-23T00:00:00",
+        "visible": "S"
+      }
+    ],
+    "image": "//www.zaragoza.es/cont/paginas/actividades/imagen/agenda_vertical_sept_2026-32.png",
+    "query": "EMPLEABILIDAD",
+    "creationDate": "2026-06-26T13:43:30",
+    "lastUpdated": "2026-08-17T09:57:19",
+    "price": [
+      {
+        "fareGroup": "Gratuita",
+        "hasCurrencyValue": 0,
+        "hasCurrency": "EUR",
+        "minSize": "1"
+      }
+    ],
+    "attachment": {
+      "id": 339055,
+      "image": "//www.zaragoza.es/cont/paginas/actividades/imagen/agenda_vertical_sept_2026-32.png"
+    },
+    "codUsuario": 168,
+    "daysLeft": 0,
+    "type": "Cursos y talleres",
+    "location": "Centro Joaquín Roncal ",
+    "minAge": 18,
+    "sameAs": "http://www.zaragoza.es/api/recurso/cultura-ocio/evento-zaragoza/310845"
+  }
+}

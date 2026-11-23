@@ -58,6 +58,32 @@ export interface ResolvedOverride {
   facet: FacetSource;
 }
 
+/** Bulk writes, a thousand at a time, unordered: one round trip each. */
+const writeInBatches = async (model: Model<any>, ops: any[]) => {
+  for (let i = 0; i < ops.length; i += 1000) {
+    await model.bulkWrite(ops.slice(i, i + 1000), { ordered: false });
+  }
+};
+
+/** From the first session's start to the last one's end, from sessions in hand. */
+export const spanFromList = (list: OccurrenceDoc[]) => {
+  const live = list.filter((o) => o.status !== 'removed');
+  if (live.length === 0) return undefined;
+  let starts = new Date(live[0].starts);
+  let ends = new Date(live[0].ends ?? live[0].starts);
+  for (const o of live) {
+    if (+new Date(o.starts) < +starts) starts = new Date(o.starts);
+    const end = new Date(o.ends ?? o.starts);
+    if (+end > +ends) ends = end;
+  }
+  return {
+    starts,
+    ends,
+    startDate: localDate(starts),
+    endDate: localDate(new Date(+ends - 1)),
+  };
+};
+
 export interface PublishCounts {
   events: { created: number; updated: number; unchanged: number };
   places: { created: number; updated: number };
@@ -91,6 +117,7 @@ export class Publisher {
     now: Date,
   ): Promise<{ map: IdentityMap; created: number; updated: number }> {
     const map = await this.identities.load(source, 'places');
+    await this.adoptOrphans(source, map, this.places);
     const all: PlaceDoc[] = await this.places.find({}).lean();
     const byId = new Map(all.map((p) => [p._id, p]));
     let created = 0;
@@ -119,6 +146,9 @@ export class Publisher {
           match ? 'matched' : 'exact',
           match?._id,
         );
+        // Saved before the place is: a run cut short must not leave a place
+        // the next run cannot recognise as its own.
+        await map.flush();
       }
       const existing = byId.get(id);
       const provenance: FacetSource = {
@@ -232,15 +262,35 @@ export class Publisher {
     );
 
     const eventIds = await this.identities.load(source, 'events');
+    await this.adoptOrphans(source, eventIds, this.events);
+    // Every id this run will write is saved before anything is written with
+    // it, so a run cut short (a deploy, a restart) leaves nothing the next one
+    // would mistake for new and publish twice.
+    for (const candidate of candidates) eventIds.resolve(candidate.ref);
+    await eventIds.flush();
+
     const confirmed: string[] = [];
     const existingEvents = new Map<string, EventDoc & { contentHash?: string }>(
       (
         await this.events.find({ 'provenance.identity.source': source }).lean()
       ).map((e: any) => [e._id, e]),
     );
+    // One query and batched writes rather than a round trip per session: the
+    // first import is some 24,000 sessions, which is minutes of latency
+    // against a database across a network.
+    const existingOccurrences = new Map<string, OccurrenceDoc[]>();
+    for (const o of (await this.occurrences
+      .find({ eventId: { $in: candidates.map((c) => eventIds.get(c.ref)) } })
+      .lean()) as OccurrenceDoc[]) {
+      const list = existingOccurrences.get(o.eventId) ?? [];
+      list.push(o);
+      existingOccurrences.set(o.eventId, list);
+    }
+    const occurrenceOps: any[] = [];
+    const eventOps: any[] = [];
 
     for (const candidate of candidates) {
-      const id = eventIds.resolve(candidate.ref);
+      const id = eventIds.get(candidate.ref);
       const existing = existingEvents.get(id);
       const override = overrides.get(candidate.ref);
       // Within the edition, give or take its margin, and not merely overlapping
@@ -260,7 +310,8 @@ export class Publisher {
         .map((p) => placeIds.get(p.ref))
         .filter(Boolean) as string[];
 
-      const occurrenceResult = await this.publishOccurrences(
+      const occurrenceResult = this.planOccurrences(
+        existingOccurrences.get(id) ?? [],
         id,
         ancestorIds,
         candidate.occurrences,
@@ -268,14 +319,15 @@ export class Publisher {
         places[0],
         source,
         candidate.ref,
-        today,
         now,
+        addDays(today, -7),
       );
+      occurrenceOps.push(...occurrenceResult.ops);
       counts.occurrences.created += occurrenceResult.created;
       counts.occurrences.updated += occurrenceResult.updated;
       counts.occurrences.removed += occurrenceResult.removed;
 
-      const span = (await this.spanOf(id)) ?? {
+      const span = spanFromList(occurrenceResult.live) ?? {
         starts: fromLocal(candidate.startDate),
         ends: fromLocal(addDays(candidate.endDate, 1)),
         startDate: candidate.startDate,
@@ -376,38 +428,45 @@ export class Publisher {
               : existing.status === 'cancelled' && existing.overriddenBy
                 ? 'scheduled'
                 : existing.status);
-        await this.events.updateOne(
-          { _id: id },
-          {
-            $set: {
+        eventOps.push({
+          updateOne: {
+            filter: { _id: id },
+            update: {
+              $set: {
+                ...fields,
+                searchText,
+                contentHash,
+                provenance,
+                changes,
+                status,
+              },
+              $inc: { version: 1 },
+            },
+          },
+        });
+        counts.events.updated++;
+      } else {
+        eventOps.push({
+          insertOne: {
+            document: {
+              _id: id,
+              slug: `${slugify(candidate.title)}-${id.slice(-6).toLowerCase()}`,
+              slugHistory: [],
               ...fields,
+              status: override?.status ?? 'scheduled',
+              changes: [],
               searchText,
               contentHash,
               provenance,
-              changes,
-              status,
+              version: 1,
             },
-            $inc: { version: 1 },
           },
-        );
-        counts.events.updated++;
-      } else {
-        await this.events.create({
-          _id: id,
-          slug: `${slugify(candidate.title)}-${id.slice(-6).toLowerCase()}`,
-          slugHistory: [],
-          ...fields,
-          status: override?.status ?? 'scheduled',
-          changes: [],
-          searchText,
-          contentHash,
-          provenance,
-          version: 1,
         });
         counts.events.created++;
       }
     }
-    await eventIds.flush();
+    await writeInBatches(this.occurrences, occurrenceOps);
+    await writeInBatches(this.events, eventOps);
     // Unchanged is still seen: the source said the same thing again today,
     // which is what a reader's "checked" time is meant to say.
     if (confirmed.length > 0) {
@@ -450,6 +509,37 @@ export class Publisher {
     const existing: OccurrenceDoc[] = await this.occurrences
       .find({ eventId })
       .lean();
+    const plan = this.planOccurrences(
+      existing,
+      eventId,
+      ancestorIds,
+      candidates,
+      placeOf,
+      primaryPlace,
+      source,
+      ref,
+      now,
+      removeFrom,
+    );
+    await writeInBatches(this.occurrences, plan.ops);
+    return plan;
+  }
+
+  /** What to write for one event's sessions, against what is stored. Writes nothing. */
+  planOccurrences(
+    existing: OccurrenceDoc[],
+    eventId: string,
+    ancestorIds: string[],
+    candidates: OccurrenceCandidate[],
+    placeOf: (ref?: string) => string | undefined,
+    primaryPlace: string | undefined,
+    source: string,
+    ref: string,
+    now: Date,
+    removeFrom: string,
+  ) {
+    const ops: any[] = [];
+    const live: OccurrenceDoc[] = [];
     const byKey = new Map(existing.map((o) => [o.sourceKey, o]));
     const facet: FacetSource = {
       source,
@@ -462,7 +552,22 @@ export class Publisher {
     const added: OccurrenceDoc[] = [];
     const seen = new Set<string>();
 
+    // The city lists some sessions twice with different end times, in a
+    // different order on every fetch: the latest-ending copy wins, so the
+    // choice is the same every run and the two never overwrite each other.
+    const unique = new Map<string, OccurrenceCandidate>();
     for (const c of candidates) {
+      const kept = unique.get(c.sourceKey);
+      if (
+        !kept ||
+        +(c.ends ?? 0) > +(kept.ends ?? 0) ||
+        (+(c.ends ?? 0) === +(kept.ends ?? 0) &&
+          JSON.stringify(c) > JSON.stringify(kept))
+      ) {
+        unique.set(c.sourceKey, c);
+      }
+    }
+    for (const c of unique.values()) {
       seen.add(c.sourceKey);
       const placeId = placeOf(c.placeRef);
       const fields = {
@@ -493,14 +598,20 @@ export class Publisher {
           provenance: { schedule: facet },
           version: 1,
         };
-        await this.occurrences.updateOne(
-          { eventId, sourceKey: c.sourceKey },
-          { $setOnInsert: doc },
-          { upsert: true },
-        );
+        ops.push({
+          updateOne: {
+            filter: { eventId, sourceKey: c.sourceKey },
+            update: { $setOnInsert: doc },
+            upsert: true,
+          },
+        });
         added.push(doc as OccurrenceDoc);
+        live.push(doc as OccurrenceDoc);
         created++;
-      } else if (
+        continue;
+      }
+      live.push({ ...before, ...fields } as OccurrenceDoc);
+      if (
         before.status === 'removed' ||
         +new Date(before.starts) !== +c.starts ||
         +new Date(before.ends ?? 0) !== +(c.ends ?? 0) ||
@@ -513,13 +624,15 @@ export class Publisher {
         JSON.stringify(before.ancestorIds) !==
           JSON.stringify(fields.ancestorIds)
       ) {
-        await this.occurrences.updateOne(
-          { _id: before._id },
-          {
-            $set: { ...fields, 'provenance.schedule': facet },
-            $inc: { version: 1 },
+        ops.push({
+          updateOne: {
+            filter: { _id: before._id },
+            update: {
+              $set: { ...fields, 'provenance.schedule': facet },
+              $inc: { version: 1 },
+            },
           },
-        );
+        });
         updated++;
       }
     }
@@ -533,10 +646,22 @@ export class Publisher {
         o.localDate >= removeFrom,
     );
     if (removed.length > 0) {
-      await this.occurrences.updateMany(
-        { _id: { $in: removed.map((o) => o._id) } },
-        { $set: { status: 'removed' }, $inc: { version: 1 } },
-      );
+      ops.push({
+        updateMany: {
+          filter: { _id: { $in: removed.map((o) => o._id) } },
+          update: { $set: { status: 'removed' }, $inc: { version: 1 } },
+        },
+      });
+    }
+    const removedIds = new Set(removed.map((o) => o._id));
+    // Older sessions kept as archive still count towards the event's span.
+    for (const o of existing) {
+      if (
+        !seen.has(o.sourceKey) &&
+        o.status !== 'removed' &&
+        !removedIds.has(o._id)
+      )
+        live.push(o);
     }
 
     const changes = [];
@@ -561,7 +686,55 @@ export class Publisher {
         });
       }
     }
-    return { created, updated, removed: removed.length, changes };
+    return { ops, live, created, updated, removed: removed.length, changes };
+  }
+
+  /**
+   * Records of a source published without their identity saved: what a run
+   * cut short between the two used to leave. Each ref keeps its oldest
+   * record; any later copy becomes `removed`, pointing at it.
+   */
+  private async adoptOrphans(
+    source: string,
+    map: IdentityMap,
+    model: Model<any>,
+  ) {
+    const docs = await model
+      .find(
+        { 'provenance.identity.source': source, status: { $ne: 'removed' } },
+        { 'provenance.identity.ref': 1, createdAt: 1 },
+      )
+      .sort({ createdAt: 1 })
+      .lean();
+    const duplicates: { id: string; keep: string }[] = [];
+    for (const doc of docs as any[]) {
+      const ref = doc.provenance?.identity?.ref;
+      if (!ref) continue;
+      const known = map.get(ref);
+      if (!known) map.resolve(ref, 'exact', doc._id);
+      else if (known !== doc._id) duplicates.push({ id: doc._id, keep: known });
+    }
+    await map.flush();
+    for (const { id, keep } of duplicates) {
+      await model.updateOne(
+        { _id: id },
+        {
+          $set: { status: 'removed', visibility: 'hidden', replacedBy: keep },
+          $inc: { version: 1 },
+        },
+      );
+      if (model === this.events) {
+        await this.occurrences.updateMany(
+          { eventId: id },
+          { $set: { status: 'removed' } },
+        );
+      }
+    }
+    if (duplicates.length > 0) {
+      this.logger.warn(
+        `${source}: ${duplicates.length} duplicate records retired`,
+      );
+    }
   }
 
   /** From the first session's start to the last one's end. */

@@ -464,10 +464,19 @@ export const occurrencesFor = (
         precision: 'day',
         localDate: start,
         localEndDate: end,
-        hours: [...grouped].map(([slot, days]) => {
-          const [opens, closes] = slot.split('-');
-          return { days: days.sort(), opens, closes: closes || undefined };
-        }),
+        hours: [...grouped]
+          .map(([slot, days]) => {
+            const [opens, closes] = slot.split('-');
+            // Left out rather than undefined: stored, undefined becomes null and
+            // would never compare equal again.
+            return closes
+              ? { days: days.sort(), opens, closes }
+              : { days: days.sort(), opens };
+          })
+          // The city sends the same hours in a different order on every fetch.
+          .sort(
+            (a, b) => a.days[0] - b.days[0] || a.opens.localeCompare(b.opens),
+          ),
       },
     ];
   }

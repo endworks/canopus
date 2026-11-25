@@ -6,6 +6,14 @@ import { lastValueFrom, timeout, TimeoutError } from 'rxjs';
 export const DEFAULT_REQUEST_TIMEOUT = 10000;
 
 /**
+ * Who is asking, on every request these helpers make. A source that can see
+ * who sends its traffic, and how to reach them, can write to us before it
+ * blocks us; an anonymous axios client is a scraper to a firewall.
+ */
+export const USER_AGENT =
+  'canopus/1.0 (https://github.com/endworks/canopus; hello@end.works)';
+
+/**
  * One request with a deadline, for the scrapers. Every service was repeating
  * this pipe and its own copy of the timeout mapping; a timeout is the one
  * failure worth naming, so it is named here and nowhere else.
@@ -30,6 +38,7 @@ export const postWithTimeout = async <T = any>(
         .post<T>(url, new URLSearchParams(form).toString(), {
           ...axiosConfig,
           headers: {
+            'user-agent': USER_AGENT,
             'content-type': 'application/x-www-form-urlencoded',
             ...axiosConfig.headers,
           },
@@ -56,7 +65,12 @@ export const fetchWithTimeout = async <T = any>(
   const { timeoutMs = DEFAULT_REQUEST_TIMEOUT, ...axiosConfig } = config ?? {};
   try {
     const response = await lastValueFrom(
-      http.get<T>(url, axiosConfig).pipe(timeout(timeoutMs)),
+      http
+        .get<T>(url, {
+          ...axiosConfig,
+          headers: { 'user-agent': USER_AGENT, ...axiosConfig.headers },
+        })
+        .pipe(timeout(timeoutMs)),
     );
     return response.data;
   } catch (exception) {

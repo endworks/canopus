@@ -6,8 +6,14 @@ served by the gateway under `/agenda/v1`. The specification is
 
 ## What it does
 
-Checked every hour. It runs every six hours, or every hour while an edition
-is on or within three days of one (edition mode). A run:
+Checked every hour. It runs every six hours, edition or not, and backs off
+to twelve and then twenty-four hours while the city keeps failing it: the
+city began refusing this server on 25 November 2026, a day and a half into
+hourly downloads of its whole list, and a refusal answered with the same
+request on a timer is what gets a server blocked. A restart imports only if
+a run is due. Edition mode (an edition on, or within three days of one) is
+still worked out and reported by `admin/status`, but no longer changes how
+often the city is asked. A run:
 
 1. **Publishes the editorial layer:** the series, editions, places,
    programmes and activities people write, through the admin API. The

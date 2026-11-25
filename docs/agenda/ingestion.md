@@ -21,7 +21,7 @@ Each source is registered in `content/config/sources.yml`, with:
 
 | Source id | What | How | When |
 |---|---|---|---|
-| `city.agenda` | The city's event service: activities, places, sessions, programmes | `cultura/evento/list.json`, `srsname=wgs84`, `q=endDate=ge=<today>`, sorted by id, pages of 500 | Every 6 h; hourly inside a linked edition |
+| `city.agenda` | The city's event service: activities, places, sessions, programmes | `cultura/evento/list.json`, `srsname=wgs84`, `q=endDate=ge=<today>`, sorted by id, pages of 500 | Every 6 h, backing off to 12 h and 24 h while the city fails; never hourly, see `apps/agenda/README.md` |
 | `city.facilities` | Museums and other venues: address, point, hours, contact | `equipamiento/list.json`, category *Museos* and others as needed | Weekly |
 | `editorial` | Hand-written series, editions, programmes, activities, places, agents, notices and corrections | The editorial collections, through the admin API | On every publish |
 | `pdf.<edition>` | An edition's printed programme, parsed into editorial drafts | A parser per programme format, run by hand; it writes `draft` documents a person reviews and publishes | Once per edition |

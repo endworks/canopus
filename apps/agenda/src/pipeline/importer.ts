@@ -19,12 +19,16 @@ import { Watchdog } from './watchdog';
 
 /** How long after starting the service the first import runs. */
 const FIRST_RUN_DELAY_MS = 30_000;
-/** The ordinary rhythm: the city's agenda changes through the day, not by the minute. */
+/**
+ * One rhythm, edition or not. An hourly full download of the city's list was
+ * running when the city started refusing this server (25 November 2026), and
+ * a programme that moves overnight is still caught within six hours.
+ */
 const EVERY_MS = 6 * 60 * 60 * 1000;
-/** While an edition is on, give or take three days: programmes move daily then. */
-const EDITION_EVERY_MS = 60 * 60 * 1000;
 /** Slack, so a run that took a minute does not push the next one an hour later. */
 const SLACK_MS = 5 * 60 * 1000;
+/** How far apart runs get while the city keeps refusing: 6, 12, then 24 hours. */
+const MAX_BACKOFF_STEPS = 2;
 const EDITION_MARGIN_DAYS = 3;
 
 type Step = { step: string; message: string };
@@ -33,8 +37,8 @@ type Step = { step: string; message: string };
  * Keeps the published data current.
  *
  * Checked every hour. It runs when six hours have passed since the last run,
- * or one hour while an edition is on or within three days of it (edition
- * mode). A run:
+ * and backs off to twelve and then twenty-four while the city keeps failing
+ * it, so a refusal is not met with the same request every six hours. A run:
  *
  * 1. publishes the editorial layer, so hand-written data is in place first;
  * 2. fetches and archives the city's agenda, and publishes it with the
@@ -66,8 +70,9 @@ export class Importer implements OnApplicationBootstrap {
 
   onApplicationBootstrap() {
     if (process.env.AGENDA_IMPORT_ON_START === 'off') return;
+    // Only when due: a deploy is not a reason to download the city's list again.
     setTimeout(
-      () => void this.runAll().catch(() => undefined),
+      () => void this.tick().catch(() => undefined),
       FIRST_RUN_DELAY_MS,
     ).unref();
   }
@@ -78,20 +83,28 @@ export class Importer implements OnApplicationBootstrap {
     await this.runAll().catch(() => undefined);
   }
 
-  /** Whether the next run is due: on the ordinary rhythm, or on edition mode's. */
+  /** Whether the next run is due: six hours on, longer while the city keeps failing. */
   async due(now = new Date()): Promise<boolean> {
-    const last = await this.runs
-      .findOne({}, { startedAt: 1 })
+    const recent = await this.runs
+      .find({}, { startedAt: 1, errors: 1 })
       .sort({ startedAt: -1 })
+      .limit(MAX_BACKOFF_STEPS + 1)
       .lean();
-    const since = last
-      ? now.getTime() - new Date((last as any).startedAt).getTime()
-      : Infinity;
-    if (since >= EVERY_MS - SLACK_MS) return true;
-    return (
-      (await this.editionMode(todayInCity(now))) &&
-      since >= EDITION_EVERY_MS - SLACK_MS
-    );
+    if (!recent.length) return true;
+    const since =
+      now.getTime() - new Date((recent[0] as any).startedAt).getTime();
+    return since >= this.interval(recent as any[]) - SLACK_MS;
+  }
+
+  /** Six hours, doubled for each run in a row the city failed, up to a day. */
+  interval(recent: { errors?: Step[] }[]): number {
+    let failures = 0;
+    for (const run of recent.slice(0, MAX_BACKOFF_STEPS)) {
+      if (!(run.errors ?? []).some((error) => error.step.startsWith('city.')))
+        break;
+      failures += 1;
+    }
+    return EVERY_MS * 2 ** failures;
   }
 
   async editionMode(today: string): Promise<boolean> {

@@ -1,6 +1,7 @@
 import { generateKeyPairSync } from 'node:crypto';
 import { HttpService } from '@nestjs/axios';
 import { HttpException } from '@nestjs/common';
+import { USER_AGENT } from '@canopus/nest';
 import { createCache } from 'cache-manager';
 import { of, throwError } from 'rxjs';
 import { AppleWeatherProvider } from '../providers/apple-weather.provider';
@@ -1471,6 +1472,7 @@ describe('apple weather', () => {
     const url = asked(calls, 'weatherkit.apple.com') as string;
     expect(sentTo(calls, headers, 'weatherkit.apple.com')).toEqual({
       Authorization: 'Bearer signed.jwt.token',
+      'user-agent': USER_AGENT,
     });
     expect(url).not.toContain('signed.jwt.token');
   });
@@ -2090,6 +2092,7 @@ describe('apple weather', () => {
     // caller's own token spends their quota rather than the deployment's.
     expect(sentTo(calls, headers, '/api/v1/weather/')).toEqual({
       Authorization: 'Bearer signed.jwt.token',
+      'user-agent': USER_AGENT,
     });
   });
 

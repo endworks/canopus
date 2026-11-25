@@ -31,6 +31,8 @@ import {
 const LIVE = { status: { $ne: 'removed' } };
 /** How many hits a search may ask for: the gateway pages through at most this many. */
 const MAX_SEARCH_HITS = 200;
+/** How long an edition that has ended stays among the highlights, where its series does not say. */
+const HIDE_ENDED_AFTER_DAYS = 14;
 /** The agenda changes at an import, every six hours; a search may lag it ten minutes. */
 const SEARCH_INDEX_TTL_MS = 10 * 60 * 1000;
 const MAX_FEED_DAYS = 60;
@@ -245,8 +247,16 @@ export class ReadService {
         summary: eventSummary(event, l),
       };
     });
+    // An ended edition stays a fortnight, unless its series says otherwise: past that it is
+    // only what comes next, which is the series' place in coming up.
+    const shown = entries.filter((entry) => {
+      if (entry.state !== 'ended') return true;
+      const owner = series.find((s) => s.currentEditionId === entry.eventId);
+      const keep = owner?.display?.hideAfterDays ?? HIDE_ENDED_AFTER_DAYS;
+      return entry.endDate >= addDays(today, -keep);
+    });
     const order = { on: 0, upcoming: 1, ended: 2 };
-    entries.sort(
+    shown.sort(
       (a, b) =>
         order[a.state] - order[b.state] ||
         (a.state === 'on'
@@ -256,7 +266,7 @@ export class ReadService {
             : b.endDate.localeCompare(a.endDate)) ||
         (a.rank ?? 99) - (b.rank ?? 99),
     );
-    return { entries, series };
+    return { entries: shown, series };
   }
 
   async comingUp(query: ComingUpQuery) {

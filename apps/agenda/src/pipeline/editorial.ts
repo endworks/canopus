@@ -16,7 +16,13 @@ import { EditorialRow, EditorialStore } from '../editorial/store';
 import { slugify } from '../model/ids';
 import { nextByRule } from '../model/rules';
 import { addDays, fromLocal } from '../model/time';
-import { EventDoc, FacetSource, Pricing, SeriesDoc } from '../model/types';
+import {
+  MediaRef,
+  EventDoc,
+  FacetSource,
+  Pricing,
+  SeriesDoc,
+} from '../model/types';
 import { EVENT, PLACE, SERIES } from '../schemas/schemas';
 import { Identities, IdentityMap } from './identities';
 import { EditionLink, Publisher, ResolvedOverride } from './publisher';
@@ -545,6 +551,9 @@ export class Editorial {
         children && children.endDate > official.endDate
           ? children.endDate
           : official.endDate;
+      const picture = edition.media?.length
+        ? undefined
+        : await this.sharedPicture(edition._id);
       await this.events.updateOne(
         { _id: edition._id },
         {
@@ -555,6 +564,7 @@ export class Editorial {
               startDate,
               endDate,
             },
+            ...(picture ? { media: [picture] } : {}),
           },
         },
       );
@@ -590,6 +600,37 @@ export class Editorial {
           : { $set: { nextExpected: next }, $unset: { currentEditionId: '' } },
       );
     }
+  }
+
+  /**
+   * The picture an edition without one of its own is shown with: the one most
+   * of its activities share, which is the edition's own artwork — Navidad's
+   * Z of a tree on every activity of the Plaza. A picture fewer than three
+   * share, or under a fifth of the pictured ones, says nothing about the whole.
+   */
+  async sharedPicture(editionId: string): Promise<MediaRef | undefined> {
+    const counted: { _id: string; count: number; media: MediaRef }[] =
+      await this.events.aggregate([
+        {
+          $match: {
+            ancestorIds: editionId,
+            status: { $ne: 'removed' },
+            'media.0.url': { $exists: true },
+          },
+        },
+        {
+          $group: {
+            _id: { $arrayElemAt: ['$media.url', 0] },
+            count: { $sum: 1 },
+            media: { $first: { $arrayElemAt: ['$media', 0] } },
+          },
+        },
+        { $sort: { count: -1 } },
+      ]);
+    const pictured = counted.reduce((sum, c) => sum + c.count, 0);
+    const [top] = counted;
+    if (!top || top.count < 3 || top.count * 5 < pictured) return undefined;
+    return top.media;
   }
 
   /** Editions starting within 30 days whose facts were last checked more than 14 days ago. */

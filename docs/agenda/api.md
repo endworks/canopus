@@ -335,11 +335,15 @@ refetching it.
 - Ordered:
   1. on now, the soonest end first;
   2. upcoming, by start;
-  3. ended, the most recent first. These are the series' last editions,
-     between one year and the next.
+  3. ended, the most recent first: a series' last edition, for 14 days after
+     it ends (`display.hideAfterDays` on the series overrides it). After that
+     the series is only in `/series?nextWithin`, under coming up.
 - `rank` breaks ties.
 - An `ended` entry carries its series' `next`, and its `label` says when it
   ended.
+- An edition with no picture of its own is given the one most of its
+  activities share (at least three, and a fifth of the pictured ones), set
+  after each import: Navidad's is the Z its activities carry.
   - **The countdown** ("faltan 320 días") is computed by the client from
     `next.startDate`, the same way as the time state below, so it is right
     every day without a request.

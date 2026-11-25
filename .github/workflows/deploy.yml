@@ -406,3 +406,42 @@ jobs:
               exit 1
             fi
             echo "$CONTAINER is up (health=$health)"
+
+  # Every container healthy is not the API answering: on 25 November 2026 all
+  # eight passed their healthchecks while the gateway's TCP clients dialled the
+  # gateway itself and every route answered 500 for eight minutes. So after a
+  # deploy, ask the public API through each backend the gateway reaches, on
+  # routes that read what the services keep rather than a city feed, so an
+  # outage upstream does not fail a deploy of ours.
+  smoke:
+    needs: deploy
+    if: ${{ always() && needs.deploy.result == 'success' && github.event_name != 'pull_request' && (github.ref_name == 'main' || github.ref_type == 'tag') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ask the public API through every backend
+        run: |
+          base=https://api.end.works
+          routes=(
+            "zgz/tram/stations"
+            "zgz/bus/stations"
+            "zgz/search?q=pilar&limit=1"
+            "agenda/v1/highlights"
+            "zine/movies?location=zaragoza"
+            "zine/cinema?location=zaragoza"
+          )
+          failed=0
+          for route in "${routes[@]}"; do
+            status=000
+            # A minute each: the last container restarted may still be dialling in.
+            for _ in $(seq 1 12); do
+              status=$(curl -s -o /dev/null -m 20 -w '%{http_code}' "$base/$route" || echo 000)
+              [ "$status" = "200" ] && break
+              sleep 5
+            done
+            echo "$status  /$route"
+            [ "$status" = "200" ] || failed=1
+          done
+          if [ "$failed" = 1 ]; then
+            echo "::error::The API is not answering after this deploy. Revert it, or redeploy the last good commit."
+            exit 1
+          fi

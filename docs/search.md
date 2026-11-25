@@ -37,6 +37,8 @@ listings.
 failed or took longer than 2.5 s and was left out. An activity whose other
 nights at the same place were folded into it carries `more`, how many. A
 series carries `eventId`, its current edition, which is the page to open.
+Agenda hits carry `icon`, their kind's Phosphor glyph (a concert's is
+`microphone-stage`), and `image`, their first picture where they have one.
 
 ## Matching
 

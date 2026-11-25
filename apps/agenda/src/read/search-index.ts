@@ -5,9 +5,27 @@ import {
   SearchHit,
   SearchHitType,
 } from '@canopus/shared';
+import { KINDS } from '../model/taxonomy';
 import { addDays } from '../model/time';
 import { EventDoc, PlaceDoc, SeriesDoc } from '../model/types';
 import { Lang, say } from './views';
+
+const ICONS = new Map(KINDS.map((k) => [k.code, k.icon]));
+
+/** A kind's glyph, or its nearest parent's: `music.concert.jazz` falls back to `music.concert`. */
+export const kindIcon = (kinds: string[] | undefined): string | undefined => {
+  for (const kind of kinds ?? []) {
+    for (
+      let code = kind;
+      code;
+      code = code.slice(0, Math.max(code.lastIndexOf('.'), 0))
+    ) {
+      const icon = ICONS.get(code);
+      if (icon) return icon;
+    }
+  }
+  return undefined;
+};
 
 /** What a search reads: the whole agenda, held in memory and scored there. */
 export interface AgendaIndex {
@@ -96,6 +114,8 @@ export const searchAgenda = (
         startDate: s.nextExpected?.startDate,
         endDate: s.nextExpected?.endDate,
         eventId: s.currentEditionId,
+        icon: kindIcon(s.kinds),
+        image: s.media?.[0]?.url,
         service: 'agenda',
         score: score * 1.2,
       });
@@ -124,6 +144,8 @@ export const searchAgenda = (
         title: say(e.title, l),
         subtitle: say(place?.name, l),
         coordinates: place?.geo?.coordinates,
+        icon: kindIcon(e.kinds),
+        image: e.media?.[0]?.url,
         startDate: e.span?.startDate,
         endDate: e.span?.endDate,
         service: 'agenda',

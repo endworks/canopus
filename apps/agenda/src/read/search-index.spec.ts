@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { groupSessions, searchAgenda, timeFactor } from './search-index';
+import {
+  groupSessions,
+  kindIcon,
+  searchAgenda,
+  timeFactor,
+} from './search-index';
 
 const TODAY = '2026-11-25';
 
@@ -116,5 +121,14 @@ describe('searchAgenda', () => {
       () => undefined,
     );
     expect(hits).toHaveLength(2);
+  });
+});
+
+describe('kindIcon', () => {
+  it('reads a kind, or its nearest parent, as its glyph', () => {
+    expect(kindIcon(['music.concert'])).toBe('microphone-stage');
+    expect(kindIcon(['music.concert.unheard-of'])).toBe('microphone-stage');
+    expect(kindIcon(['unheard-of'])).toBeUndefined();
+    expect(kindIcon(undefined)).toBeUndefined();
   });
 });

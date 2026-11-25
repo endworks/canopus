@@ -37,6 +37,10 @@ export interface SearchHit {
   more?: number;
   /** For a series, its current edition: the event a client opens for it. */
   eventId?: string;
+  /** What it is, as a Phosphor glyph name: the agenda's kind (`microphone-stage` for a concert). */
+  icon?: string;
+  /** Its picture, where it has one: the first of its media. */
+  image?: string;
 }
 
 export interface SearchPayload {

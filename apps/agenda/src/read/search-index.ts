@@ -95,6 +95,7 @@ export const searchAgenda = (
         subtitle: s.nextExpected ? `${s.nextExpected.startDate}` : undefined,
         startDate: s.nextExpected?.startDate,
         endDate: s.nextExpected?.endDate,
+        eventId: s.currentEditionId,
         service: 'agenda',
         score: score * 1.2,
       });

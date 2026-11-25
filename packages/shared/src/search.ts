@@ -35,6 +35,8 @@ export interface SearchHit {
   score: number;
   /** Further sessions of the same activity at the same place, folded into this hit. */
   more?: number;
+  /** For a series, its current edition: the event a client opens for it. */
+  eventId?: string;
 }
 
 export interface SearchPayload {

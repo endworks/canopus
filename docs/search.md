@@ -35,7 +35,8 @@ listings.
 
 `meta.next` is `null` on the last page. `meta.partial` names a service that
 failed or took longer than 2.5 s and was left out. An activity whose other
-nights at the same place were folded into it carries `more`, how many.
+nights at the same place were folded into it carries `more`, how many. A
+series carries `eventId`, its current edition, which is the page to open.
 
 ## Matching
 

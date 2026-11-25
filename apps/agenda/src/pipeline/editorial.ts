@@ -464,8 +464,10 @@ export class Editorial {
     let parent: ResolvedOverride['parent'];
     if (doc.set.parent) {
       const id = eventIds.get(doc.set.parent);
-      const found: EventDoc = id
-        ? await this.events.findOne({ _id: id }, { ancestorIds: 1 }).lean()
+      const found = id
+        ? await this.events
+            .findOne({ _id: id }, { ancestorIds: 1 })
+            .lean<Pick<EventDoc, 'ancestorIds'>>()
         : undefined;
       if (found) parent = { id, ancestorIds: found.ancestorIds ?? [] };
     }

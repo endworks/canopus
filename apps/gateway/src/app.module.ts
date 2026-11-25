@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { requireEnv, SERVICE_TOKENS, TCP_PORT } from '@canopus/shared';
 import { LoggingModule } from '@canopus/nest';
@@ -39,11 +39,20 @@ import { HealthModule } from './health/health.module';
         ),
     }),
     // One TCP client per backend; host comes from `${TOKEN}_HOST`, port is shared.
-    ClientsModule.register(
+    // Asked of ConfigService, not read off process.env here: @nestjs/config 12.1
+    // loads the .env file after this array is built, and a client with no host
+    // dials localhost:3000, which is this gateway's own HTTP server.
+    ClientsModule.registerAsync(
       Object.values(SERVICE_TOKENS).map((name) => ({
         name,
-        transport: Transport.TCP,
-        options: { host: process.env[`${name}_HOST`], port: TCP_PORT },
+        inject: [ConfigService],
+        useFactory: (config: ConfigService) => ({
+          transport: Transport.TCP as const,
+          options: {
+            host: config.getOrThrow<string>(`${name}_HOST`),
+            port: TCP_PORT,
+          },
+        }),
       })),
     ),
   ],

@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -60,14 +60,18 @@ import {
       { name: Subscription.name, schema: SubscriptionSchema },
     ]),
     ScheduleModule.forRoot(),
-    ClientsModule.register([
+    // From ConfigService, as in the gateway: process.env is not filled from .env yet here.
+    ClientsModule.registerAsync([
       {
         name: SERVICE_TOKENS.zaragoza,
-        transport: Transport.TCP,
-        options: {
-          host: process.env[`${SERVICE_TOKENS.zaragoza}_HOST`],
-          port: TCP_PORT,
-        },
+        inject: [ConfigService],
+        useFactory: (config: ConfigService) => ({
+          transport: Transport.TCP as const,
+          options: {
+            host: config.getOrThrow<string>(`${SERVICE_TOKENS.zaragoza}_HOST`),
+            port: TCP_PORT,
+          },
+        }),
       },
     ]),
   ],

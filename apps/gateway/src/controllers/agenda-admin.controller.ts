@@ -59,7 +59,7 @@ export const whoIs = (
  * Keys may hold "/" (`pilar-2026/espacio-zity`): send it encoded, `%2F`.
  */
 @ApiExcludeController()
-@Controller('agenda/v1/admin')
+@Controller(['zgz/agenda/v1/admin', 'agenda/v1/admin'])
 export class AgendaAdminController {
   constructor(private readonly agenda: AgendaService) {}
 

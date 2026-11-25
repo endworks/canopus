@@ -22,7 +22,7 @@ import { ALL_SCHEMAS } from './schemas/schemas';
  *
  * docs/agenda/ is the specification. This service holds the city's agenda as
  * an archive it never prunes, the series and editions written for it, and the
- * read side of the API the gateway serves under /agenda/v1.
+ * read side of the API the gateway serves under /zgz/agenda/v1.
  */
 @Module({
   imports: [

@@ -31,10 +31,13 @@ const int = (value?: string) => {
  * Versioned in the path from the first release. Within v1 routes and fields
  * are only ever added; anything that would break an installed app goes to v2
  * beside it.
+ *
+ * Under /zgz with the rest of the city. `agenda/v1` is where 1.1.0 (builds
+ * 458 and 459) asks, so it answers there too until those builds are gone.
  */
-@ApiTags('Agenda')
+@ApiTags('Zaragoza')
 @ApiDefaultResponse({ description: 'Error response', type: ErrorResponse })
-@Controller('agenda/v1')
+@Controller(['zgz/agenda/v1', 'agenda/v1'])
 export class AgendaController {
   constructor(private readonly agenda: AgendaService) {}
 

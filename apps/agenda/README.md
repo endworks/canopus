@@ -1,7 +1,7 @@
 # @canopus/agenda
 
 What is on in Zaragoza: the city's agenda, its big dates and its places,
-served by the gateway under `/agenda/v1`. The specification is
+served by the gateway under `/zgz/agenda/v1`. The specification is
 [docs/agenda](../../docs/agenda/README.md).
 
 ## What it does
@@ -48,7 +48,7 @@ seconds, without a fetch.
 | `AGENDA_IMPORT_ON_START` | `off` to skip the import 30 s after starting. |
 | `SENTRY_DSN` | Optional. |
 
-The gateway checks `AGENDA_ADMIN_TOKEN` on every `/agenda/v1/admin` route:
+The gateway checks `AGENDA_ADMIN_TOKEN` on every `/zgz/agenda/v1/admin` route:
 one token, or `name:token,name:token` so revisions say who. It comes from
 1Password, `Canopus Agenda/admin token`. The routes are listed in
 docs/agenda/api.md, "Admin".

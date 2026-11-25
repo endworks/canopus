@@ -5,7 +5,7 @@ is the point. Two kinds of hand-written material, kept in two places:
 
 | What | Where | Why there |
 |---|---|---|
-| **Configuration:** the taxonomy, the source registry, the filters, the mappings, the affiliate programmes | `content/config/` in canopus, as YAML | It behaves like code: it changes what every record becomes. It is reviewed in a pull request, checked against a schema in CI, and imported by the deploy (`POST /agenda/v1/admin/config/import`) |
+| **Configuration:** the taxonomy, the source registry, the filters, the mappings, the affiliate programmes | `content/config/` in canopus, as YAML | It behaves like code: it changes what every record becomes. It is reviewed in a pull request, checked against a schema in CI, and imported by the deploy (`POST /zgz/agenda/v1/admin/config/import`) |
 | **Editorial data:** series, editions, programmes, activities, places, agents, vendors, notices, corrections | MongoDB, in the `editorial_*` collections (data-model.md), through the admin API | It changes by the hour during an edition. A time that moves at 18:00 must be fixed by 18:05, from a phone, without a pull request and a deploy |
 
 ```
@@ -48,7 +48,7 @@ thousands of records, and that should be reviewed.
 - **One thing at a time:** the admin API, through a minimal admin page
   first and the full admin UI later (README, phases).
 - **A whole programme at once:** the bulk format below.
-  - It is YAML or JSON, posted to `POST /agenda/v1/admin/editorial/bulk`.
+  - It is YAML or JSON, posted to `POST /zgz/agenda/v1/admin/editorial/bulk`.
   - Everything is written as `draft`, and a report says what each entry
     became.
   - The PDF parser writes this format, so a printed programme becomes
@@ -68,7 +68,7 @@ thousands of records, and that should be reviewed.
 ## The bulk format
 
 ```yaml
-# POST /agenda/v1/admin/editorial/bulk — an edition and everything in it
+# POST /zgz/agenda/v1/admin/editorial/bulk — an edition and everything in it
 key: pilar-2026
 series: fiestas-del-pilar
 title: { es: Fiestas del Pilar 2026, en: Fiestas del Pilar 2026 }

@@ -1,8 +1,13 @@
 # Agenda — API v1
 
-The gateway exposes it at `/agenda/v1`, over HTTPS and JSON, and documents
+The gateway exposes it at `/zgz/agenda/v1`, over HTTPS and JSON, and documents
 it in the gateway's Swagger like every other service. This document is the
 contract: what is written here is what clients may rely on.
+
+It sits under `/zgz` because it is Zaragoza's, beside the city's stops and its
+search. It was first served at `/agenda/v1`, which the app's 1.1.0 (builds 458
+and 459) asks, so every route answers at both paths, identically, until no
+installed build uses the old one.
 
 ## The compatibility contract
 
@@ -258,7 +263,7 @@ sheet.
 
 ### Feed
 
-`GET /agenda/v1/feed?from=YYYY-MM-DD&days=30`
+`GET /zgz/agenda/v1/feed?from=YYYY-MM-DD&days=30`
 
 What the app keeps offline: every listed occurrence between `from` (default
 today) and `days` later (default 30, maximum 60), with everything they refer
@@ -284,7 +289,7 @@ to.
 
 ### Change feed
 
-`GET /agenda/v1/changes?since=<cursor>&limit=500`
+`GET /zgz/agenda/v1/changes?since=<cursor>&limit=500`
 
 What changed since a cursor, so the app updates its copy without
 refetching it.
@@ -305,7 +310,7 @@ refetching it.
 
 ### Highlights
 
-`GET /agenda/v1/highlights`
+`GET /zgz/agenda/v1/highlights`
 
 ```jsonc
 {
@@ -350,7 +355,7 @@ refetching it.
 
 ### Coming up
 
-`GET /agenda/v1/series?nextWithin=365`
+`GET /zgz/agenda/v1/series?nextWithin=365`
 
 Every series with a `nextExpected` within the window, ordered by its start:
 the "Coming up" (*Próximamente*) list under the highlights, each with a
@@ -399,7 +404,7 @@ Clients must show past things, not hide them:
 
 ### Events
 
-`GET /agenda/v1/events/{id | slug}?include=children,occurrences,participants,notices`
+`GET /zgz/agenda/v1/events/{id | slug}?include=children,occurrences,participants,notices`
 
 One event in detail, of any type. An old slug answers too; its response
 carries the current `slug`.
@@ -411,7 +416,7 @@ carries the current `slug`.
 | `participants` | `participants`: participations, ordered by role, then `order` |
 | `notices` | `notices`: active notices scoped to it |
 
-`GET /agenda/v1/events/{id}/schedule?date=YYYY-MM-DD&kinds=&placeId=&pricing=free&cursor=`
+`GET /zgz/agenda/v1/events/{id}/schedule?date=YYYY-MM-DD&kinds=&placeId=&pricing=free&cursor=`
 
 The programme of an edition or a programme, day by day: every occurrence of
 every descendant. This is what an edition's page pages through.
@@ -426,17 +431,17 @@ every descendant. This is what an edition's page pages through.
 }
 ```
 
-`GET /agenda/v1/events/{id}/participants?role=vendor&dietary=vegan&maxPrice=10`
+`GET /zgz/agenda/v1/events/{id}/participants?role=vendor&dietary=vegan&maxPrice=10`
 
 Everyone with a role in the event and its descendants. Vendors come with
 their offerings, ordered by programme, then `order`.
 
-`GET /agenda/v1/events/{id}/places?kinds=service`
+`GET /zgz/agenda/v1/events/{id}/places?kinds=service`
 
 Every place the event and its descendants use, temporary ones included
 (stages, toilets, first aid), for the edition's map.
 
-`GET /agenda/v1/events?kinds=&placeId=&from=&to=&pricing=&type=&parentId=&cursor=`
+`GET /zgz/agenda/v1/events?kinds=&placeId=&from=&to=&pricing=&type=&parentId=&cursor=`
 
 A list of event summaries matching all the filters, ordered by
 `span.starts`. Only `listed` events unless `visibility=searchable` is asked
@@ -444,25 +449,25 @@ for.
 
 ### Places
 
-`GET /agenda/v1/places?kinds=venue.museum&near=lon,lat&radius=2000&openNow=true&cursor=`
+`GET /zgz/agenda/v1/places?kinds=venue.museum&near=lon,lat&radius=2000&openNow=true&cursor=`
 
 Ordered by distance when `near` is given, else by name.
 
-`GET /agenda/v1/places/{id | slug}?include=happening`
+`GET /zgz/agenda/v1/places/{id | slug}?include=happening`
 
 `happening` adds what is on there in the next 30 days: occurrences, with
 their events in `included`.
 
 ### Agents
 
-`GET /agenda/v1/agents/{id | slug}?include=participations`
+`GET /zgz/agenda/v1/agents/{id | slug}?include=participations`
 
 `participations` adds where the agent appears, current and upcoming first.
 For example: where the food truck is this week.
 
 ### Search
 
-`GET /agenda/v1/search?q=…&types=event,place,agent&from=&cursor=`
+`GET /zgz/agenda/v1/search?q=…&types=event,place,agent&from=&cursor=`
 
 Searches titles, subtitles, tags, performers, aliases, vendors and dishes.
 
@@ -475,14 +480,14 @@ Searches titles, subtitles, tags, performers, aliases, vendors and dishes.
 
 ### Series
 
-`GET /agenda/v1/series/{id | slug}?include=editions`
+`GET /zgz/agenda/v1/series/{id | slug}?include=editions`
 
 `editions` adds every edition, newest first, as summaries: the archive. A
 past edition keeps its whole programme at its own route.
 
 ### Taxonomy
 
-`GET /agenda/v1/taxonomy`
+`GET /zgz/agenda/v1/taxonomy`
 
 ```jsonc
 {
@@ -508,19 +513,19 @@ the rest. None appears in the public Swagger.
 
 | Route | Does |
 |---|---|
-| `POST /agenda/v1/admin/run` | Runs the whole import now: editorial, the city's agenda, the museums, the derived fields |
-| `GET /agenda/v1/admin/status` | Edition mode, whether a run is due, the last good import, `stale`, open reviews by kind, the last five runs |
-| `GET /agenda/v1/admin/runs?limit=` | Recent runs, with counts and errors |
-| `GET /agenda/v1/admin/editorial/{collection}?state=` | The documents of one collection: `series`, `editions`, `places`, `events`, `overrides` |
-| `GET /agenda/v1/admin/editorial/{collection}/{key}` | One document. A key with "/" is sent encoded, `%2F` |
-| `PUT /agenda/v1/admin/editorial/{collection}/{key}` | `{ doc, state?, verified?, reason }`. Validated; refused with the reasons when invalid. A published document goes live at once |
-| `POST /agenda/v1/admin/editorial/{collection}/{key}/publish` | `{ reason }`. Publishes through the pipeline; `…/unpublish` takes it back to draft, and its published entity becomes `removed` |
-| `POST /agenda/v1/admin/editorial/bulk` | `{ items: [{ collection, doc }], reason }`: a whole programme as drafts, with a report of what each item became |
-| `GET /agenda/v1/admin/editorial/{collection}/{key}/history` | Its revisions, newest first |
-| `POST /agenda/v1/admin/revisions/{id}/revert` | `{ reason }`. Puts that revision's `before` back, as a new revision |
-| `GET /agenda/v1/admin/export` | Every editorial document and 90 days of revisions: the backup, and a way out |
-| `GET /agenda/v1/admin/reviews?status=open&kind=` | The review queue: `disappeared`, `stale-edition` |
-| `POST /agenda/v1/admin/reviews/{id}` | `{ action: "resolve" \| "dismiss", note? }` |
+| `POST /zgz/agenda/v1/admin/run` | Runs the whole import now: editorial, the city's agenda, the museums, the derived fields |
+| `GET /zgz/agenda/v1/admin/status` | Edition mode, whether a run is due, the last good import, `stale`, open reviews by kind, the last five runs |
+| `GET /zgz/agenda/v1/admin/runs?limit=` | Recent runs, with counts and errors |
+| `GET /zgz/agenda/v1/admin/editorial/{collection}?state=` | The documents of one collection: `series`, `editions`, `places`, `events`, `overrides` |
+| `GET /zgz/agenda/v1/admin/editorial/{collection}/{key}` | One document. A key with "/" is sent encoded, `%2F` |
+| `PUT /zgz/agenda/v1/admin/editorial/{collection}/{key}` | `{ doc, state?, verified?, reason }`. Validated; refused with the reasons when invalid. A published document goes live at once |
+| `POST /zgz/agenda/v1/admin/editorial/{collection}/{key}/publish` | `{ reason }`. Publishes through the pipeline; `…/unpublish` takes it back to draft, and its published entity becomes `removed` |
+| `POST /zgz/agenda/v1/admin/editorial/bulk` | `{ items: [{ collection, doc }], reason }`: a whole programme as drafts, with a report of what each item became |
+| `GET /zgz/agenda/v1/admin/editorial/{collection}/{key}/history` | Its revisions, newest first |
+| `POST /zgz/agenda/v1/admin/revisions/{id}/revert` | `{ reason }`. Puts that revision's `before` back, as a new revision |
+| `GET /zgz/agenda/v1/admin/export` | Every editorial document and 90 days of revisions: the backup, and a way out |
+| `GET /zgz/agenda/v1/admin/reviews?status=open&kind=` | The review queue: `disappeared`, `stale-edition` |
+| `POST /zgz/agenda/v1/admin/reviews/{id}` | `{ action: "resolve" \| "dismiss", note? }` |
 
 `AGENDA_ADMIN_TOKEN` holds one token, or `name:token` pairs separated by
 commas. The name is what revisions record as `by`.

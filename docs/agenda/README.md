@@ -10,7 +10,7 @@ What is on in Zaragoza, for Zierzo's Agenda tab:
 - the practical side: what it costs, where to buy it, what to eat there, and
   how to get there on the day.
 
-Status: built: phases 0 and 1 (`apps/agenda`, the gateway's `/agenda/v1` and `/zgz/search`), and from phase 2 the editorial store, corrections on other sources' records, disappearance reviews, freshness and edition mode. The rest is specification.
+Status: built: phases 0 and 1 (`apps/agenda`, the gateway's `/zgz/agenda/v1` and `/zgz/search`), and from phase 2 the editorial store, corrections on other sources' records, disappearance reviews, freshness and edition mode. The rest is specification.
 
 | Document | What it fixes |
 |---|---|
@@ -24,7 +24,7 @@ Status: built: phases 0 and 1 (`apps/agenda`, the gateway's `/agenda/v1` and `/z
 ## What it is
 
 A new NestJS service, `apps/agenda`, on MongoDB, built like `zine`. The
-gateway exposes it under `/agenda/v1` and reaches it over TCP. It:
+gateway exposes it under `/zgz/agenda/v1` and reaches it over TCP. It:
 
 - pulls from the city, the ticket sellers and the organizers;
 - keeps the editorial content people write in its own MongoDB, with a
@@ -109,7 +109,7 @@ release. These cannot, so they are made now on purpose.
      already installed.
 9. **The API is versioned in the path and only ever grows within a
    version.**
-   - `/agenda/v1` gains fields, values and routes. It never loses,
+   - `/zgz/agenda/v1` gains fields, values and routes. It never loses,
      renames or retypes them.
    - Clients ignore what they do not know.
    - Breaking changes go to `/v2`, and `v1` keeps answering for at least a

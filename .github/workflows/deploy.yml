@@ -425,6 +425,7 @@ jobs:
             "zgz/tram/stations"
             "zgz/bus/stations"
             "zgz/search?q=pilar&limit=1"
+            "zgz/agenda/v1/highlights"
             "agenda/v1/highlights"
             "zine/movies?location=zaragoza"
             "zine/cinema?location=zaragoza"

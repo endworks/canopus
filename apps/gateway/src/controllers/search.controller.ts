@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Controller,
   Get,
+  Header,
   Inject,
   Logger,
   Query,
@@ -16,8 +17,10 @@ import {
 import { catchError, firstValueFrom, of, timeout } from 'rxjs';
 import {
   AGENDA_PATTERNS,
+  foldText,
   rankHits,
   SEARCH_MAX_QUERY,
+  searchable,
   SearchHit,
   SearchHitType,
   SERVICE_TOKENS,
@@ -27,12 +30,24 @@ import { ErrorResponse } from '../models/error.interface';
 
 /** A service slower than this is left out of the answer, not waited for. */
 const SERVICE_DEADLINE_MS = 2500;
+/** The most a query ranks: what every page of it is cut from. */
+const MAX_RANKED = 200;
+/** How long a ranked list answers the same query again, pages included. */
+const CACHE_TTL_MS = 60_000;
+/** How many queries are kept; the oldest goes first. */
+const CACHE_ENTRIES = 500;
 
 /** Which service holds which hit types. */
 const OWNERS: Record<string, SearchHitType[]> = {
   agenda: ['series', 'event', 'activity', 'venue'],
-  zaragoza: ['bus-stop', 'tram-stop', 'bizi-station'],
+  zaragoza: ['bus-line', 'tram-line', 'bus-stop', 'tram-stop', 'bizi-station'],
 };
+
+interface Ranked {
+  at: number;
+  hits: SearchHit[];
+  partial: string[];
+}
 
 const metres = (a: [number, number], b: [number, number]) => {
   const rad = Math.PI / 180;
@@ -57,12 +72,18 @@ const metres = (a: [number, number], b: [number, number]) => {
  *
  * Given `near`, hits within a kilometre or so rise a little: a reader typing
  * "plaza" in Delicias means the square nearby before the one across town.
+ *
+ * A query is ranked once, up to 200 hits, and the list kept a minute: every
+ * page of it (`offset`, `limit`) is a slice of that list, so scrolling never
+ * asks the services again and never shows a hit twice. Only a whole answer is
+ * kept; one with a service missing is asked again next time.
  */
 @ApiTags('Zaragoza')
 @ApiDefaultResponse({ description: 'Error response', type: ErrorResponse })
 @Controller('zgz')
 export class SearchController {
   private readonly logger = new Logger(SearchController.name);
+  private readonly ranked = new Map<string, Ranked>();
 
   constructor(
     @Inject(SERVICE_TOKENS.agenda) private readonly agenda: ClientProxy,
@@ -70,6 +91,7 @@ export class SearchController {
   ) {}
 
   @Get('search')
+  @Header('Cache-Control', 'public, max-age=60')
   @ApiOperation({
     summary:
       'Search Zaragoza: events, venues, series, and bus, tram and Bizi stops at once',
@@ -79,7 +101,7 @@ export class SearchController {
     name: 'types',
     required: false,
     description:
-      'Comma-separated: series, event, activity, venue, bus-stop, tram-stop, bizi-station',
+      'Comma-separated: bus-line, tram-line, bus-stop, tram-stop, bizi-station, series, event, activity, venue',
   })
   @ApiQuery({
     name: 'near',
@@ -89,7 +111,13 @@ export class SearchController {
   @ApiQuery({
     name: 'limit',
     required: false,
-    description: '1 to 50, 20 by default',
+    description: 'A page: 1 to 50, 20 by default',
+  })
+  @ApiQuery({
+    name: 'offset',
+    required: false,
+    description:
+      'Where the page starts: `meta.next` of the last one, 0 by default',
   })
   @ApiQuery({ name: 'lang', required: false, enum: ['es', 'en'] })
   async search(
@@ -98,6 +126,7 @@ export class SearchController {
     @Query('near') near?: string,
     @Query('limit') limit?: string,
     @Query('lang') lang?: string,
+    @Query('offset') offset?: string,
   ) {
     const query = (q ?? '').trim();
     if (!query) {
@@ -127,9 +156,46 @@ export class SearchController {
         .filter(Boolean) as SearchHitType[],
     );
     const max = Math.min(Math.max(parseInt(limit ?? '', 10) || 20, 1), 50);
+    const start = Math.min(
+      Math.max(parseInt(offset ?? '', 10) || 0, 0),
+      MAX_RANKED,
+    );
     const [lon, lat] = (near ?? '').split(',').map(Number);
+    // Rounded to about a hundred metres: close enough to rank by, and readers
+    // standing near each other share an answer.
     const origin: [number, number] | undefined =
-      Number.isFinite(lon) && Number.isFinite(lat) ? [lon, lat] : undefined;
+      Number.isFinite(lon) && Number.isFinite(lat)
+        ? [Math.round(lon * 1000) / 1000, Math.round(lat * 1000) / 1000]
+        : undefined;
+
+    const page = (ranked: Ranked) => {
+      const data = ranked.hits.slice(start, start + max);
+      const next = start + max < ranked.hits.length ? start + max : null;
+      return {
+        data,
+        meta: {
+          generatedAt: new Date(ranked.at).toISOString(),
+          partial: ranked.partial,
+          offset: start,
+          limit: max,
+          total: ranked.hits.length,
+          next,
+        },
+      };
+    };
+
+    if (!searchable(query)) {
+      return page({ at: Date.now(), hits: [], partial: [] });
+    }
+
+    const key = JSON.stringify([
+      foldText(query),
+      [...wanted].sort(),
+      origin,
+      lang === 'en' ? 'en' : 'es',
+    ]);
+    const kept = this.ranked.get(key);
+    if (kept && Date.now() - kept.at < CACHE_TTL_MS) return page(kept);
 
     const ask = (service: string, client: ClientProxy, pattern: string) => {
       const owned = OWNERS[service].filter(
@@ -142,7 +208,7 @@ export class SearchController {
           .send<SearchHit[] | { statusCode: number }>(pattern, {
             q: query,
             types: owned,
-            limit: max * 2,
+            limit: MAX_RANKED,
             lang,
           })
           .pipe(
@@ -174,12 +240,22 @@ export class SearchController {
         hit.score *= 1 + 0.25 / (1 + distance / 1000);
       }
     }
-    return {
-      data: rankHits(hits, max),
-      meta: {
-        generatedAt: new Date().toISOString(),
-        partial: answers.filter((a) => !a.ok).map((a) => a.service),
-      },
+    const ranked: Ranked = {
+      at: Date.now(),
+      hits: rankHits(hits, MAX_RANKED),
+      partial: answers.filter((a) => !a.ok).map((a) => a.service),
     };
+    if (ranked.partial.length === 0) this.keep(key, ranked);
+    return page(ranked);
+  }
+
+  private keep(key: string, ranked: Ranked) {
+    this.ranked.delete(key);
+    this.ranked.set(key, ranked);
+    while (this.ranked.size > CACHE_ENTRIES) {
+      const oldest = this.ranked.keys().next().value;
+      if (oldest === undefined) break;
+      this.ranked.delete(oldest);
+    }
   }
 }

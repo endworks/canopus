@@ -2,13 +2,13 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import {
-  matchScore,
-  queryTokens,
   rankHits,
   SEARCH_MAX_QUERY,
+  searchable,
   SearchHit,
   SearchHitType,
 } from '@canopus/shared';
+import { AgendaIndex, searchAgenda } from './search-index';
 import { KINDS, NOTICE_KINDS, PLACE_KINDS } from '../model/taxonomy';
 import { addDays, fromLocal, localDate } from '../model/time';
 import { EventDoc, OccurrenceDoc, PlaceDoc, SeriesDoc } from '../model/types';
@@ -24,12 +24,15 @@ import {
   occurrenceView,
   placeDetail,
   placeSummary,
-  say,
   seriesView,
   sourcesOf,
 } from './views';
 
 const LIVE = { status: { $ne: 'removed' } };
+/** How many hits a search may ask for: the gateway pages through at most this many. */
+const MAX_SEARCH_HITS = 200;
+/** The agenda changes at an import, every six hours; a search may lag it ten minutes. */
+const SEARCH_INDEX_TTL_MS = 10 * 60 * 1000;
 const MAX_FEED_DAYS = 60;
 
 export interface FeedQuery {
@@ -536,52 +539,48 @@ export class ReadService {
   }
 
   /**
-   * Series, events and places matching a query, as search hits.
-   *
-   * Every word must start a word of the hit (`matchScore`). The database
-   * narrows by the longest word first, on the folded `searchText`; scoring is
-   * done here, where it can weigh a title above a venue and the coming weeks
-   * above last year.
+   * Series, events and places matching a query, as search hits: scored by
+   * `searchAgenda` over the whole agenda held in memory. A few thousand
+   * records score in milliseconds, which lets every word allow a slip and
+   * leaves no candidate cut before it is scored.
    */
   async search(query: AgendaSearchQuery): Promise<SearchHit[]> {
-    const l = lang(query.lang);
     const q = (query.q ?? '').slice(0, SEARCH_MAX_QUERY);
-    const tokens = queryTokens(q);
-    if (tokens.length === 0) return [];
-    const longest = [...tokens].sort((a, b) => b.length - a.length)[0];
-    const pattern = new RegExp(`(^| )${longest.replace(/[^a-z0-9]/g, '')}`);
+    if (!searchable(q)) return [];
     const types = new Set(query.types ?? []);
     const wants = (type: SearchHitType) => types.size === 0 || types.has(type);
-    const today = this.today();
-    const hits: SearchHit[] = [];
+    const hits = searchAgenda(
+      await this.searchIndex(),
+      q,
+      wants,
+      lang(query.lang),
+      this.today(),
+    );
+    return rankHits(hits, Math.min(query.limit ?? 30, MAX_SEARCH_HITS));
+  }
 
-    if (wants('series')) {
-      const series: SeriesDoc[] = await this.series
-        .find({ searchText: pattern })
-        .limit(50)
-        .lean();
-      for (const s of series) {
-        const score = matchScore(q, [
-          { text: s.name.es, weight: 4 },
-          { text: s.name.en, weight: 3 },
-        ]);
-        hits.push({
-          type: 'series',
-          id: s._id,
-          title: say(s.name, l),
-          subtitle: s.nextExpected ? `${s.nextExpected.startDate}` : undefined,
-          startDate: s.nextExpected?.startDate,
-          endDate: s.nextExpected?.endDate,
-          service: 'agenda',
-          score: score * 1.2,
-        });
-      }
+  private index?: { at: number; loading: Promise<AgendaIndex> };
+
+  /** The agenda as a search reads it, read again once it is ten minutes old. */
+  private searchIndex(): Promise<AgendaIndex> {
+    const now = Date.now();
+    if (!this.index || now - this.index.at > SEARCH_INDEX_TTL_MS) {
+      const loading = this.loadSearchIndex();
+      this.index = { at: now, loading };
+      // A failed read is not kept: the next search tries again.
+      loading.catch(() => {
+        if (this.index?.loading === loading) this.index = undefined;
+      });
     }
+    return this.index.loading;
+  }
 
-    if (wants('event') || wants('activity')) {
-      const events: EventDoc[] = await this.events
+  private async loadSearchIndex(): Promise<AgendaIndex> {
+    const today = this.today();
+    const [series, events, places] = await Promise.all([
+      this.series.find({}).lean<SeriesDoc[]>(),
+      this.events
         .find({
-          searchText: pattern,
           visibility: { $in: ['listed', 'searchable'] },
           ...LIVE,
           $or: [
@@ -589,68 +588,13 @@ export class ReadService {
             { 'span.ends': { $gte: fromLocal(addDays(today, -30)) } },
           ],
         })
-        .limit(400)
-        .lean();
-      const places = new Map<string, PlaceDoc>(
-        (
-          await this.places
-            .find({
-              _id: {
-                $in: [...new Set(events.flatMap((e) => e.placeIds ?? []))],
-              },
-            })
-            .lean()
-        ).map((p: PlaceDoc) => [p._id, p]),
-      );
-      for (const e of events) {
-        const type: SearchHitType =
-          e.type === 'activity' ? 'activity' : 'event';
-        if (!wants(type)) continue;
-        const place = places.get(e.placeIds?.[0]);
-        let score = matchScore(q, [
-          { text: say(e.title, l), weight: 3 },
-          { text: e.tags?.join(' '), weight: 1 },
-          { text: say(place?.name, l), weight: 1 },
-        ]);
-        const ended = e.span && e.span.endDate < today;
-        if (ended) score *= 0.5;
-        if (e.visibility === 'searchable') score *= 0.6;
-        if (e.type === 'edition') score *= 1.3;
-        hits.push({
-          type,
-          id: e._id,
-          title: say(e.title, l),
-          subtitle: say(place?.name, l),
-          coordinates: place?.geo?.coordinates,
-          startDate: e.span?.startDate,
-          endDate: e.span?.endDate,
-          service: 'agenda',
-          score,
-        });
-      }
-    }
-
-    if (wants('venue')) {
-      const places: PlaceDoc[] = await this.places
-        .find({ searchText: pattern, ...LIVE })
-        .limit(200)
-        .lean();
-      for (const p of places) {
-        hits.push({
-          type: 'venue',
-          id: p._id,
-          title: say(p.name, l),
-          subtitle: p.address?.street,
-          coordinates: p.geo?.coordinates,
-          service: 'agenda',
-          score: matchScore(q, [
-            { text: say(p.name, l), weight: 3 },
-            { text: p.aliases.join(' '), weight: 2 },
-            { text: p.address?.street, weight: 1 },
-          ]),
-        });
-      }
-    }
-    return rankHits(hits, Math.min(query.limit ?? 30, 100));
+        .lean<EventDoc[]>(),
+      this.places.find(LIVE).lean<PlaceDoc[]>(),
+    ]);
+    return {
+      series,
+      events,
+      places: new Map(places.map((p) => [p._id, p])),
+    };
   }
 }

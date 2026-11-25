@@ -1,4 +1,6 @@
-import { searchStations } from './search';
+import { rankHits } from '@canopus/shared';
+import { searchLines, searchStations } from './search';
+import { boardsOf } from './tram-line';
 
 const stations = [
   {
@@ -53,5 +55,64 @@ describe('searchStations', () => {
       describe_,
     ).filter((h) => h.score > 0);
     expect(hit.coordinates).toBeUndefined();
+  });
+});
+
+describe('numbers', () => {
+  const lines = [
+    { id: '35', name: 'Parque Goya - Vía Hispanidad' },
+    { id: 'Ci2', name: 'Circular 2' },
+    { id: '99', name: 'Hidden', hidden: true },
+  ];
+
+  it('reads a bare number as the line, then the bus stop, then the dock', () => {
+    const hits = rankHits(
+      [
+        ...searchStations(
+          [{ id: '35', street: 'Echegaray. Pte. Piedra' }],
+          '35',
+          'bizi-station',
+          describe_,
+        ),
+        ...searchStations(
+          [{ id: '35', street: 'Coso' }, ...stations],
+          '35',
+          'bus-stop',
+          describe_,
+        ),
+        ...searchLines(lines, '35', 'bus-line', (l) => `Línea ${l.id}`),
+      ],
+      10,
+    );
+    expect(hits.slice(0, 3).map((h) => `${h.type}:${h.id}`)).toEqual([
+      'bus-line:35',
+      'bus-stop:35',
+      'bizi-station:35',
+    ]);
+  });
+
+  it('finds a line by its code in any case, and not a hidden one', () => {
+    expect(
+      searchLines(lines, 'ci2', 'bus-line', (l) => l.id)
+        .filter((h) => h.score > 0)
+        .map((h) => h.id),
+    ).toEqual(['Ci2']);
+    expect(
+      searchLines(lines, '99', 'bus-line', (l) => l.id).filter(
+        (h) => h.score > 0,
+      ),
+    ).toEqual([]);
+  });
+
+  it('finds a tram stop by the number on its platform, not its place code', () => {
+    const tram = [{ id: '1300', street: 'Plaza de España' }];
+    const platform = searchStations(tram, '1301', 'tram-stop', describe_, (s) =>
+      boardsOf(s.id),
+    );
+    const place = searchStations(tram, '1300', 'tram-stop', describe_, (s) =>
+      boardsOf(s.id),
+    );
+    expect(platform[0].score).toBeGreaterThan(45);
+    expect(place[0].score).toBe(0);
   });
 });

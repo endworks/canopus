@@ -18,18 +18,7 @@ export function startCrashReporting(service: string): void {
     // One project, seven services: this is what tells them apart.
     initialScope: { tags: { service } },
     tracesSampleRate: 0,
-    // Sentry 11's successor to `sendDefaultPii: false`, whose defaults collect
-    // everything: nothing about a person or a request leaves the service.
-    dataCollection: {
-      userInfo: false,
-      cookies: false,
-      httpHeaders: false,
-      httpBodies: [],
-      urlQueryParams: false,
-      genAI: { inputs: false, outputs: false },
-      databaseQueryData: false,
-      stackFrameVariables: false,
-    },
+    sendDefaultPii: false,
   });
 }
 

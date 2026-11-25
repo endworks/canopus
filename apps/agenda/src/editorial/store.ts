@@ -70,13 +70,16 @@ export class EditorialStore {
       collection: collectionOf(collection),
     };
     if (state) filter.state = state;
-    return this.docs.find(filter, { _id: 0 }).sort({ key: 1 }).lean();
+    return this.docs
+      .find(filter, { _id: 0 })
+      .sort({ key: 1 })
+      .lean<EditorialRow[]>();
   }
 
   async published(collection: EditorialCollection): Promise<EditorialRow[]> {
     return this.docs
       .find({ collection, state: 'published' }, { _id: 0 })
-      .lean();
+      .lean<EditorialRow[]>();
   }
 
   async get(collection: string, key: string): Promise<EditorialRow> {
@@ -107,9 +110,9 @@ export class EditorialStore {
     const errors = validate(c, doc);
     if (errors.length) throw invalid(`The ${c} "${key}" is not valid`, errors);
 
-    const before: EditorialRow = await this.docs
+    const before = await this.docs
       .findOne({ collection: c, key }, { _id: 0 })
-      .lean();
+      .lean<EditorialRow>();
     const state = input.state ?? before?.state ?? 'draft';
     const after = {
       collection: c,

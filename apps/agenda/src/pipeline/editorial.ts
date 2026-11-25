@@ -226,11 +226,12 @@ export class Editorial {
           cityLink: doc.linkCity ?? {},
           searchText: foldText(`${doc.title.es ?? ''} ${doc.title.en ?? ''}`),
           provenance: { identity: facet, schedule: facet, text: facet },
+          ...(doc.image ? { media: [{ url: doc.image }] } : {}),
         },
         $setOnInsert: {
           slug: slugify(doc.title.es ?? doc.title.en ?? row.key),
           slugHistory: [],
-          media: [],
+          ...(doc.image ? {} : { media: [] }),
           changes: [],
           version: 1,
         },

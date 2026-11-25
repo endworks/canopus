@@ -53,6 +53,8 @@ export interface EditionInput {
   guests?: Text[];
   links?: Link[];
   linkCity?: { programmes?: string[]; portals?: string[] };
+  /** The edition's poster, an https URL: it wins over the picture its activities share. */
+  image?: string;
 }
 
 export interface PlaceInput {
@@ -235,6 +237,11 @@ export const validate = (
         doc.status,
       ),
       '`status`: announced, programme-partial, programme-complete or over',
+    );
+    need(
+      doc.image === undefined ||
+        (typeof doc.image === 'string' && doc.image.startsWith('https://')),
+      '`image`: an https URL',
     );
   }
   if (collection === 'places') {

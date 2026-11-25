@@ -1,12 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { NestFactory } from '@nestjs/core';
+import { NestFactory, Reflector } from '@nestjs/core';
+import compression from 'compression';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { SwaggerTheme, SwaggerThemeNameEnum } from 'swagger-themes';
 import { RpcResponseInterceptor, startCrashReporting } from '@canopus/nest';
 import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
+import { CachePolicyInterceptor } from './cache-policy';
 
 // Read package metadata from disk (modern npm no longer exposes most
 // npm_package_* env vars, which left the Swagger contact/license blank).
@@ -39,7 +41,13 @@ async function bootstrap() {
     .map((origin) => origin.trim())
     .filter(Boolean);
   app.enableCors({ origin: origins.length > 0 ? origins : '*' });
-  app.useGlobalInterceptors(new RpcResponseInterceptor());
+  // Gzip or Brotli, whichever the client asks for: the stop list is 200 KB of
+  // JSON and the agenda's month half a megabyte, about a tenth of that packed.
+  app.use(compression({ threshold: 1024 }));
+  app.useGlobalInterceptors(
+    new CachePolicyInterceptor(app.get(Reflector)),
+    new RpcResponseInterceptor(),
+  );
   // An edition's whole programme is posted as one body: Pilar's 750 acts run
   // to a few hundred kilobytes, past the default limit of 100.
   app.useBodyParser('json', { limit: '5mb' });

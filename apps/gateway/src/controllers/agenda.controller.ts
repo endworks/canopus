@@ -8,6 +8,7 @@ import {
 } from '@nestjs/swagger';
 import { ErrorResponse } from '../models/error.interface';
 import { AgendaService } from '../services/agenda.service';
+import { CachePolicy } from '../cache-policy';
 
 const list = (value?: string) =>
   value
@@ -42,6 +43,7 @@ export class AgendaController {
   constructor(private readonly agenda: AgendaService) {}
 
   @Get('feed')
+  @CachePolicy('daily')
   @ApiOperation({
     summary:
       'Every listed session in a window, with highlights and coming-up series: what the app keeps offline',
@@ -66,6 +68,7 @@ export class AgendaController {
   }
 
   @Get('highlights')
+  @CachePolicy('daily')
   @ApiOperation({
     summary:
       'The highlights rail: each series’ current edition, on now, upcoming or ended',
@@ -76,6 +79,7 @@ export class AgendaController {
   }
 
   @Get('series')
+  @CachePolicy('static')
   @ApiOperation({
     summary:
       'Series whose next edition is expected within the window, soonest first',
@@ -94,6 +98,7 @@ export class AgendaController {
   }
 
   @Get('series/:id')
+  @CachePolicy('static')
   @ApiOperation({
     summary: 'One series by id or slug, with its current edition',
   })
@@ -104,6 +109,7 @@ export class AgendaController {
   }
 
   @Get('events/:id')
+  @CachePolicy('static')
   @ApiOperation({ summary: 'One event of any type by id or slug' })
   @ApiParam({ name: 'id' })
   @ApiQuery({
@@ -121,6 +127,7 @@ export class AgendaController {
   }
 
   @Get('events/:id/schedule')
+  @CachePolicy('daily')
   @ApiOperation({
     summary:
       'An edition’s or programme’s sessions on one day, and how many each day has',
@@ -158,6 +165,7 @@ export class AgendaController {
   }
 
   @Get('places')
+  @CachePolicy('static')
   @ApiOperation({ summary: 'Places by kind, by distance when `near` is given' })
   @ApiQuery({
     name: 'kinds',
@@ -193,6 +201,7 @@ export class AgendaController {
   }
 
   @Get('places/:id')
+  @CachePolicy('static')
   @ApiOperation({ summary: 'One place by id or slug' })
   @ApiParam({ name: 'id' })
   @ApiQuery({ name: 'include', required: false, description: 'happening' })
@@ -206,6 +215,7 @@ export class AgendaController {
   }
 
   @Get('taxonomy')
+  @CachePolicy('static')
   @ApiOperation({
     summary:
       'Every kind, place kind and notice kind code, with labels and icons',

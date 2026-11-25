@@ -19,6 +19,7 @@ import {
 } from '../models/zine.interface';
 import { ErrorResponse } from '../models/error.interface';
 import { ZineService } from '../services/zine.service';
+import { CachePolicy } from '../cache-policy';
 
 @ApiTags('Zine, cinemas and movies')
 @ApiDefaultResponse({ description: 'Error response', type: ErrorResponse })
@@ -27,6 +28,7 @@ export class ZineController {
   constructor(private readonly zineService: ZineService) {}
 
   @Get('locations')
+  @CachePolicy('static')
   @ApiOperation({ summary: 'Get the places this service has cinemas for' })
   @ApiResponse({
     status: 200,
@@ -38,6 +40,7 @@ export class ZineController {
   }
 
   @Get('cinema')
+  @CachePolicy('daily')
   @ApiOperation({ summary: 'Get cinemas' })
   @ApiQuery({
     name: 'location',
@@ -54,6 +57,7 @@ export class ZineController {
   }
 
   @Get('cinema/:id')
+  @CachePolicy('daily')
   @ApiOperation({ summary: 'Get cinema and movies by ID' })
   @ApiParam({ name: 'id', type: String })
   @ApiResponse({
@@ -66,6 +70,7 @@ export class ZineController {
   }
 
   @Get('cinema/:id/basic')
+  @CachePolicy('static')
   @ApiParam({ name: 'id', type: String })
   @ApiOperation({
     summary: 'Get cinema and basic details about movies by ID',
@@ -80,6 +85,7 @@ export class ZineController {
   }
 
   @Get('movies')
+  @CachePolicy('daily')
   @ApiOperation({ summary: 'Get movies' })
   @ApiQuery({
     name: 'location',
@@ -96,6 +102,7 @@ export class ZineController {
   }
 
   @Get('cached')
+  @CachePolicy('none')
   @ApiOperation({
     summary: 'Get cached data IDs',
   })
@@ -126,6 +133,7 @@ export class ZineController {
   }
 
   @Get('updateAll')
+  @CachePolicy('none')
   @ApiOperation({
     summary:
       "Re-scrape the catalogue, then refresh one city's billboards (default Zaragoza)",

@@ -18,6 +18,7 @@ import {
 import { ErrorResponse } from '../models/error.interface';
 import { PLACE_KINDS, STATION_SOURCES, StationSource } from '@canopus/shared';
 import { ZaragozaService } from '../services/zaragoza.service';
+import { CachePolicy } from '../cache-policy';
 
 @ApiTags('Zaragoza')
 @ApiDefaultResponse({ description: 'Error response', type: ErrorResponse })
@@ -26,6 +27,7 @@ export class ZaragozaController {
   constructor(private readonly zaragozaService: ZaragozaService) {}
 
   @Get('bus/stations')
+  @CachePolicy('static')
   @ApiOperation({ summary: 'Get bus stations' })
   @ApiMapResponse(Station, 'Bus stations keyed by id')
   async zaragozaBusStations() {
@@ -33,6 +35,7 @@ export class ZaragozaController {
   }
 
   @Get('bus/stations/:id')
+  @CachePolicy('live')
   @ApiOperation({ summary: 'Get bus station by ID' })
   @ApiParam({ name: 'id', type: String })
   @ApiQuery({ name: 'source', enum: STATION_SOURCES, required: false })
@@ -49,6 +52,7 @@ export class ZaragozaController {
   }
 
   @Get('bus/alerts')
+  @CachePolicy('alerts')
   @ApiOperation({ summary: 'Get bus service alerts' })
   @ApiResponse({
     status: 200,
@@ -61,6 +65,7 @@ export class ZaragozaController {
   }
 
   @Get('bus/lines')
+  @CachePolicy('static')
   @ApiOperation({ summary: 'Get bus lines' })
   @ApiMapResponse(Line, 'Bus lines keyed by id')
   async zaragozaBusLines() {
@@ -68,6 +73,7 @@ export class ZaragozaController {
   }
 
   @Get('bus/lines/update')
+  @CachePolicy('none')
   @ApiOperation({ summary: 'Update bus line data' })
   @ApiMapResponse(Line, 'Updated bus lines keyed by id')
   async zaragozaBusLinesUpdate() {
@@ -75,6 +81,7 @@ export class ZaragozaController {
   }
 
   @Get('bus/lines/:id')
+  @CachePolicy('static')
   @ApiOperation({ summary: 'Get bus line by ID' })
   @ApiParam({ name: 'id', type: String })
   @ApiResponse({ status: 200, description: 'Return bus line', type: Line })
@@ -83,6 +90,7 @@ export class ZaragozaController {
   }
 
   @Get('tram/alerts')
+  @CachePolicy('alerts')
   @ApiOperation({ summary: 'Get tram service alerts' })
   @ApiResponse({
     status: 200,
@@ -95,6 +103,7 @@ export class ZaragozaController {
   }
 
   @Get('tram/lines')
+  @CachePolicy('static')
   @ApiOperation({ summary: 'Get tram lines' })
   @ApiMapResponse(Line, 'Tram lines keyed by id')
   async zaragozaTramLines() {
@@ -102,6 +111,7 @@ export class ZaragozaController {
   }
 
   @Get('tram/lines/update')
+  @CachePolicy('none')
   @ApiOperation({ summary: 'Update tram line data' })
   @ApiMapResponse(Line, 'Updated tram lines keyed by id')
   async zaragozaTramLinesUpdate() {
@@ -111,6 +121,7 @@ export class ZaragozaController {
   // After `tram/lines/update`, or the update would be read as a line called
   // "update" and answered with a 404.
   @Get('tram/lines/:id')
+  @CachePolicy('static')
   @ApiOperation({ summary: 'Get tram line by ID' })
   @ApiParam({ name: 'id', type: String })
   @ApiResponse({ status: 200, description: 'Return tram line', type: Line })
@@ -119,6 +130,7 @@ export class ZaragozaController {
   }
 
   @Get('tram/stations')
+  @CachePolicy('static')
   @ApiOperation({ summary: 'Get tram stations' })
   @ApiMapResponse(Station, 'Tram stations keyed by id')
   async zaragozaTramStations() {
@@ -128,6 +140,7 @@ export class ZaragozaController {
   // One road to a tram stop, so no `source` to pick between: the query this
   // used to document reached a service that never read it.
   @Get('tram/stations/:id')
+  @CachePolicy('live')
   @ApiOperation({ summary: 'Get tram station by ID' })
   @ApiParam({ name: 'id', type: String })
   @ApiResponse({
@@ -140,6 +153,7 @@ export class ZaragozaController {
   }
 
   @Get('bizi/stations')
+  @CachePolicy('static')
   @ApiOperation({ summary: 'Get bizi stations' })
   @ApiMapResponse(BiziStation, 'Bizi stations keyed by id')
   async zaragozaBiziStations() {
@@ -147,6 +161,7 @@ export class ZaragozaController {
   }
 
   @Get('bizi/stations/update')
+  @CachePolicy('none')
   @ApiOperation({ summary: 'Update bizi stations data' })
   @ApiMapResponse(BiziStation, 'Updated bizi stations keyed by id')
   async zaragozaBiziStationsUpdate() {
@@ -154,6 +169,7 @@ export class ZaragozaController {
   }
 
   @Get('bizi/stations/:id')
+  @CachePolicy('live')
   @ApiOperation({ summary: 'Get bizi station by ID' })
   @ApiParam({ name: 'id', type: String })
   @ApiResponse({
@@ -174,6 +190,7 @@ export class ZaragozaController {
    * table rather than a service, a module and a route.
    */
   @Get('places/:kind')
+  @CachePolicy('daily')
   @ApiOperation({ summary: 'Get places of one kind' })
   @ApiParam({ name: 'kind', enum: PLACE_KINDS })
   @ApiMapResponse(Place, 'Places keyed by id')
@@ -182,6 +199,7 @@ export class ZaragozaController {
   }
 
   @Get('places/:kind/:id')
+  @CachePolicy('daily')
   @ApiOperation({ summary: 'Get one place by kind and ID' })
   @ApiParam({ name: 'kind', type: String })
   @ApiParam({ name: 'id', type: String })
@@ -199,6 +217,7 @@ export class ZaragozaController {
    * without being told to.
    */
   @Get('taxis')
+  @CachePolicy('live')
   @ApiOperation({ summary: 'Get taxis currently circulating' })
   @ApiMapResponse(Place, 'Live taxis keyed by id')
   async zaragozaTaxis() {

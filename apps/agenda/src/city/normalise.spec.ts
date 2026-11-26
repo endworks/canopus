@@ -149,14 +149,16 @@ describe('monuments', () => {
 });
 
 describe('nightlife', () => {
-  const venue = (id: number, title: string) => ({
+  const venue = (id: number, title: string, extra = {}) => ({
     id,
     title,
-    calle: 'Calle',
+    calle: 'Calle del registro',
+    junta: 'Junta Municipal Centro',
     geometry: { coordinates: [-0.88, 41.65] as [number, number] },
+    ...extra,
   });
 
-  it('only the reviewed discos are kept, under the name people use, each once', () => {
+  it('only the reviewed discos are kept, under the name people use, each once, with the unlisted ones after', () => {
     const places = nightlifePlaces([
       venue(5605, 'Sala de Música. López'),
       venue(11026, 'Café Botánico'),
@@ -164,7 +166,37 @@ describe('nightlife', () => {
       venue(5605, 'Sala de Música. López'),
       venue(99999, 'Discoteca Nueva'),
     ]);
-    expect(places.map((p) => p.name)).toEqual(['Sala López', 'Hïde Club']);
+    expect(places.map((p) => p.name)).toEqual([
+      'Sala López',
+      'Hïde Club',
+      'Latin Palace',
+    ]);
     expect(places.every((p) => p.kinds[0] === 'venue.club')).toBe(true);
+  });
+
+  it("a corrected address replaces the record's, point and all", () => {
+    const [chocolat] = nightlifePlaces([
+      venue(29758, 'Sala Chocolat (Torero 2000 S.L.)'),
+    ]);
+    expect(chocolat.street).toBe('C/ María Lostal, 25');
+    expect(chocolat.coordinates).toEqual([-0.8797389, 41.6446982]);
+    expect(chocolat.district).toBeUndefined();
+  });
+
+  it("premises that changed hands keep the record's place but not its contact", () => {
+    const [babia] = nightlifePlaces([
+      venue(8127, 'Sala de Musica. The Royal Club', {
+        url: 'http://www.theroyalclub.es/',
+      }),
+    ]);
+    expect(babia.name).toBe('Babia');
+    expect(babia.street).toBe('Calle del registro');
+    expect(babia.website).toBeUndefined();
+  });
+
+  it('a disco the city does not list stands on its own data', () => {
+    const latin = nightlifePlaces([]).find((p) => p.ref === 'latin-palace')!;
+    expect(latin.street).toBe('C/ Ricla, 9');
+    expect(latin.website).toBe('https://latinpalace.es');
   });
 });

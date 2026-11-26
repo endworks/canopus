@@ -386,24 +386,88 @@ export const metresBetween = (a: [number, number], b: [number, number]) => {
   return Math.sqrt(x * x + y * y) * 6371000;
 };
 
+interface Disco {
+  name: string;
+  /** Where it is today, when the city's record says otherwise. */
+  street?: string;
+  postalCode?: string;
+  coordinates?: [number, number];
+  /** The premises changed hands: the record's phone, mail and site are the last owner's. */
+  newOwner?: boolean;
+  website?: string;
+  phone?: string;
+}
+
 /**
  * The city's music halls and clubs that are discos, by its record id, with the
  * name people use today. Its lists mix them with cafés, rock bars, concert
  * rooms and peñas, and say nothing of which is which, so this is decided by
  * hand: reviewed against the venues' own pages and local guides in November
- * 2026. Anything not here is left out, a new record included.
+ * 2026. Anything not here is left out, a new record included. Corrected
+ * points are CartoCiudad's (IGN, CC BY 4.0).
  */
-export const DISCOS: Record<string, string> = {
-  '5605': 'Sala López',
-  '5905': 'Reset Club',
-  '13309': 'Sala Oasis',
-  '5888': 'Latin Palace',
-  '29754': 'Hïde Club',
-  '29755': 'GBN Gabana',
-  '29929': 'Kenbo',
-  '30208': 'Sala Roze',
-  '29758': 'Sala Chocolat',
-  '13303': 'La Casa del Loco',
+export const DISCOS: Record<string, Disco> = {
+  '5605': { name: 'Sala López' },
+  '5905': { name: 'Reset Club' },
+  '13309': { name: 'Sala Oasis' },
+  '29754': { name: 'Hïde Club' },
+  '29755': { name: 'GBN Gabana' },
+  '29929': { name: 'Kenbo' },
+  '30208': { name: 'Sala Roze' },
+  '13303': { name: 'La Casa del Loco' },
+  // The record gives Torero 2000's Paseo Echegaray y Caballero 150; every nightlife listing gives María Lostal.
+  '29758': {
+    name: 'Sala Chocolat',
+    street: 'C/ María Lostal, 25',
+    postalCode: '50008',
+    coordinates: [-0.8797389, 41.6446982],
+  },
+  // Filed as The Royal Club; the premises at Camino de las Torres 42 are Babia's now.
+  '8127': { name: 'Babia', newOwner: true },
+};
+
+/** Discos the city does not list at all, keyed by a ref of their own. */
+export const UNLISTED_DISCOS: Record<string, Disco> = {
+  // Not the city's Boranda Latin Palace (Azoque 64), a venue of the same name that has gone.
+  'latin-palace': {
+    name: 'Latin Palace',
+    street: 'C/ Ricla, 9',
+    postalCode: '50005',
+    coordinates: [-0.8914576, 41.6458125],
+    website: 'https://latinpalace.es',
+  },
+};
+
+const discoPlace = (
+  ref: string,
+  disco: Disco,
+  facility?: CityFacility,
+): PlaceCandidate => {
+  const recorded = facility?.geometry?.coordinates;
+  const contact = facility && !disco.newOwner ? facility : undefined;
+  return {
+    ref,
+    source: NIGHTLIFE_SOURCE,
+    name: disco.name,
+    kinds: ['venue.club'],
+    type: 'venue',
+    coordinates:
+      disco.coordinates ??
+      (recorded && recorded.length === 2
+        ? [recorded[0], recorded[1]]
+        : undefined),
+    street: disco.street ?? (facility?.calle?.trim() || undefined),
+    postalCode: disco.postalCode ?? (facility?.postalCode?.trim() || undefined),
+    district: disco.street
+      ? undefined
+      : facility?.junta?.replace(/^Junta (Municipal|Vecinal) /, '').trim() ||
+        undefined,
+    phone: disco.phone ?? (contact?.tel?.tel?.trim() || undefined),
+    email: contact?.email?.trim() || undefined,
+    website: disco.website ?? (contact?.url?.trim() || undefined),
+    hoursText: htmlToText(contact?.horario),
+    admissionText: htmlToText(contact?.precio),
+  };
 };
 
 export const nightlifePlaces = (records: CityFacility[]): PlaceCandidate[] => {
@@ -411,32 +475,13 @@ export const nightlifePlaces = (records: CityFacility[]): PlaceCandidate[] => {
   const out: PlaceCandidate[] = [];
   for (const facility of records) {
     const ref = String(facility.id);
-    const name = DISCOS[ref];
-    const coordinates = facility.geometry?.coordinates;
-    if (!name || seen.has(ref)) continue;
+    const disco = DISCOS[ref];
+    if (!disco || seen.has(ref)) continue;
     seen.add(ref);
-    out.push({
-      ref,
-      source: NIGHTLIFE_SOURCE,
-      name,
-      kinds: ['venue.club'],
-      type: 'venue',
-      coordinates:
-        coordinates && coordinates.length === 2
-          ? [coordinates[0], coordinates[1]]
-          : undefined,
-      street: facility.calle?.trim() || undefined,
-      postalCode: facility.postalCode?.trim() || undefined,
-      district:
-        facility.junta?.replace(/^Junta (Municipal|Vecinal) /, '').trim() ||
-        undefined,
-      phone: facility.tel?.tel?.trim() || undefined,
-      email: facility.email?.trim() || undefined,
-      website: facility.url?.trim() || undefined,
-      hoursText: htmlToText(facility.horario),
-      admissionText: htmlToText(facility.precio),
-    });
+    out.push(discoPlace(ref, disco, facility));
   }
+  for (const [ref, disco] of Object.entries(UNLISTED_DISCOS))
+    out.push(discoPlace(ref, disco));
   return out;
 };
 

@@ -72,8 +72,8 @@ export interface CityMonument {
   image?: string;
   estilo?: string;
   datacion?: string;
-  /** The city's own pick of the ones worth a visit. */
-  top?: boolean;
+  /** The city's own pick of the ones worth a visit: `'S'`, or absent. */
+  top?: string;
   uri?: string;
   geometry?: { coordinates?: [number, number] };
 }

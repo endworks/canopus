@@ -113,7 +113,6 @@ describe('monuments', () => {
       '<p>Denominado tambi&eacute;n "Puente de Nuestra Se&ntilde;ora del Pilar", se termin&oacute; en 1895.</p>',
     address: 'Pso. Echegaray y Caballero/ Avda Puente del Pilar',
     image: 'http://www.zaragoza.es/azar/img/monumentos/puentehierrop.jpg',
-    top: false,
     geometry: { coordinates: [-0.871377, 41.65457] as [number, number] },
   };
 
@@ -130,6 +129,10 @@ describe('monuments', () => {
     );
     expect(place.featured).toBe(false);
     expect(place.coordinates).toEqual([-0.871377, 41.65457]);
+  });
+
+  it("the city's own picks, marked 'S', are featured", () => {
+    expect(monumentPlace({ ...bridge, top: 'S' })!.featured).toBe(true);
   });
 
   it('a picture that is only a file name is dropped', () => {

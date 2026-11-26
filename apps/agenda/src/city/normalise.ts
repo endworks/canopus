@@ -517,7 +517,7 @@ export const monumentPlace = (
     admissionText: htmlToText(monument.price),
     description: htmlToText(monument.description),
     image: secure(monument.image),
-    featured: monument.top === true,
+    featured: monument.top === 'S',
   };
 };
 

@@ -68,6 +68,8 @@ export const PLACE_KINDS: TaxonomyEntry[] = [
   entry('venue.civic-centre', 'Centro cívico', 'Civic centre', 'buildings'),
   entry('venue.church', 'Iglesia', 'Church', 'church'),
   entry('venue.sports', 'Instalación deportiva', 'Sports venue', 'soccer-ball'),
+  entry('venue.club', 'Discoteca', 'Club', 'disco-ball'),
+  entry('landmark', 'Monumento', 'Landmark', 'castle-turret'),
   entry('area.square', 'Plaza', 'Square', 'map-pin-area'),
   entry('area.park', 'Parque', 'Park', 'tree'),
   entry('area.fairground', 'Recinto ferial', 'Fairground', 'ferris-wheel'),

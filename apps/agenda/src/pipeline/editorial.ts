@@ -293,7 +293,12 @@ export class Editorial {
   /** An editorial place key, a published place id, or another source's place. */
   private async placeResolver(placeIds: IdentityMap) {
     const others = new Map<string, IdentityMap>();
-    for (const source of ['city.agenda', 'city.facilities']) {
+    for (const source of [
+      'city.agenda',
+      'city.facilities',
+      'city.monuments',
+      'city.nightlife',
+    ]) {
       others.set(source, await this.identities.load(source, 'places'));
     }
     return (ref?: PlaceRef): string | undefined => {

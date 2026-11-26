@@ -8,6 +8,7 @@ import { addDays, fromLocal, localDate } from '../model/time';
 import { EventDoc, FacetSource, OccurrenceDoc, PlaceDoc } from '../model/types';
 import {
   EventCandidate,
+  metresBetween,
   OccurrenceCandidate,
   PlaceCandidate,
 } from '../city/normalise';
@@ -17,12 +18,7 @@ import { Identities, IdentityMap } from './identities';
 /** Within this distance two places of the same name are the same place. */
 const SAME_PLACE_METRES = 200;
 
-const metres = (a: [number, number], b: [number, number]) => {
-  const rad = Math.PI / 180;
-  const x = (b[0] - a[0]) * rad * Math.cos(((a[1] + b[1]) / 2) * rad);
-  const y = (b[1] - a[1]) * rad;
-  return Math.sqrt(x * x + y * y) * 6371000;
-};
+const metres = metresBetween;
 
 const hashOf = (value: unknown) =>
   createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -100,6 +96,12 @@ export interface PublishCounts {
  * `removed`; one on the same day at another time is recorded as a move, so a
  * reader sees "moved from 20:00 to 21:00" rather than a session vanishing.
  */
+/** The specific kinds of both, the existing first; the bare `venue` only while nothing better is known. */
+export const mergeKinds = (existing: string[] = [], incoming: string[]) => {
+  const specific = [...existing, ...incoming].filter((k) => k !== 'venue');
+  return specific.length ? [...new Set(specific)] : ['venue'];
+};
+
 @Injectable()
 export class Publisher {
   private readonly logger = new Logger(Publisher.name);
@@ -159,10 +161,8 @@ export class Publisher {
       };
       const fields = {
         type: candidate.type,
-        kinds:
-          existing?.kinds?.length && existing.kinds[0] !== 'venue'
-            ? existing.kinds
-            : candidate.kinds,
+        // Each source adds what it knows the place to be: a museum the city also lists as a monument is both.
+        kinds: mergeKinds(existing?.kinds, candidate.kinds),
         name: existing?.name ?? { es: candidate.name },
         aliases: [...new Set([...(existing?.aliases ?? []), candidate.name])],
         geo: candidate.coordinates
@@ -183,6 +183,13 @@ export class Publisher {
         admission: candidate.admissionText
           ? { note: { es: candidate.admissionText } }
           : existing?.admission,
+        description: candidate.description
+          ? { es: candidate.description }
+          : existing?.description,
+        featured: candidate.featured || existing?.featured || undefined,
+        media: candidate.image
+          ? [{ url: candidate.image }]
+          : (existing?.media ?? []),
       };
       const searchText = foldText(
         [fields.name.es, ...fields.aliases, fields.address.street].join(' '),
@@ -212,7 +219,6 @@ export class Publisher {
           parentId: undefined,
           ancestorIds: [],
           links: [],
-          media: [],
           status: 'open',
           searchText,
           contentHash,

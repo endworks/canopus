@@ -208,7 +208,8 @@ sheet.
   "status": "open",
   "openNow": true                            // computed at response time from hours; absent when hours are unknown
 }
-// detail adds: footprint, hours, contact, links, media, accessibility, admission, temporary, sources
+// summary also: "image": Image, "featured": true
+// detail adds: description, footprint, hours, contact, links, media, accessibility, admission, temporary, sources
 ```
 
 ### Offer
@@ -455,7 +456,14 @@ for.
 
 `GET /zgz/agenda/v1/places?kinds=venue.museum&near=lon,lat&radius=2000&openNow=true&cursor=`
 
-Ordered by distance when `near` is given, else by name.
+Ordered by distance when `near` is given, else by name. A kind matches its
+descendants, so `kinds=landmark` and `kinds=venue` both work. `limit` is 50
+by default and 200 at most.
+
+A summary carries `image`, the place's first picture, and `featured: true`
+for the source's own pick (the city's `top` monuments); a detail adds
+`description`, the source's prose. A place several sources know has every
+kind they give it: the Museo del Foro is `venue.museum` and `landmark`.
 
 `GET /zgz/agenda/v1/places/{id | slug}?include=happening`
 

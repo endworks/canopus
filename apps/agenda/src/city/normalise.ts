@@ -17,6 +17,7 @@ import {
   CityEvent,
   CityFacility,
   CityLocation,
+  CityMonument,
   CitySubEvent,
 } from './city-record';
 
@@ -30,6 +31,8 @@ import {
 
 export const SOURCE = 'city.agenda';
 export const FACILITIES_SOURCE = 'city.facilities';
+export const MONUMENTS_SOURCE = 'city.monuments';
+export const NIGHTLIFE_SOURCE = 'city.nightlife';
 
 /** Zaragoza's municipal term and a margin: Muel and Borja are outside it. */
 const BOUNDS = { west: -1.15, east: -0.65, south: 41.5, north: 41.8 };
@@ -55,6 +58,9 @@ export interface PlaceCandidate {
   website?: string;
   hoursText?: string;
   admissionText?: string;
+  description?: string;
+  image?: string;
+  featured?: boolean;
 }
 
 export interface OccurrenceCandidate {
@@ -369,6 +375,104 @@ export const facilityPlace = (
     website: facility.url?.trim() || undefined,
     hoursText: htmlToText(facility.horario),
     admissionText: htmlToText(facility.precio),
+  };
+};
+
+/** Equirectangular: exact enough across a city, in metres between two `[lon, lat]`. */
+export const metresBetween = (a: [number, number], b: [number, number]) => {
+  const rad = Math.PI / 180;
+  const x = (b[0] - a[0]) * rad * Math.cos(((a[1] + b[1]) / 2) * rad);
+  const y = (b[1] - a[1]) * rad;
+  return Math.sqrt(x * x + y * y) * 6371000;
+};
+
+/**
+ * The city's music halls and clubs that are discos, by its record id, with the
+ * name people use today. Its lists mix them with cafés, rock bars, concert
+ * rooms and peñas, and say nothing of which is which, so this is decided by
+ * hand: reviewed against the venues' own pages and local guides in November
+ * 2026. Anything not here is left out, a new record included.
+ */
+export const DISCOS: Record<string, string> = {
+  '5605': 'Sala López',
+  '5905': 'Reset Club',
+  '13309': 'Sala Oasis',
+  '5888': 'Latin Palace',
+  '29754': 'Hïde Club',
+  '29755': 'GBN Gabana',
+  '29929': 'Kenbo',
+  '30208': 'Sala Roze',
+  '29758': 'Sala Chocolat',
+  '13303': 'La Casa del Loco',
+};
+
+export const nightlifePlaces = (records: CityFacility[]): PlaceCandidate[] => {
+  const seen = new Set<string>();
+  const out: PlaceCandidate[] = [];
+  for (const facility of records) {
+    const ref = String(facility.id);
+    const name = DISCOS[ref];
+    const coordinates = facility.geometry?.coordinates;
+    if (!name || seen.has(ref)) continue;
+    seen.add(ref);
+    out.push({
+      ref,
+      source: NIGHTLIFE_SOURCE,
+      name,
+      kinds: ['venue.club'],
+      type: 'venue',
+      coordinates:
+        coordinates && coordinates.length === 2
+          ? [coordinates[0], coordinates[1]]
+          : undefined,
+      street: facility.calle?.trim() || undefined,
+      postalCode: facility.postalCode?.trim() || undefined,
+      district:
+        facility.junta?.replace(/^Junta (Municipal|Vecinal) /, '').trim() ||
+        undefined,
+      phone: facility.tel?.tel?.trim() || undefined,
+      email: facility.email?.trim() || undefined,
+      website: facility.url?.trim() || undefined,
+      hoursText: htmlToText(facility.horario),
+      admissionText: htmlToText(facility.precio),
+    });
+  }
+  return out;
+};
+
+/** The city links its pictures over plain http, which iOS refuses; the same host answers on https. */
+const secure = (url?: string): string | undefined => {
+  const trimmed = url?.trim();
+  if (!trimmed || !/^https?:\/\//.test(trimmed)) return undefined;
+  return trimmed.replace(
+    /^http:\/\/(www\.)?zaragoza\.es\//,
+    'https://www.zaragoza.es/',
+  );
+};
+
+export const monumentPlace = (
+  monument: CityMonument,
+): PlaceCandidate | undefined => {
+  const name = monument.title?.replace(/\s+/g, ' ').trim();
+  if (!name) return undefined;
+  const coordinates = monument.geometry?.coordinates;
+  return {
+    ref: String(monument.id),
+    source: MONUMENTS_SOURCE,
+    name,
+    kinds: ['landmark'],
+    type: 'venue',
+    coordinates:
+      coordinates && coordinates.length === 2
+        ? [coordinates[0], coordinates[1]]
+        : undefined,
+    street: monument.address?.replace(/\s+/g, ' ').trim() || undefined,
+    phone: monument.phone?.trim() || undefined,
+    hoursText: htmlToText(monument.horario),
+    admissionText: htmlToText(monument.price),
+    description: htmlToText(monument.description),
+    image: secure(monument.image),
+    featured: monument.top === true,
   };
 };
 

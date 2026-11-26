@@ -5,8 +5,14 @@ import { createHash } from 'crypto';
 import { Model } from 'mongoose';
 import { fetchWithTimeout } from '@canopus/nest';
 import { RAW_RECORD } from '../schemas/schemas';
-import { CityEvent, CityFacility } from './city-record';
-import { FACILITIES_SOURCE, SOURCE, todayInCity } from './normalise';
+import { CityEvent, CityFacility, CityMonument } from './city-record';
+import {
+  FACILITIES_SOURCE,
+  MONUMENTS_SOURCE,
+  NIGHTLIFE_SOURCE,
+  SOURCE,
+  todayInCity,
+} from './normalise';
 
 const BASE = 'https://www.zaragoza.es/sede/servicio';
 
@@ -14,7 +20,7 @@ const BASE = 'https://www.zaragoza.es/sede/servicio';
 const PAGE = 500;
 
 /**
- * Fetches the city's agenda and museums, and keeps every record as received.
+ * Fetches the city's agenda, museums and monuments, and keeps every record as received.
  *
  * The archive is the point (docs/agenda/ingestion.md, "Raw first"): the city
  * deletes an event's record once it is over, so whatever is not stored here
@@ -45,6 +51,26 @@ export class CitySource {
     const query = 'q=category.title==Museos&sort=id%20asc&srsname=wgs84';
     return this.fetchAll<CityFacility>(
       `${BASE}/equipamiento/list.json?${query}`,
+    );
+  }
+
+  /**
+   * Music halls and clubs, from which `DISCOS` picks: *Salas de Música* and
+   * the venues that signed the city's protocol against sexist aggression.
+   * By category id, since one title carries an accent and another a double
+   * space that a query has to match exactly.
+   */
+  async fetchNightlife(): Promise<CityFacility[]> {
+    const of = (id: number) =>
+      this.fetchAll<CityFacility>(
+        `${BASE}/equipamiento/list.json?q=category.id==${id}&sort=id%20asc&srsname=wgs84`,
+      );
+    return [...(await of(880)), ...(await of(1960))];
+  }
+
+  async fetchMonuments(): Promise<CityMonument[]> {
+    return this.fetchAll<CityMonument>(
+      `${BASE}/monumento/list.json?sort=id%20asc&srsname=wgs84`,
     );
   }
 
@@ -79,7 +105,11 @@ export class CitySource {
    * once: they are over, or the city withdrew them.
    */
   async archive(
-    source: typeof SOURCE | typeof FACILITIES_SOURCE,
+    source:
+      | typeof SOURCE
+      | typeof FACILITIES_SOURCE
+      | typeof MONUMENTS_SOURCE
+      | typeof NIGHTLIFE_SOURCE,
     records: { id: number | string }[],
     now = new Date(),
   ): Promise<{

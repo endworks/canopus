@@ -176,6 +176,9 @@ export interface PlaceDoc {
   links: Link[];
   media: MediaRef[];
   admission?: { note?: Text };
+  description?: Text;
+  /** The source's own pick: listed first where nothing else orders them. */
+  featured?: boolean;
   status: 'open' | 'temporarily-closed' | 'closed' | 'removed';
   replacedBy?: string;
   searchText: string;

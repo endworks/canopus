@@ -69,6 +69,18 @@ const ATTRIBUTION = {
     licence: 'CC BY 4.0',
     url: 'https://www.zaragoza.es/sede/portal/datos-abiertos/',
   },
+  'city.nightlife': {
+    source: 'city.nightlife',
+    name: 'Ayuntamiento de Zaragoza',
+    licence: 'CC BY 4.0',
+    url: 'https://www.zaragoza.es/sede/portal/datos-abiertos/',
+  },
+  'city.monuments': {
+    source: 'city.monuments',
+    name: 'Ayuntamiento de Zaragoza',
+    licence: 'CC BY 4.0',
+    url: 'https://www.zaragoza.es/sede/portal/datos-abiertos/',
+  },
 } as const;
 
 export const envelope = <T>(
@@ -262,11 +274,14 @@ export const placeSummary = (doc: PlaceDoc, l: Lang) => ({
   parentId: doc.parentId,
   address: doc.address,
   status: doc.status,
+  image: doc.media?.[0],
+  featured: doc.featured || undefined,
 });
 
 export const placeDetail = (doc: PlaceDoc, l: Lang) => ({
   ...placeSummary(doc, l),
   hours: doc.hoursText ? { note: doc.hoursText } : undefined,
+  description: say(doc.description, l),
   contact: doc.contact,
   links: doc.links,
   media: doc.media,

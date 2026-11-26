@@ -60,6 +60,24 @@ export interface CityEvent {
 }
 
 /** A museum, from `equipamiento/list.json?q=category.title==Museos`. */
+/** One of the city's monuments, `/sede/servicio/monumento`: its texts are HTML. */
+export interface CityMonument {
+  id: number | string;
+  title?: string;
+  address?: string;
+  description?: string;
+  horario?: string;
+  price?: string;
+  phone?: string;
+  image?: string;
+  estilo?: string;
+  datacion?: string;
+  /** The city's own pick of the ones worth a visit. */
+  top?: boolean;
+  uri?: string;
+  geometry?: { coordinates?: [number, number] };
+}
+
 export interface CityFacility {
   id: number | string;
   title?: string;

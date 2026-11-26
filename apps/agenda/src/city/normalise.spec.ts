@@ -1,6 +1,13 @@
 import fixtures from './fixtures/city-events.json';
 import { CityEvent } from './city-record';
-import { htmlToText, normaliseEvent, tidyTitle } from './normalise';
+import {
+  htmlToText,
+  monumentPlace,
+  nightlifePlaces,
+  normaliseEvent,
+  tidyTitle,
+} from './normalise';
+import { mergeKinds } from '../pipeline/publisher';
 
 /**
  * Real records, as the city published them in November 2026, with their
@@ -94,5 +101,70 @@ describe('text', () => {
   it('a title in capitals is put in sentence case', () => {
     expect(tidyTitle('LA PLAZA DE LA NAVIDAD')).toBe('La plaza de la navidad');
     expect(tidyTitle('Sweet Palace')).toBe('Sweet Palace');
+  });
+});
+
+describe('monuments', () => {
+  // The Puente de Hierro as the city published it in November 2026, trimmed.
+  const bridge = {
+    id: 83,
+    title: 'Puente de Hierro  o Puente del Pilar',
+    description:
+      '<p>Denominado tambi&eacute;n "Puente de Nuestra Se&ntilde;ora del Pilar", se termin&oacute; en 1895.</p>',
+    address: 'Pso. Echegaray y Caballero/ Avda Puente del Pilar',
+    image: 'http://www.zaragoza.es/azar/img/monumentos/puentehierrop.jpg',
+    top: false,
+    geometry: { coordinates: [-0.871377, 41.65457] as [number, number] },
+  };
+
+  it('a monument is a landmark, its text plain and its picture on https', () => {
+    const place = monumentPlace(bridge)!;
+    expect(place.name).toBe('Puente de Hierro o Puente del Pilar');
+    expect(place.kinds).toEqual(['landmark']);
+    expect(place.source).toBe('city.monuments');
+    expect(place.description).toBe(
+      'Denominado también "Puente de Nuestra Señora del Pilar", se terminó en 1895.',
+    );
+    expect(place.image).toBe(
+      'https://www.zaragoza.es/azar/img/monumentos/puentehierrop.jpg',
+    );
+    expect(place.featured).toBe(false);
+    expect(place.coordinates).toEqual([-0.871377, 41.65457]);
+  });
+
+  it('a picture that is only a file name is dropped', () => {
+    expect(
+      monumentPlace({ ...bridge, image: 'fundacionlabordeta.jpg' })!.image,
+    ).toBeUndefined();
+  });
+
+  it('a museum the city also lists as a monument is both', () => {
+    expect(mergeKinds(['venue.museum'], ['landmark'])).toEqual([
+      'venue.museum',
+      'landmark',
+    ]);
+    expect(mergeKinds(['venue'], ['landmark'])).toEqual(['landmark']);
+    expect(mergeKinds(undefined, ['venue'])).toEqual(['venue']);
+  });
+});
+
+describe('nightlife', () => {
+  const venue = (id: number, title: string) => ({
+    id,
+    title,
+    calle: 'Calle',
+    geometry: { coordinates: [-0.88, 41.65] as [number, number] },
+  });
+
+  it('only the reviewed discos are kept, under the name people use, each once', () => {
+    const places = nightlifePlaces([
+      venue(5605, 'Sala de Música. López'),
+      venue(11026, 'Café Botánico'),
+      venue(29754, 'Hide Club'),
+      venue(5605, 'Sala de Música. López'),
+      venue(99999, 'Discoteca Nueva'),
+    ]);
+    expect(places.map((p) => p.name)).toEqual(['Sala López', 'Hïde Club']);
+    expect(places.every((p) => p.kinds[0] === 'venue.club')).toBe(true);
   });
 });

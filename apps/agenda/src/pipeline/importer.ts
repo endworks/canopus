@@ -3,10 +3,14 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Cron } from '@nestjs/schedule';
 import { Model } from 'mongoose';
 import { CitySource } from '../city/city.source';
-import { CityEvent, CityFacility } from '../city/city-record';
+import { CityEvent, CityFacility, CityMonument } from '../city/city-record';
 import {
   facilityPlace,
   FACILITIES_SOURCE,
+  monumentPlace,
+  MONUMENTS_SOURCE,
+  nightlifePlaces,
+  NIGHTLIFE_SOURCE,
   normaliseEvent,
   SOURCE,
   todayInCity,
@@ -218,6 +222,37 @@ export class Importer implements OnApplicationBootstrap {
           startedAt,
         );
         counts.museums = { fetched: museums.length, created, updated };
+      });
+
+      await attempt('city.monuments', async () => {
+        const monuments = await this.city.fetchMonuments();
+        await this.city.archive(MONUMENTS_SOURCE, monuments, startedAt);
+        const places = monuments
+          .map((m: CityMonument) => monumentPlace(m))
+          .filter(Boolean);
+        const { created, updated } = await this.publisher.publishPlaces(
+          MONUMENTS_SOURCE,
+          places,
+          startedAt,
+        );
+        counts.monuments = { fetched: monuments.length, created, updated };
+      });
+
+      await attempt('city.nightlife', async () => {
+        const venues = await this.city.fetchNightlife();
+        await this.city.archive(NIGHTLIFE_SOURCE, venues, startedAt);
+        const places = nightlifePlaces(venues);
+        const { created, updated } = await this.publisher.publishPlaces(
+          NIGHTLIFE_SOURCE,
+          places,
+          startedAt,
+        );
+        counts.nightlife = {
+          fetched: venues.length,
+          kept: places.length,
+          created,
+          updated,
+        };
       });
 
       await attempt('derive', () => this.editorial.derive(today));

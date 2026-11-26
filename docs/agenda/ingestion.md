@@ -23,6 +23,8 @@ Each source is registered in `content/config/sources.yml`, with:
 |---|---|---|---|
 | `city.agenda` | The city's event service: activities, places, sessions, programmes | `cultura/evento/list.json`, `srsname=wgs84`, `q=endDate=ge=<today>`, sorted by id, pages of 500 | Every 6 h, backing off to 12 h and 24 h while the city fails; never hourly, see `apps/agenda/README.md` |
 | `city.facilities` | Museums and other venues: address, point, hours, contact | `equipamiento/list.json`, category *Museos* and others as needed | Weekly |
+| `city.nightlife` | Discos, as `venue.club`: the records of *Salas de Música* (category 880) and of the venues that signed the protocol against sexist aggression (1960) that `DISCOS` in `normalise.ts` names, reviewed by hand, since the city's lists mix them with cafés, rock bars and concert rooms | `equipamiento/list.json` by category id | With every run |
+| `city.monuments` | The city's 179 monuments, as `landmark`: description, picture, hours, prices, its own picks as `featured` | `monumento/list.json` | With every run |
 | `editorial` | Hand-written series, editions, programmes, activities, places, agents, notices and corrections | The editorial collections, through the admin API | On every publish |
 | `pdf.<edition>` | An edition's printed programme, parsed into editorial drafts | A parser per programme format, run by hand; it writes `draft` documents a person reviews and publishes | Once per edition |
 | `seller.ticketmaster` | Prices, tiers, ticket pages, availability | The Discovery API | Daily; hourly in an act's week |
